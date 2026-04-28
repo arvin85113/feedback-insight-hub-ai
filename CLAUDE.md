@@ -1,5 +1,22 @@
 # CLAUDE.md
 
+## 開發規則（重要）
+
+- 每次修改程式碼前，必須先列出修改計畫，等待我確認後才能動手
+- 不可以直接修改檔案，一定要先問我
+
+## 我負責的範圍
+
+- 通知中心（Notice Center）：/dashboard/notices/
+- 部分顧客中心（Customer Center）：/app/notifications/
+
+## 注意事項
+
+- 不要修改 seed_demo.py
+- 測試用假資料請使用 seed_notification_test
+
+---
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview

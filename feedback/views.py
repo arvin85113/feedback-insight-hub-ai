@@ -140,6 +140,18 @@ class CustomerNotificationsView(CustomerRequiredMixin, TemplateView):
         return context
 
 
+class MarkNoticeReadView(CustomerRequiredMixin, View):
+    def post(self, request, pk):
+        dispatch = get_object_or_404(
+            ImprovementDispatch,
+            pk=pk,
+            submission__user=request.user,
+        )
+        dispatch.is_read = True
+        dispatch.save(update_fields=["is_read"])
+        return redirect("feedback:customer-notifications")
+
+
 class DashboardView(DashboardBaseMixin, TemplateView):
     template_name = "feedback/dashboard.html"
     active_section = "feedback:dashboard"
@@ -545,6 +557,23 @@ class NoticeCenterView(DashboardBaseMixin, TemplateView):
         context["categories"] = SurveyCategory.objects.all()
         context["current_sort"] = sort
         context["current_category"] = category_id
+        return context
+
+
+class NoticeDetailView(DashboardBaseMixin, DetailView):
+    template_name = "feedback/notice_detail.html"
+    model = ImprovementUpdate
+    context_object_name = "improvement"
+    active_section = "feedback:notice-center"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update(self.get_dashboard_base_context())
+        context["dispatches"] = (
+            self.object.dispatches
+            .select_related("submission__user", "submission__survey")
+            .order_by("-sent_at")
+        )
         return context
 
 

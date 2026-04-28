@@ -24,6 +24,10 @@
         <strong>{{ notice_count }}</strong>
     </article>
     <article class="surface-card stat-surface">
+        <span>未讀通知</span>
+        <strong>{{ unread_count }}</strong>
+    </article>
+    <article class="surface-card stat-surface">
         <span>目前通知設定</span>
         <strong>{% if notification_opt_in %}已開啟{% else %}已關閉{% endif %}</strong>
     </article>
@@ -46,9 +50,15 @@
                     {% endif %}
                 </div>
                 <div class="record-meta">
-                    <span class="pill {% if notification_opt_in %}pill-active{% endif %}">
-                        {% if notification_opt_in %}通知開啟中{% else %}通知已關閉{% endif %}
+                    <span class="pill {% if notice.is_read %}pill-active{% endif %}">
+                        {% if notice.is_read %}已讀{% else %}未讀{% endif %}
                     </span>
+                    {% if not notice.is_read %}
+                        <form method="post" action="{% url 'feedback:notice-mark-read' notice.id %}">
+                            {% csrf_token %}
+                            <button type="submit" class="button button-ghost">標記已讀</button>
+                        </form>
+                    {% endif %}
                 </div>
             </div>
         {% empty %}
