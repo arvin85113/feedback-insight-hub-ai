@@ -1,4 +1,5 @@
 from django.core.management.base import BaseCommand
+from django.core.mail import send_mail
 from django.db.models import Q
 from django.utils import timezone
 
@@ -8,8 +9,47 @@ from feedback.models import (
     FeedbackSubmission,
     ImprovementDispatch,
     ImprovementUpdate,
+    Question,
     Survey,
 )
+
+TEST_SURVEY_SLUG = "notification-test-survey"
+TEST_SURVEY_TITLE = "通知功能測試問卷"
+
+TEST_QUESTIONS = [
+    {
+        "title": "整體滿意度",
+        "kind": Question.Kind.SCALE,
+        "data_type": Question.DataType.ORDINAL,
+        "is_required": True,
+        "enable_keyword_tracking": False,
+        "order": 1,
+    },
+    {
+        "title": "最常使用的功能",
+        "kind": Question.Kind.SINGLE_CHOICE,
+        "data_type": Question.DataType.NOMINAL,
+        "options_text": "通知追蹤\n問卷填答\n數據分析",
+        "is_required": True,
+        "enable_keyword_tracking": False,
+        "order": 2,
+    },
+    {
+        "title": "改善建議",
+        "kind": Question.Kind.LONG_TEXT,
+        "data_type": Question.DataType.TEXT,
+        "is_required": False,
+        "enable_keyword_tracking": True,
+        "order": 3,
+    },
+]
+
+# 對應 TEST_QUESTIONS 順序的範例答案
+SAMPLE_ANSWERS = [
+    "8",
+    "通知追蹤",
+    "介面直覺、通知功能很實用，希望速度更快。",
+]
 
 # 四種通知設定的測試用戶
 # 注意：notification_channel 欄位尚未建立，inapp/email/both 三者目前行為相同（notification_opt_in=True）
@@ -18,7 +58,7 @@ TEST_USERS = [
     {
         "username": "test_inapp",
         "first_name": "帳號通知",
-        "email": "test_inapp@example.com",
+        "email": "tdex57@gmail.com",
         "notification_opt_in": True,
         "consent_follow_up": True,
         "label": "只要帳號通知",
@@ -26,7 +66,7 @@ TEST_USERS = [
     {
         "username": "test_email_only",
         "first_name": "Email通知",
-        "email": "test_email@example.com",
+        "email": "tdex57@gmail.com",
         "notification_opt_in": True,
         "consent_follow_up": True,
         "label": "只要Email",
@@ -34,7 +74,7 @@ TEST_USERS = [
     {
         "username": "test_both",
         "first_name": "全部通知",
-        "email": "test_both@example.com",
+        "email": "tdex57@gmail.com",
         "notification_opt_in": True,
         "consent_follow_up": True,
         "label": "兩者都要",
@@ -42,19 +82,11 @@ TEST_USERS = [
     {
         "username": "test_none",
         "first_name": "不接收通知",
-        "email": "test_none@example.com",
+        "email": "tdex57@gmail.com",
         "notification_opt_in": False,
         "consent_follow_up": False,
         "label": "都不要",
     },
-]
-
-# 對應 seed_demo 問卷題目順序的範例答案
-SAMPLE_ANSWERS = [
-    "8",                                            # 整體滿意度（量表）
-    "通知追蹤",                                      # 最常使用的功能（單選）
-    "符合",                                          # 回應速度（單選）
-    "希望介面更直覺，速度也可以更快，通知功能很實用。",  # 改善建議（長文字）
 ]
 
 
@@ -62,17 +94,29 @@ class Command(BaseCommand):
     help = "建立通知功能測試用資料（測試用戶、問卷回覆、改善派送）"
 
     def handle(self, *args, **options):
-        survey = Survey.objects.filter(slug="product-feedback").first()
-        if not survey:
-            self.stdout.write(self.style.ERROR(
-                "找不到示範問卷，請先執行 python manage.py seed_demo"
-            ))
-            return
+        # 建立測試問卷
+        survey, survey_created = Survey.objects.get_or_create(
+            slug=TEST_SURVEY_SLUG,
+            defaults={
+                "title": TEST_SURVEY_TITLE,
+                "description": "供通知功能測試使用的問卷，由 seed_notification_test 自動建立。",
+                "access_mode": Survey.AccessMode.LOGIN,
+                "thank_you_email_enabled": True,
+                "improvement_tracking_enabled": True,
+                "is_active": True,
+            },
+        )
+        self.stdout.write(f"{'建立' if survey_created else '已存在'}測試問卷：{survey.title}")
+
+        # 建立題目
+        for spec in TEST_QUESTIONS:
+            Question.objects.get_or_create(
+                survey=survey,
+                title=spec["title"],
+                defaults={k: v for k, v in spec.items() if k != "title"},
+            )
 
         questions = list(survey.questions.order_by("order"))
-        if not questions:
-            self.stdout.write(self.style.ERROR("示範問卷沒有題目，請先確認 seed_demo 執行正確"))
-            return
 
         self.stdout.write("建立測試用戶與問卷回覆...")
         created_records = []
@@ -132,6 +176,13 @@ class Command(BaseCommand):
         )
         self.stdout.write(f"  {'建立' if imp_created else '已存在'}：{improvement.title}")
 
+        # 清除舊派送，確保每次執行都重新寄送
+        deleted_count, _ = improvement.dispatches.all().delete()
+        improvement.emailed_at = None
+        improvement.save(update_fields=["emailed_at"])
+        if deleted_count:
+            self.stdout.write(f"  清除舊派送紀錄：{deleted_count} 筆")
+
         # 派送通知給符合條件的填答者
         self.stdout.write("\n派送通知...")
         recipients = (
@@ -159,6 +210,13 @@ class Command(BaseCommand):
                 },
             )
             if created:
+                send_mail(
+                    subject=f"{survey.title} 改善進度通知",
+                    message=f"{improvement.title}\n\n{improvement.summary}",
+                    from_email=None,
+                    recipient_list=[submission.respondent_email],
+                    fail_silently=True,
+                )
                 dispatched += 1
 
         if dispatched > 0:

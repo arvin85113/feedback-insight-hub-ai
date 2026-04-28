@@ -2809,3 +2809,42 @@ input[type="checkbox"] {
     line-height: 1;
     font-size: 0.85rem;
 }
+
+/* 導覽列通知 badge */
+.nav-notif-link {
+    position: relative;
+}
+.nav-badge {
+    position: absolute;
+    top: -6px;
+    right: -10px;
+    background: #e53e3e;
+    color: #fff;
+    font-size: 0.7rem;
+    font-weight: 700;
+    min-width: 18px;
+    height: 18px;
+    border-radius: 9px;
+    padding: 0 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 1px 4px rgba(229, 62, 62, 0.45);
+}
+
+/* 通知列表未讀樣式 */
+.record-row-unread {
+    background: #e8f0fe;
+    margin: 0 -28px;
+    padding-left: 24px;
+    padding-right: 28px;
+    border-left: 4px solid #4285f4;
+}
+.record-row-link {
+    display: block;
+    text-decoration: none;
+    color: inherit;
+}
+.record-row-clickable {
+    cursor: pointer;
+}

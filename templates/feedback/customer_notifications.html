@@ -40,7 +40,10 @@
 <section class="surface-card">
     <div class="record-list">
         {% for notice in notices %}
-            <div class="record-row record-row-stack">
+            <div class="record-row record-row-stack record-row-clickable {% if not notice.is_read %}record-row-unread{% endif %}"
+                 data-pk="{{ notice.id }}"
+                 data-is-read="{{ notice.is_read|yesno:'true,false' }}"
+                 data-survey-url="{% url 'feedback:survey-detail' notice.submission.survey.slug %}">
                 <div>
                     <strong>{{ notice.improvement.title }}</strong>
                     <p>{{ notice.submission.survey.title }} | {{ notice.sent_at|date:"Y/m/d H:i" }}</p>
@@ -53,12 +56,6 @@
                     <span class="pill {% if notice.is_read %}pill-active{% endif %}">
                         {% if notice.is_read %}已讀{% else %}未讀{% endif %}
                     </span>
-                    {% if not notice.is_read %}
-                        <form method="post" action="{% url 'feedback:notice-mark-read' notice.id %}">
-                            {% csrf_token %}
-                            <button type="submit" class="button button-ghost">標記已讀</button>
-                        </form>
-                    {% endif %}
                 </div>
             </div>
         {% empty %}
@@ -71,4 +68,38 @@
         {% endfor %}
     </div>
 </section>
+
+<script>
+document.querySelectorAll('.record-row-clickable').forEach(function(row) {
+    row.addEventListener('click', async function () {
+        const pk = this.dataset.pk;
+        const isRead = this.dataset.isRead === 'true';
+        const surveyUrl = this.dataset.surveyUrl;
+
+        if (!isRead) {
+            const csrfMatch = document.cookie.match(/csrftoken=([^;]+)/);
+            const csrf = csrfMatch ? csrfMatch[1] : '';
+            await fetch('/app/notifications/' + pk + '/read/', {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': csrf,
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            });
+            this.classList.remove('record-row-unread');
+            this.dataset.isRead = 'true';
+            const pill = this.querySelector('.pill');
+            if (pill) { pill.classList.add('pill-active'); pill.textContent = '已讀'; }
+            const badge = document.querySelector('.nav-badge');
+            if (badge) {
+                const count = parseInt(badge.textContent) - 1;
+                if (count <= 0) { badge.remove(); }
+                else { badge.textContent = count; }
+            }
+        }
+
+        if (surveyUrl) { window.location.href = surveyUrl; }
+    });
+});
+</script>
 {% endblock %}
