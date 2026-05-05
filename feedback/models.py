@@ -1,5 +1,3 @@
-from collections import Counter
-import re
 from statistics import mean
 
 from django.conf import settings
@@ -8,15 +6,34 @@ from django.db.models import Count
 from django.urls import reverse
 from django.utils import timezone
 
+from .text_pipeline import keyword_counts, tokenize_feedback
+
+
+class SurveyCategory(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["name"]
+        verbose_name = "問卷分類"
+        verbose_name_plural = "問卷分類"
+
+    def __str__(self):
+        return self.name
+
 
 class Survey(models.Model):
-    class AccessMode(models.TextChoices):
-        LOGIN = "login", "登入後填答"
-
     title = models.CharField(max_length=255)
     slug = models.SlugField(unique=True)
     description = models.TextField(blank=True)
-    access_mode = models.CharField(max_length=20, choices=AccessMode.choices, default=AccessMode.LOGIN)
+    category = models.ForeignKey(
+        SurveyCategory,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="surveys",
+        verbose_name="分類",
+    )
     thank_you_email_enabled = models.BooleanField(default=True)
     improvement_tracking_enabled = models.BooleanField(default=True)
     is_active = models.BooleanField(default=True)
@@ -82,7 +99,6 @@ class FeedbackSubmission(models.Model):
     )
     respondent_name = models.CharField(max_length=120, blank=True)
     respondent_email = models.EmailField(blank=True)
-    source = models.CharField(max_length=20, choices=Survey.AccessMode.choices, default=Survey.AccessMode.LOGIN)
     consent_follow_up = models.BooleanField(default=False)
     submitted_at = models.DateTimeField(auto_now_add=True)
 
@@ -105,6 +121,9 @@ class Answer(models.Model):
     submission = models.ForeignKey(FeedbackSubmission, on_delete=models.CASCADE, related_name="answers")
     question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name="answers")
     value = models.TextField()
+    analysis_text = models.TextField(null=True, blank=True)
+    sentiment_score = models.FloatField(null=True, blank=True)
+    analysis_version = models.CharField(max_length=32, null=True, blank=True)
 
     class Meta:
         unique_together = ("submission", "question")
@@ -154,22 +173,14 @@ class ImprovementDispatch(models.Model):
         unique_together = ("improvement", "submission")
 
 
-def tokenize_feedback(text):
-    tokens = re.findall(r"[A-Za-z\u4e00-\u9fff]{2,}", (text or "").lower())
-    stop_words = {"我們", "你們", "這個", "那個", "非常", "feedback", "問卷", "改善"}
-    return [token for token in tokens if token not in stop_words]
-
-
 def keyword_summary(survey):
-    text_values = Answer.objects.filter(
+    answer_pairs = Answer.objects.filter(
         question__survey=survey,
         question__enable_keyword_tracking=True,
-    ).values_list("value", flat=True)
-    counts = Counter()
-    for value in text_values:
-        counts.update(tokenize_feedback(value))
+    ).values_list("analysis_text", "value")
+    text_values = [analysis_text or value for analysis_text, value in answer_pairs if (analysis_text or value)]
+    counts = keyword_counts(text_values)
 
-    # 預先載入所有分類規則
     all_rules = list(survey.keyword_categories.all())
 
     categories = []
@@ -191,6 +202,60 @@ def keyword_summary(survey):
             }
         )
     return categories
+
+
+def text_analysis_summary(survey):
+    answers = Answer.objects.filter(
+        question__survey=survey,
+        question__enable_keyword_tracking=True,
+    )
+    total_answers = answers.count()
+    analyzed_answers = answers.exclude(analysis_text__isnull=True).exclude(analysis_text="")
+    sentiment_values = list(answers.exclude(sentiment_score__isnull=True).values_list("sentiment_score", flat=True))
+    sentiment_avg = round(mean(sentiment_values), 3) if sentiment_values else None
+    return {
+        "total_answers": total_answers,
+        "analyzed_answers": analyzed_answers.count(),
+        "analysis_coverage": round(analyzed_answers.count() / total_answers, 3) if total_answers else 0,
+        "avg_sentiment_score": sentiment_avg,
+    }
+
+
+def category_sentiment_summary(survey):
+    answers = Answer.objects.filter(
+        question__survey=survey,
+        question__enable_keyword_tracking=True,
+    ).values_list("analysis_text", "value", "sentiment_score")
+    category_map = {
+        keyword: category
+        for keyword, category in survey.keyword_categories.values_list("keyword", "category")
+    }
+    bucket = {}
+
+    for analysis_text, value, sentiment_score in answers:
+        tokens = tokenize_feedback(analysis_text or value or "")
+        if not tokens:
+            continue
+        categories = {category_map.get(token, "未分類") for token in tokens}
+        if not categories:
+            categories = {"未分類"}
+
+        for category in categories:
+            row = bucket.setdefault(
+                category,
+                {"category": category, "positive": 0, "neutral": 0, "negative": 0, "total": 0},
+            )
+            row["total"] += 1
+            if sentiment_score is None:
+                row["neutral"] += 1
+            elif sentiment_score > 0.1:
+                row["positive"] += 1
+            elif sentiment_score < -0.1:
+                row["negative"] += 1
+            else:
+                row["neutral"] += 1
+
+    return sorted(bucket.values(), key=lambda item: item["total"], reverse=True)
 
 
 def chart_summary(survey):
@@ -223,9 +288,13 @@ def chart_summary(survey):
 
 def recommend_analysis(question):
     if question.data_type == Question.DataType.CONTINUOUS:
-        return "適合進一步做平均數比較、趨勢檢視，或延伸到 t 檢定與 ANOVA。"
-    if question.data_type in {Question.DataType.NOMINAL, Question.DataType.ORDINAL}:
-        return "適合以比例分布、交叉分析與卡方檢定檢查不同群體間差異。"
+        return "適合做平均數、標準差與趨勢檢視；若搭配名目分組題，可延伸到 t 檢定與 ANOVA。"
+    if question.data_type == Question.DataType.DISCRETE:
+        return "適合做計數型數值摘要，例如總數、平均次數與分布；第一版不自動進入 t 檢定或 ANOVA。"
+    if question.data_type == Question.DataType.NOMINAL:
+        return "適合做比例分布與交叉分析；單選名目題可作為推論統計的分組變數。"
+    if question.data_type == Question.DataType.ORDINAL:
+        return "適合做次數、比例與排序分布；因間距不一定相等，第一版不進入 t 檢定或 ANOVA。"
     if question.data_type == Question.DataType.TEXT:
         return "適合做關鍵字、情緒傾向與主題聚類，提取具體改善線索。"
     return "建議先確認資料尺度，再選擇描述統計或推論統計方法。"
