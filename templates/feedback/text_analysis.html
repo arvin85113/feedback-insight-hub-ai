@@ -29,28 +29,10 @@
             <strong>{{ keywords|length }}</strong>
         </article>
         <article class="kpi-chip">
-            <span>已分析回覆</span>
-            <strong>{{ analysis_summary.analyzed_answers|default:0 }} / {{ analysis_summary.total_answers|default:0 }}</strong>
-        </article>
-        <article class="kpi-chip" title="整體氣氛參考，非正式滿意度指標">
-            <span>平均情緒分數（參考）</span>
-            <strong>{{ analysis_summary.avg_sentiment_score|default:"-" }}</strong>
-        </article>
-        <article class="kpi-chip">
             <span>分類規則</span>
             <strong>{{ keyword_categories|length }}</strong>
         </article>
     </section>
-
-    <div class="kpi-help-callout" role="note" aria-label="關於平均情緒分數的說明">
-        <p class="kpi-help-title">關於「平均情緒分數（參考）」</p>
-        <p class="kpi-help-text">
-            此數值由系統以<strong>內建詞庫</strong>（正負面詞、否定、程度等規則）估算每一則文字回覆的傾向，得出一個大約在 <strong>−1（偏負向）</strong> 到 <strong>+1（偏正向）</strong> 之間的數字，再對目前<strong>已分析</strong>的回覆做<strong>算術平均</strong>。接近 0 表示整體語氣相對中性，偏向正或負則是<strong>大方向參考</strong>，方便一眼感受整體氣氛。
-        </p>
-        <p class="kpi-help-text">
-            它<strong>不應</strong>當成正式「滿意度分數」或與他校／他系數字直接比高低；內容過短、未含情緒詞時，也容易落在中性。若要判斷<strong>各主題</strong>（如價格、服務）是正是負、哪裡需要優先關注，請以本頁下方的<strong>分類情緒分布</strong>與<strong>關鍵字主題</strong>為主，必要時回頭閱讀實際回覆原文。
-        </p>
-    </div>
 
     <section class="manager-content-grid analytics-grid">
         <article class="manager-panel">
@@ -59,15 +41,6 @@
                     <p class="section-kicker">Keyword Signals</p>
                     <h2>關鍵字摘要</h2>
                 </div>
-            </div>
-            <div class="wordcloud-panel">
-                <h3>文字雲</h3>
-                <div class="wordcloud-controls" role="group" aria-label="文字雲顯示模式">
-                    <button type="button" class="button button-ghost button-small wordcloud-toggle active" data-mode="keyword">關鍵字</button>
-                    <button type="button" class="button button-ghost button-small wordcloud-toggle" data-mode="category">分類</button>
-                </div>
-                <div id="keyword-wordcloud" class="wordcloud-canvas" aria-label="文字雲視覺化"></div>
-                <p class="muted-text">可切換關鍵字/分類模式。字體越大代表次數越高，建議搭配下方關鍵字卡片一起解讀。</p>
             </div>
             <div class="card-grid insight-card-grid">
                 {% for keyword in keywords %}
@@ -78,6 +51,8 @@
                         </div>
                         <h3>{{ keyword.keyword }}</h3>
                         <p>此關鍵字在開放式回覆中反覆出現，可作為改善追蹤或主題分類的候選訊號。</p>
+                        <a class="button button-primary button-small"
+                        href="{% url 'feedback:improvement-create' selected_survey.slug %}?category={{ keyword.category }}&keyword={{ keyword.keyword }}"> 建立改善</a>
                     </article>
                 {% empty %}
                     <div class="empty-card">
@@ -96,49 +71,6 @@
                     <p class="section-kicker">Text Questions</p>
                     <h2>文字題清單</h2>
                 </div>
-            </div>
-            <div class="panel-head">
-                <h3>分類情緒分布</h3>
-            </div>
-            <div class="record-list sentiment-by-category">
-                {% for row in category_sentiments %}
-                    <div class="record-row record-row-stack sentiment-category-row">
-                        <div class="sentiment-category-head">
-                            <strong>{{ row.category }}</strong>
-                            <span class="muted-text sentiment-total">共 {{ row.total }} 筆</span>
-                        </div>
-                        {% if row.total %}
-                            {% widthratio row.positive row.total 100 as pct_pos %}
-                            {% widthratio row.neutral row.total 100 as pct_neu %}
-                            {% widthratio row.negative row.total 100 as pct_neg %}
-                            <div
-                                class="sentiment-stacked"
-                                role="img"
-                                aria-label="{{ row.category }} 情緒：正向 {{ row.positive }}、中性 {{ row.neutral }}、負向 {{ row.negative }}，合計 {{ row.total }}"
-                            >
-                                <div class="sentiment-stacked-track">
-                                    <span class="sentiment-slice sentiment-slice--positive" style="width: {{ pct_pos }}%"></span>
-                                    <span class="sentiment-slice sentiment-slice--neutral" style="width: {{ pct_neu }}%"></span>
-                                    <span class="sentiment-slice sentiment-slice--negative" style="width: {{ pct_neg }}%"></span>
-                                </div>
-                            </div>
-                            <ul class="sentiment-legend" aria-hidden="true">
-                                <li><span class="sentiment-dot sentiment-dot--positive"></span> 正向 {{ row.positive }}（{{ pct_pos }}%）</li>
-                                <li><span class="sentiment-dot sentiment-dot--neutral"></span> 中性 {{ row.neutral }}（{{ pct_neu }}%）</li>
-                                <li><span class="sentiment-dot sentiment-dot--negative"></span> 負向 {{ row.negative }}（{{ pct_neg }}%）</li>
-                            </ul>
-                        {% else %}
-                            <p class="muted-text">此分類暫無筆數。</p>
-                        {% endif %}
-                    </div>
-                {% empty %}
-                    <div class="empty-card">
-                        <div>
-                            <h3>尚無情緒分布資料</h3>
-                            <p>請先累積文字回覆或確認 sentiment_score 已完成計算。</p>
-                        </div>
-                    </div>
-                {% endfor %}
             </div>
             <div class="record-list">
                 {% for question in text_questions %}
@@ -271,99 +203,4 @@
         </div>
     </section>
 {% endif %}
-
-{{ keywords|json_script:"keywords-data" }}
-<script>
-(() => {
-    const cloudEl = document.getElementById("keyword-wordcloud");
-    const dataEl = document.getElementById("keywords-data");
-    const toggleButtons = Array.from(document.querySelectorAll(".wordcloud-toggle"));
-    if (!cloudEl || !dataEl) return;
-
-    let keywords = [];
-    try {
-        keywords = JSON.parse(dataEl.textContent);
-    } catch (e) {
-        return;
-    }
-    if (!Array.isArray(keywords) || !keywords.length) {
-        cloudEl.innerHTML = "<p class='muted-text'>目前資料不足，暫無文字雲可顯示。</p>";
-        return;
-    }
-
-    const palette = ["#1a3554", "#c86432", "#2f5b8a", "#2b7a59", "#7c4d9e", "#9c4722", "#0f766e", "#8b5cf6"];
-
-    const categoryColorMap = new Map();
-    const resolveCategoryColor = (category, index) => {
-        if (!categoryColorMap.has(category)) {
-            categoryColorMap.set(category, palette[index % palette.length]);
-        }
-        return categoryColorMap.get(category);
-    };
-
-    const buildCategoryItems = () => {
-        const bucket = new Map();
-        for (const item of keywords) {
-            const category = item.category || "未分類";
-            const prev = bucket.get(category) || 0;
-            bucket.set(category, prev + (Number(item.count) || 0));
-        }
-        return [...bucket.entries()].map(([label, count]) => ({
-            label,
-            count,
-            category: label,
-        }));
-    };
-
-    const renderCloud = (mode) => {
-        cloudEl.innerHTML = "";
-        const sourceItems = mode === "category"
-            ? buildCategoryItems()
-            : keywords.map((item) => ({
-                label: item.keyword,
-                count: Number(item.count) || 0,
-                category: item.category || "未分類",
-            }));
-        const items = sourceItems
-            .filter((item) => item.count > 0 && item.label)
-            .sort((a, b) => b.count - a.count)
-            .slice(0, mode === "category" ? 20 : 40);
-
-        if (!items.length) {
-            cloudEl.innerHTML = "<p class='muted-text'>目前資料不足，暫無文字雲可顯示。</p>";
-            return;
-        }
-
-        const counts = items.map((item) => item.count);
-        const min = Math.min(...counts);
-        const max = Math.max(...counts);
-
-        for (const [index, item] of items.entries()) {
-            const token = document.createElement("span");
-            const ratio = max === min ? 0.5 : (item.count - min) / (max - min);
-            const size = Math.round(16 + ratio * 26);
-            token.className = "wordcloud-token";
-            token.textContent = item.label;
-            token.title = `${item.label}：${item.count} 次`;
-            token.style.fontSize = `${size}px`;
-            token.style.color = resolveCategoryColor(item.category, index);
-            cloudEl.appendChild(token);
-        }
-    };
-
-    const setMode = (mode) => {
-        for (const btn of toggleButtons) {
-            const isActive = btn.dataset.mode === mode;
-            btn.classList.toggle("active", isActive);
-        }
-        renderCloud(mode);
-    };
-
-    for (const btn of toggleButtons) {
-        btn.addEventListener("click", () => setMode(btn.dataset.mode || "keyword"));
-    }
-
-    setMode("keyword");
-})();
-</script>
 {% endblock %}

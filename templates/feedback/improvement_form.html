@@ -15,6 +15,17 @@
     <article class="manager-panel">
         <div class="panel-head">
             <h2>通知內容</h2>
+            {% if source_keyword %}
+            <div class="info-callout">
+                <span class="info-callout-icon">💡</span>
+                <div>
+                    <div class="info-callout-title">來自文字洞察</div>
+                    <div class="info-callout-desc">
+                        此改善通知由關鍵字「{{ source_keyword }}」（分類：{{ source_category }}）觸發建立，系統已自動填入相關預設內容，你可以直接修改後送出。
+                    </div>
+                </div>
+            </div>
+            {% endif %}
         </div>
         <form method="post" class="form-stack">
             {% csrf_token %}
