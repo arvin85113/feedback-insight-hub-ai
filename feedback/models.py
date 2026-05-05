@@ -9,14 +9,31 @@ from django.urls import reverse
 from django.utils import timezone
 
 
-class Survey(models.Model):
-    class AccessMode(models.TextChoices):
-        LOGIN = "login", "登入後填答"
+class SurveyCategory(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        ordering = ["name"]
+        verbose_name = "問卷分類"
+        verbose_name_plural = "問卷分類"
+
+    def __str__(self):
+        return self.name
+
+
+class Survey(models.Model):
     title = models.CharField(max_length=255)
     slug = models.SlugField(unique=True)
     description = models.TextField(blank=True)
-    access_mode = models.CharField(max_length=20, choices=AccessMode.choices, default=AccessMode.LOGIN)
+    category = models.ForeignKey(
+        SurveyCategory,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="surveys",
+        verbose_name="分類",
+    )
     thank_you_email_enabled = models.BooleanField(default=True)
     improvement_tracking_enabled = models.BooleanField(default=True)
     is_active = models.BooleanField(default=True)
@@ -82,7 +99,6 @@ class FeedbackSubmission(models.Model):
     )
     respondent_name = models.CharField(max_length=120, blank=True)
     respondent_email = models.EmailField(blank=True)
-    source = models.CharField(max_length=20, choices=Survey.AccessMode.choices, default=Survey.AccessMode.LOGIN)
     consent_follow_up = models.BooleanField(default=False)
     submitted_at = models.DateTimeField(auto_now_add=True)
 
@@ -168,7 +184,6 @@ def keyword_summary(survey):
     for value in text_values:
         counts.update(tokenize_feedback(value))
 
-    # 預先載入所有分類規則
     all_rules = list(survey.keyword_categories.all())
 
     categories = []
@@ -222,9 +237,39 @@ def chart_summary(survey):
 
 def recommend_analysis(question):
     if question.data_type == Question.DataType.CONTINUOUS:
-        return "適合進一步做平均數比較、趨勢檢視，或延伸到 t 檢定與 ANOVA。"
-    if question.data_type in {Question.DataType.NOMINAL, Question.DataType.ORDINAL}:
-        return "適合以比例分布、交叉分析與卡方檢定檢查不同群體間差異。"
+        return "適合做平均數、標準差與趨勢檢視；若搭配名目分組題，可延伸到 t 檢定與 ANOVA。"
+    if question.data_type == Question.DataType.DISCRETE:
+        return "適合做計數型數值摘要，例如總數、平均次數與分布；第一版不自動進入 t 檢定或 ANOVA。"
+    if question.data_type == Question.DataType.NOMINAL:
+        return "適合做比例分布與交叉分析；單選名目題可作為推論統計的分組變數。"
+    if question.data_type == Question.DataType.ORDINAL:
+        return "適合做次數、比例與排序分布；因間距不一定相等，第一版不進入 t 檢定或 ANOVA。"
     if question.data_type == Question.DataType.TEXT:
         return "適合做關鍵字、情緒傾向與主題聚類，提取具體改善線索。"
     return "建議先確認資料尺度，再選擇描述統計或推論統計方法。"
+
+
+def text_analysis_summary(survey):
+    text_values = Answer.objects.filter(
+        question__survey=survey,
+        question__enable_keyword_tracking=True,
+    ).values_list("value", flat=True)
+    total = len(text_values)
+    keywords = keyword_summary(survey)
+    return {
+        "total_responses": total,
+        "unique_keywords": len(keywords),
+        "top_keyword": keywords[0]["keyword"] if keywords else None,
+    }
+
+
+def category_sentiment_summary(survey):
+    keywords = keyword_summary(survey)
+    category_map = {}
+    for item in keywords:
+        cat = item["category"]
+        if cat not in category_map:
+            category_map[cat] = {"category": cat, "keywords": [], "total_count": 0}
+        category_map[cat]["keywords"].append(item["keyword"])
+        category_map[cat]["total_count"] += item["count"]
+    return list(category_map.values())
