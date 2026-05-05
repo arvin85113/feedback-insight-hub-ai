@@ -69,6 +69,7 @@ def serialize_notice(notice):
         "id": notice.id,
         "sent_at": notice.sent_at.isoformat(),
         "personalized_note": notice.personalized_note,
+        "is_read": notice.is_read,
         "submission": {
             "id": notice.submission.id,
             "survey": {
@@ -164,6 +165,7 @@ def get_customer_notifications_payload(user):
     return {
         "notices": [serialize_notice(notice) for notice in notices],
         "notice_count": notices.count(),
+        "unread_count": notices.filter(is_read=False).count(),
         "latest_notice": serialize_notice(notices.first()) if notices.exists() else None,
     }
 
