@@ -1,29 +1,12 @@
 # CLAUDE.md
 
-## 開發規則（重要）
-
-- 每次修改程式碼前，必須先列出修改計畫，等待我確認後才能動手
-- 不可以直接修改檔案，一定要先問我
-
-## 我負責的範圍
-
-- 通知中心（Notice Center）：/dashboard/notices/
-- 部分顧客中心（Customer Center）：/app/notifications/
-
-## 注意事項
-
-- 不要修改 seed_demo.py
-- 測試用假資料請使用 seed_notification_test
-
----
-
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
 
 **Feedback Insight Hub** — a bilingual (Traditional Chinese / English) feedback and survey management platform. Django handles presentation, authentication, and ORM; a Flask microservice handles the feedback domain with analytics. The two services share the same PostgreSQL database (Supabase in production).
 
-## Current Collaboration Baseline (2026-04-28)
+## Current Collaboration Baseline (2026-05-05)
 
 - The product is now fully login-only. Old quick/hybrid access modes have been removed from UI, admin, runtime payloads, and schema.
 - `Survey.access_mode` and `FeedbackSubmission.source` were removed in migration `feedback/0008_remove_feedbacksubmission_source_and_more.py`.
@@ -35,6 +18,29 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Manager analysis-related pages now use a unified survey-index first flow: pick a survey from list cards, then drill into stats / text analysis / improvements / notices.
 - Customer portal has been split into account profile (`/accounts/profile/`) and notification preferences (`/accounts/preferences/`). The customer home page focuses on account summary, submission records, and notification summaries.
 - Uncommitted local collaboration files may exist (`CLAUDE.md`, `.claude/settings.local.json`, `scripts/`). Do not mix them into unrelated feature commits unless requested.
+- Password reset / password change flows added via Django built-in auth views (`accounts/urls.py`). Templates live in `templates/accounts/`.
+- Notification AJAX mark-as-read added: `MarkNoticeReadView` at `/app/notifications/<pk>/read/`. `ImprovementDispatch.is_read` field added in migration `feedback/0007_add_is_read_to_improvementdispatch.py`.
+- Unread notification count injected via `feedback/context_processors.py` → `unread_notification_count`; registered in `TEMPLATES.context_processors`.
+- Email backend auto-detects SMTP vs console: if `EMAIL_HOST` env var is set, Django uses SMTP; otherwise falls back to console (safe for local dev without `.env` config).
+
+### ⚠️ Schema fields that must NOT be reverted
+
+The following fields exist in the database (Supabase production) and are used by production code. **Never remove them from `feedback/models.py` or create a migration that drops them without a coordinated schema migration plan:**
+
+| Model | Field | Added in |
+|---|---|---|
+| `Survey` | `category` (FK → SurveyCategory) | `feedback/0007_add_survey_category.py` |
+| `Answer` | `analysis_text` | `feedback/0007_answer_analysis_text_answer_analysis_version_and_more.py` |
+| `Answer` | `sentiment_score` | same |
+| `Answer` | `analysis_version` | same |
+| `ImprovementDispatch` | `is_read` | `feedback/0007_add_is_read_to_improvementdispatch.py` |
+
+The following fields were **intentionally removed** and must NOT be added back:
+
+| Model | Field | Removed in |
+|---|---|---|
+| `Survey` | `access_mode` | `feedback/0008_remove_feedbacksubmission_source_and_more.py` |
+| `FeedbackSubmission` | `source` | same |
 
 ## Commands
 
@@ -140,6 +146,12 @@ Django (port 8000)  →  service_client.py  →  Flask microservice (port 5001)
 | `/accounts/signup/` | — | `accounts:signup` |
 | `/accounts/preferences/` | — | `accounts:preferences` |
 | `/accounts/profile/` | — | `accounts:profile` |
+| `/accounts/password-reset/` | PasswordResetView | `accounts:password_reset` |
+| `/accounts/password-reset/done/` | PasswordResetDoneView | `accounts:password_reset_done` |
+| `/accounts/reset/<uidb64>/<token>/` | PasswordResetConfirmView | `accounts:password_reset_confirm` |
+| `/accounts/reset/done/` | PasswordResetCompleteView | `accounts:password_reset_complete` |
+| `/accounts/password-change/` | PasswordChangeView | `accounts:password_change` |
+| `/accounts/password-change/done/` | PasswordChangeDoneView | `accounts:password_change_done` |
 
 ### Roles
 
@@ -202,12 +214,37 @@ POST actions (`action` hidden input):
 
 ### Text Analysis
 
-Tokenizes submission text using regex supporting both Chinese characters and English words (2+ chars). Filters a hardcoded stop-word list. Returns top 20 keywords by frequency with `category` field (looked up from `KeywordCategory`). Found in `services/feedback_service/analysis.py` and mirrored in `feedback/local_service.py`.
+Text analysis is dictionary-driven and cached on `Answer` rows.
+
+Core files:
+- `feedback/text_pipeline.py` — tokenization, synonym normalization, sentiment scoring, and `ANALYSIS_VERSION`.
+- `feedback/data/` — stopwords, synonyms, keyword/category map, sentiment dictionaries, negation words, and intensifiers.
+- `feedback/local_service.py` — Django fallback payload with keywords, summary, and category sentiment distribution.
+- `services/feedback_service/app.py` — Flask payload mirrors the same text-analysis contract.
+
+`Answer` cached fields:
+- `analysis_text`: normalized text used for keyword analysis.
+- `sentiment_score`: approximate sentiment score from dictionary rules.
+- `analysis_version`: text pipeline version used when the row was computed.
+
+Management commands:
+- `python manage.py rebuild_text_analysis --dry-run` — preview historical text-answer rebuild.
+- `python manage.py rebuild_text_analysis` — backfill `analysis_text`, `sentiment_score`, and `analysis_version`.
+- `python manage.py sync_keyword_categories --dry-run` / `python manage.py sync_keyword_categories` — sync `feedback/data/keyword_category_map.json` into `KeywordCategory`.
+- `python manage.py top_uncategorized_keywords --survey <slug>` — inspect high-frequency uncategorized terms.
+
+Payload keys from `service_client.get_text_analysis(slug)`:
+- `keywords`: list of keyword rows with `keyword`, `count`, and `category`.
+- `summary`: includes answer coverage and average sentiment score.
+- `category_sentiments`: per-category positive / neutral / negative counts.
+
+`keyword_summary()` in `feedback/models.py` pre-loads all `KeywordCategory` rules (1 query) then matches with fuzzy substring containment, avoiding N+1 queries.
 
 Text analysis UI (`templates/feedback/text_analysis.html`) now matches the survey-manager / stats index pattern:
 - category pills and sort dropdown: `newest` (default), `oldest`, `title`
 - list of surveys with text-analysis availability status
 - selecting a survey via `?survey=<slug>` opens the keyword analysis panel
+- selected survey view includes KPI summary, word cloud, keyword cards, category sentiment distribution, text question list, and keyword-category rules
 - old right-side selector / execute button flow has been removed
 
 ### Statistical Analysis
@@ -332,10 +369,17 @@ Copy `.env.example` to `.env`. Key variables:
 | `ADMIN_USERNAME` | — | Used by `ensure_superuser` command |
 | `ADMIN_EMAIL` | — | Used by `ensure_superuser` command |
 | `ADMIN_PASSWORD` | — | Used by `ensure_superuser` command |
+| `EMAIL_HOST` | — | If set, auto-switches `EMAIL_BACKEND` to SMTP. Leave unset for console (local dev). |
+| `EMAIL_PORT` | `587` | SMTP port |
+| `EMAIL_USE_TLS` | `True` | |
+| `EMAIL_USE_SSL` | `False` | Mutually exclusive with TLS |
+| `EMAIL_HOST_USER` | — | SMTP username / Gmail address |
+| `EMAIL_HOST_PASSWORD` | — | Gmail App Password (16-digit; requires 2FA enabled) |
+| `DEFAULT_FROM_EMAIL` | `noreply@feedback-platform.local` | Sender address in outgoing mail |
 
 ## Data Models
 
-**Django ORM** (source of truth): `SurveyCategory`, `Survey`, `Question`, `FeedbackSubmission`, `Answer`, `KeywordCategory`, `ImprovementUpdate`, `ImprovementDispatch` in `feedback/models.py`. `Survey.access_mode` and `FeedbackSubmission.source` no longer exist. `User` (extends `AbstractUser`) with `role` and `notification_opt_in` in `accounts/models.py`.
+**Django ORM** (source of truth): `SurveyCategory`, `Survey`, `Question`, `FeedbackSubmission`, `Answer`, `KeywordCategory`, `ImprovementUpdate`, `ImprovementDispatch` in `feedback/models.py`. `Survey.access_mode` and `FeedbackSubmission.source` no longer exist. `ImprovementDispatch.is_read` (bool, default False) tracks customer read status. `User` (extends `AbstractUser`) with `role` and `notification_opt_in` in `accounts/models.py`.
 
 **SQLAlchemy models** in `services/feedback_service/models.py` mirror the Django schema — they read/write the same tables. When adding fields, update both ORMs and create a Django migration.
 
@@ -360,8 +404,12 @@ Fetched in 2 queries (no N+1): one for all improvements, one for all surveys; gr
 | `feedback/0001` – `0004` | Initial schema |
 | `feedback/0005` | Remove QUICK/HYBRID choices from Survey.access_mode and FeedbackSubmission.source |
 | `feedback/0006` | Data migration: convert existing hybrid/quick records to login |
-| `feedback/0007` | Add SurveyCategory model; add Survey.category FK |
+| `feedback/0007_add_survey_category` | Add SurveyCategory model; add Survey.category FK |
+| `feedback/0007_answer_analysis_text_answer_analysis_version_and_more` | Add cached text-analysis fields to Answer (`analysis_text`, `analysis_version`, `sentiment_score`) |
+| `feedback/0007_add_is_read_to_improvementdispatch` | Add `is_read` to ImprovementDispatch |
 | `feedback/0008` | Remove obsolete Survey.access_mode and FeedbackSubmission.source columns |
+| `feedback/0009_merge_20260428_2019` | Merge migration joining category/schema-removal branch with text-analysis field branch |
+| `feedback/0010_merge_20260505_2155` | Merge migration joining is_read branch with 0009 (2026-05-05 integration) |
 
 ## Deployment
 
@@ -372,6 +420,25 @@ Deployed on **Render** (see `render.yaml`):
 `build.sh` runs: `pip install`, `migrate`, `ensure_superuser`, `seed_demo`, `collectstatic`.
 
 Static files served by Whitenoise. `DATABASE_URL` must be set manually in Render dashboard for both services (points to Supabase PostgreSQL).
+
+## Git Collaboration Rules
+
+**Before opening a PR, always run:**
+
+```bash
+git fetch origin && git merge origin/main   # sync to latest main first
+python manage.py check                       # must show 0 issues
+python manage.py migrate --check            # must show no pending migrations
+python -m py_compile feedback/models.py feedback/views.py feedback/local_service.py
+```
+
+**Hard rules to prevent schema regression:**
+
+1. **Never edit `feedback/models.py` without creating a matching migration.** Run `python manage.py makemigrations` after every model change and commit the migration file.
+2. **Never remove `SurveyCategory`, `Survey.category`, `Answer.analysis_text/sentiment_score/analysis_version`, or `ImprovementDispatch.is_read`** — these fields exist in the Supabase production database. See the ⚠️ table in the Collaboration Baseline section.
+3. **Never add back `Survey.access_mode` or `FeedbackSubmission.source`** — they were intentionally dropped in migration `0008`.
+4. **Feature branches must be rebased / merged from latest `main` before PR**, not from an older snapshot. Working from an outdated base causes fields that `main` already has to appear as "new" in your diff, and fields that `main` removed to silently return.
+5. **Do not commit `CLAUDE.md`, `.claude/settings.local.json`, or `scripts/` in feature PRs** unless the PR is explicitly about updating those files.
 
 ## Dependencies
 
@@ -391,39 +458,16 @@ whitenoise==6.9.0
 
 No frontend JS/CSS framework. All UI is custom HTML + `static/css/app.css`.
 
-## 通知系統（Notification System）
+### Notification System
 
-### Context Processor
+`feedback/context_processors.py` provides `unread_notification_count` — queries unread `ImprovementDispatch` rows for the logged-in customer (not managers) and injects it into every template context. Registered in `TEMPLATES.context_processors` in `config/settings.py`.
 
-`feedback/context_processors.py` 提供 `unread_notification_count`，對所有已登入的顧客（非 manager）查詢未讀 `ImprovementDispatch` 數量，注入所有 template context，讓 `base.html` 導覽列可直接使用 `{{ unread_notification_count }}`。已在 `config/settings.py` 的 `TEMPLATES.context_processors` 中註冊。
+**Navbar unread badge:** `base.html` customer nav link shows `.nav-badge` when `unread_notification_count > 0`. Styled in `static/css/app.css` as a red circle positioned top-right of the link.
 
-### Email 設定
+**AJAX mark-as-read flow** (`customer_notifications.html`):
+1. Each notification row has `data-pk`, `data-is-read`, `data-survey-url` attributes.
+2. On click, JS checks if unread, then POSTs to `/app/notifications/<pk>/read/` with `X-Requested-With: XMLHttpRequest` and CSRF cookie.
+3. `MarkNoticeReadView` returns `{"ok": true}` for AJAX, or redirects for non-AJAX.
+4. Frontend removes `record-row-unread` class, decrements badge, updates pill to "已讀", then navigates to `data-survey-url`.
 
-透過 `.env` 環境變數控制，預設為 console backend（開發用）。正式寄信需設定以下變數：
-
-| 變數 | 值 |
-|---|---|
-| `EMAIL_BACKEND` | `django.core.mail.backends.smtp.EmailBackend` |
-| `EMAIL_HOST` | `smtp.gmail.com` |
-| `EMAIL_PORT` | `587` |
-| `EMAIL_USE_TLS` | `True` |
-| `EMAIL_HOST_USER` | 你的 Gmail 帳號 |
-| `EMAIL_HOST_PASSWORD` | Gmail App Password（16 碼） |
-| `DEFAULT_FROM_EMAIL` | 你的 Gmail 帳號 |
-
-Gmail App Password 產生：Google 帳號 → 安全性 → 兩步驟驗證 → 應用程式密碼。
-
-### 導覽列未讀 Badge
-
-`base.html` 顧客端導覽列的「通知」連結帶有 `.nav-badge`，顯示 `{{ unread_notification_count }}`（大於 0 才顯示）。樣式定義在 `static/css/app.css`：紅色圓形、`position: absolute` 定位於連結右上角，帶 `box-shadow` 增加視覺層次。
-
-### AJAX 標記已讀流程
-
-`/app/notifications/` 頁面（`customer_notifications.html`）：
-
-1. 每條通知 row 帶有 `data-pk`、`data-is-read`、`data-survey-url` 屬性
-2. 點擊整條通知時，JS 判斷若未讀，向 `/app/notifications/<pk>/read/` 發送 AJAX POST
-3. 請求帶 `X-Requested-With: XMLHttpRequest` header，CSRF token 從 cookie 取得
-4. `MarkNoticeReadView` 偵測到 AJAX 請求後回傳 `{"ok": True}`（非 AJAX 則 redirect）
-5. 前端收到回應後即時更新：移除 `record-row-unread` class、badge 數字 -1、pill 改為「已讀」
-6. UI 更新完成後導向 `data-survey-url`（對應問卷詳情頁）
+**Gmail App Password:** Google Account → Security → 2-Step Verification → App Passwords. Set `EMAIL_HOST=smtp.gmail.com` and `EMAIL_HOST_PASSWORD=<16-char-app-password>` in `.env`.
