@@ -148,6 +148,7 @@ class ImprovementDispatch(models.Model):
     submission = models.ForeignKey(FeedbackSubmission, on_delete=models.CASCADE, related_name="dispatches")
     personalized_note = models.TextField(blank=True)
     sent_at = models.DateTimeField(default=timezone.now)
+    is_read = models.BooleanField(default=False)
 
     class Meta:
         unique_together = ("improvement", "submission")

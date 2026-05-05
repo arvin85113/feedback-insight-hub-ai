@@ -1,5 +1,22 @@
 # CLAUDE.md
 
+## 開發規則（重要）
+
+- 每次修改程式碼前，必須先列出修改計畫，等待我確認後才能動手
+- 不可以直接修改檔案，一定要先問我
+
+## 我負責的範圍
+
+- 通知中心（Notice Center）：/dashboard/notices/
+- 部分顧客中心（Customer Center）：/app/notifications/
+
+## 注意事項
+
+- 不要修改 seed_demo.py
+- 測試用假資料請使用 seed_notification_test
+
+---
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
@@ -58,8 +75,9 @@ gunicorn services.feedback_service.app:app --bind 0.0.0.0:10000
 ### Custom Management Commands
 
 ```bash
-python manage.py ensure_superuser   # Create admin from env vars (ADMIN_USERNAME/EMAIL/PASSWORD)
-python manage.py seed_demo          # Seed example survey + keyword categories
+python manage.py ensure_superuser        # Create admin from env vars (ADMIN_USERNAME/EMAIL/PASSWORD)
+python manage.py seed_demo               # Seed example survey + keyword categories
+python manage.py seed_notification_test  # Seed 4 test users, survey, submissions, improvement dispatch + email
 ```
 
 ## Architecture
@@ -104,6 +122,7 @@ Django (port 8000)  →  service_client.py  →  Flask microservice (port 5001)
 | `/` | HomeView | `feedback:home` |
 | `/app/` | CustomerHomeView | `feedback:customer-home` |
 | `/app/notifications/` | CustomerNotificationsView | `feedback:customer-notifications` |
+| `/app/notifications/<pk>/read/` | MarkNoticeReadView | `feedback:notice-mark-read` |
 | `/dashboard/` | DashboardView | `feedback:dashboard` |
 | `/dashboard/forms/` | SurveyManagerView | `feedback:survey-manager` |
 | `/dashboard/forms/new/` | SurveyCreateView | `feedback:survey-create` |
@@ -112,6 +131,7 @@ Django (port 8000)  →  service_client.py  →  Flask microservice (port 5001)
 | `/dashboard/text-analysis/` | TextAnalysisView | `feedback:text-analysis` |
 | `/dashboard/improvements/` | ImprovementListView | `feedback:improvement-list` |
 | `/dashboard/notices/` | NoticeCenterView | `feedback:notice-center` |
+| `/dashboard/notices/<pk>/` | NoticeDetailView | `feedback:notice-detail` |
 | `/survey/<slug>/` | SurveyDetailView | `feedback:survey-detail` |
 | `/survey/<slug>/success/` | SurveySubmitSuccessView | `feedback:survey-success` |
 | `/survey/<slug>/improvement/new/` | ImprovementCreateView | `feedback:improvement-create` |
@@ -370,3 +390,40 @@ whitenoise==6.9.0
 ```
 
 No frontend JS/CSS framework. All UI is custom HTML + `static/css/app.css`.
+
+## 通知系統（Notification System）
+
+### Context Processor
+
+`feedback/context_processors.py` 提供 `unread_notification_count`，對所有已登入的顧客（非 manager）查詢未讀 `ImprovementDispatch` 數量，注入所有 template context，讓 `base.html` 導覽列可直接使用 `{{ unread_notification_count }}`。已在 `config/settings.py` 的 `TEMPLATES.context_processors` 中註冊。
+
+### Email 設定
+
+透過 `.env` 環境變數控制，預設為 console backend（開發用）。正式寄信需設定以下變數：
+
+| 變數 | 值 |
+|---|---|
+| `EMAIL_BACKEND` | `django.core.mail.backends.smtp.EmailBackend` |
+| `EMAIL_HOST` | `smtp.gmail.com` |
+| `EMAIL_PORT` | `587` |
+| `EMAIL_USE_TLS` | `True` |
+| `EMAIL_HOST_USER` | 你的 Gmail 帳號 |
+| `EMAIL_HOST_PASSWORD` | Gmail App Password（16 碼） |
+| `DEFAULT_FROM_EMAIL` | 你的 Gmail 帳號 |
+
+Gmail App Password 產生：Google 帳號 → 安全性 → 兩步驟驗證 → 應用程式密碼。
+
+### 導覽列未讀 Badge
+
+`base.html` 顧客端導覽列的「通知」連結帶有 `.nav-badge`，顯示 `{{ unread_notification_count }}`（大於 0 才顯示）。樣式定義在 `static/css/app.css`：紅色圓形、`position: absolute` 定位於連結右上角，帶 `box-shadow` 增加視覺層次。
+
+### AJAX 標記已讀流程
+
+`/app/notifications/` 頁面（`customer_notifications.html`）：
+
+1. 每條通知 row 帶有 `data-pk`、`data-is-read`、`data-survey-url` 屬性
+2. 點擊整條通知時，JS 判斷若未讀，向 `/app/notifications/<pk>/read/` 發送 AJAX POST
+3. 請求帶 `X-Requested-With: XMLHttpRequest` header，CSRF token 從 cookie 取得
+4. `MarkNoticeReadView` 偵測到 AJAX 請求後回傳 `{"ok": True}`（非 AJAX 則 redirect）
+5. 前端收到回應後即時更新：移除 `record-row-unread` class、badge 數字 -1、pill 改為「已讀」
+6. UI 更新完成後導向 `data-survey-url`（對應問卷詳情頁）
