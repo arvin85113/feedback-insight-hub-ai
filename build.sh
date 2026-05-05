@@ -2,6 +2,7 @@
 set -o errexit
 
 pip install -r requirements.txt
+python manage.py migrate feedback 0011 --fake
 python manage.py migrate
 python manage.py ensure_superuser
 python manage.py seed_demo
