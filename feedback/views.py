@@ -212,18 +212,18 @@ class SurveyCreateView(DashboardBaseMixin, CreateView):
         return context
 
     def form_valid(self, form):
-        base = slugify(form.instance.title)
-        if not base:
-            base = f"survey-{uuid.uuid4().hex[:8]}"
-        slug, n = base, 2
-        while Survey.objects.filter(slug=slug).exists():
-            slug = f"{base}-{n}"
-            n += 1
+        slug = slugify(form.cleaned_data["title"])
+        if Survey.objects.filter(slug=slug).exists():
+            counter = 2
+            while Survey.objects.filter(slug=f"{slug}-{counter}").exists():
+                counter += 1
+            slug = f"{slug}-{counter}"
         form.instance.slug = slug
         form.instance.improvement_tracking_enabled = True
-        survey = form.save()
-        messages.success(self.request, "問卷已建立，接著可以進入題目編輯器完成配置。")
-        return HttpResponseRedirect(reverse("feedback:survey-builder", args=[survey.slug]))
+        return super().form_valid(form)
+
+    def get_success_url(self):
+        return reverse("feedback:survey-builder", args=[self.object.slug])
 
 
 class SurveyBuilderView(DashboardBaseMixin, DetailView):
@@ -366,8 +366,6 @@ class StatsOverviewView(DashboardBaseMixin, TemplateView):
         context["charts"] = payload.get("charts", [])
         context["question_analysis"] = payload.get("question_analysis", [])
         context["inferential_analysis"] = payload.get("inferential_analysis", [])
-        context["available_tests_count"] = payload.get("available_tests_count", 0)
-        context["skipped_tests_count"] = payload.get("skipped_tests_count", 0)
         return context
 
 
@@ -417,10 +415,6 @@ class TextAnalysisView(DashboardBaseMixin, TemplateView):
         survey = Survey.objects.filter(slug=selected_slug).first() if selected_slug else None
         context.update(self.get_dashboard_base_context())
         context["selected_survey"] = survey
-        payload = service_client.get_text_analysis(selected_slug) if selected_slug else {"keywords": [], "summary": {}}
-        context["keywords"] = payload["keywords"]
-        context["analysis_summary"] = payload.get("summary", {})
-        context["category_sentiments"] = payload.get("category_sentiments", [])
         text_surveys = (
             Survey.objects.filter(is_active=True)
             .select_related("category")
@@ -446,6 +440,7 @@ class TextAnalysisView(DashboardBaseMixin, TemplateView):
         context["categories"] = SurveyCategory.objects.all()
         context["current_sort"] = sort
         context["current_category"] = category_id
+        context["keywords"] = service_client.get_text_analysis(selected_slug)["keywords"] if survey else []
         context["text_questions"] = survey.questions.filter(data_type=Question.DataType.TEXT) if survey else []
         context["keyword_categories"] = (
             KeywordCategory.objects.filter(survey=survey).order_by("category", "keyword")
@@ -640,30 +635,54 @@ class ImprovementCreateView(ManagerRequiredMixin, CreateView):
     def dispatch(self, request, *args, **kwargs):
         self.survey = get_object_or_404(Survey, slug=kwargs["slug"])
         if request.method == "POST" and not self.survey.improvement_tracking_enabled:
-            messages.warning(request, "這份問卷的改善追蹤目前已停用，請先啟用後再建立通知。")
+            messages.warning(request, "這份問卷的改善追蹤目前已停用。")
             return redirect(f"{reverse('feedback:improvement-list')}?survey={self.survey.slug}")
         return super().dispatch(request, *args, **kwargs)
+
+    def get_initial(self):
+        initial = super().get_initial()
+        category = self.request.GET.get("category", "")
+        keyword = self.request.GET.get("keyword", "")
+        if category:
+            initial["related_category"] = category
+        if keyword:
+            initial["title"] = f"改善「{keyword}」相關問題"
+            initial["summary"] = f"根據顧客回饋中「{keyword}」關鍵字的高頻出現，針對此方向進行改善。"
+        return initial
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["survey"] = self.survey
+        context["source_keyword"] = self.request.GET.get("keyword", "")
+        context["source_category"] = self.request.GET.get("category", "")
+        return context
 
     def form_valid(self, form):
         form.instance.survey = self.survey
         response = super().form_valid(form)
-        recipients = (
+
+        all_recipients = (
             self.survey.submissions.select_related("user")
             .filter(Q(consent_follow_up=True) | Q(user__notification_opt_in=True))
             .exclude(respondent_email="")
         )
+
+        related_recipients_ids = set()
         if form.instance.related_category:
-            recipients = recipients.filter(
+            related_qs = all_recipients.filter(
                 answers__question__survey=self.survey,
                 answers__value__icontains=form.instance.related_category,
             ).distinct()
+            related_recipients_ids = set(related_qs.values_list("id", flat=True))
 
         sent_count = 0
-        for submission in recipients:
+        for submission in all_recipients.distinct():
             if submission.user and not submission.user.notification_opt_in:
                 continue
             if not submission.consent_follow_up and not (submission.user and submission.user.notification_opt_in):
                 continue
+
+            is_related = submission.id in related_recipients_ids
 
             dispatch, created = ImprovementDispatch.objects.get_or_create(
                 improvement=form.instance,
@@ -672,7 +691,7 @@ class ImprovementCreateView(ManagerRequiredMixin, CreateView):
                     "personalized_note": (
                         f"你先前在 {form.instance.related_category or self.survey.title} 提供的回饋，"
                         "已被納入這次改善項目中，因此我們主動把最新進度同步給你。"
-                    )
+                    ) if is_related else ""
                 },
             )
             if not created:
@@ -685,18 +704,30 @@ class ImprovementCreateView(ManagerRequiredMixin, CreateView):
                 recipient_list=[submission.respondent_email],
                 fail_silently=True,
             )
+
+            if is_related:
+                send_mail(
+                    subject=f"感謝你的回饋！{self.survey.title}",
+                    message=(
+                        f"親愛的 {submission.display_name}，\n\n"
+                        f"感謝你先前填寫「{self.survey.title}」並提供寶貴意見。\n"
+                        f"你的回饋直接促成了我們這次的改善：\n\n"
+                        f"【{form.instance.title}】\n"
+                        f"{form.instance.summary}\n\n"
+                        f"感謝你讓我們變得更好！"
+                    ),
+                    from_email=None,
+                    recipient_list=[submission.respondent_email],
+                    fail_silently=True,
+                )
             sent_count += 1
 
         if sent_count:
             form.instance.emailed_at = timezone.now()
             form.instance.save(update_fields=["emailed_at"])
+
         messages.success(self.request, f"改善通知已建立，並成功寄送給 {sent_count} 位填答者。")
         return response
 
     def get_success_url(self):
         return f"{reverse('feedback:improvement-list')}?survey={self.survey.slug}"
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["survey"] = self.survey
-        return context
