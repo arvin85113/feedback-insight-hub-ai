@@ -298,3 +298,29 @@ def recommend_analysis(question):
     if question.data_type == Question.DataType.TEXT:
         return "適合做關鍵字、情緒傾向與主題聚類，提取具體改善線索。"
     return "建議先確認資料尺度，再選擇描述統計或推論統計方法。"
+
+
+def text_analysis_summary(survey):
+    text_values = Answer.objects.filter(
+        question__survey=survey,
+        question__enable_keyword_tracking=True,
+    ).values_list("value", flat=True)
+    total = len(text_values)
+    keywords = keyword_summary(survey)
+    return {
+        "total_responses": total,
+        "unique_keywords": len(keywords),
+        "top_keyword": keywords[0]["keyword"] if keywords else None,
+    }
+
+
+def category_sentiment_summary(survey):
+    keywords = keyword_summary(survey)
+    category_map = {}
+    for item in keywords:
+        cat = item["category"]
+        if cat not in category_map:
+            category_map[cat] = {"category": cat, "keywords": [], "total_count": 0}
+        category_map[cat]["keywords"].append(item["keyword"])
+        category_map[cat]["total_count"] += item["count"]
+    return list(category_map.values())

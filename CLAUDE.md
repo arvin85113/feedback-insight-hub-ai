@@ -471,3 +471,47 @@ No frontend JS/CSS framework. All UI is custom HTML + `static/css/app.css`.
 4. Frontend removes `record-row-unread` class, decrements badge, updates pill to "已讀", then navigates to `data-survey-url`.
 
 **Gmail App Password:** Google Account → Security → 2-Step Verification → App Passwords. Set `EMAIL_HOST=smtp.gmail.com` and `EMAIL_HOST_PASSWORD=<16-char-app-password>` in `.env`.
+
+## Merge Incident Log - 2026-05-07
+
+Context: `origin/main` contained teammate updates for text-analysis/improvement integration, but also introduced a dangerous migration chain:
+
+- `feedback/migrations/0010_remove_answer_analysis_text_and_more.py`
+- `feedback/migrations/0011_improvementdispatch_is_read.py`
+- `build.sh` workaround: `python manage.py migrate feedback 0011 --fake`
+
+Why this is dangerous:
+
+- `0010_remove_answer_analysis_text_and_more.py` removes `Answer.analysis_text`, `Answer.analysis_version`, and `Answer.sentiment_score`.
+- These columns already exist in Supabase production and are part of the text-analysis cache/sentiment pipeline.
+- Running that migration on production would execute `DROP COLUMN` for those fields and break the newer text-analysis flow.
+- Faking `0011` in `build.sh` is also unsafe because it can mark migrations as applied without actually creating required database columns.
+
+Resolution used:
+
+- Merged `origin/main` into local `main` without committing immediately.
+- Kept the local production-safe schema:
+  - `SurveyCategory`
+  - `Survey.category`
+  - `Answer.analysis_text`
+  - `Answer.analysis_version`
+  - `Answer.sentiment_score`
+  - `ImprovementDispatch.is_read`
+- Removed the dangerous/duplicate remote migration files from the merge result:
+  - `0010_remove_answer_analysis_text_and_more.py`
+  - `0011_improvementdispatch_is_read.py`
+- Removed the `build.sh` fake migration workaround.
+- Kept the safe remote additions:
+  - `https://feedback-insight-hub-pa75.onrender.com` in `CSRF_TRUSTED_ORIGINS`
+  - `text_analysis_summary()` and `category_sentiment_summary()` helper functions in `feedback/models.py`
+
+Validation before commit:
+
+```bash
+python manage.py check
+python manage.py makemigrations --check --dry-run
+python manage.py migrate --plan
+python -m py_compile feedback/models.py feedback/views.py feedback/local_service.py accounts/views.py
+```
+
+Expected result: no pending model migrations and no planned migration operations against Supabase.

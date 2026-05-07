@@ -13,6 +13,7 @@ DEBUG = os.getenv("DEBUG", "True").lower() == "true"
 ALLOWED_HOSTS = [host for host in os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1,testserver,.onrender.com").split(",") if host]
 CSRF_TRUSTED_ORIGINS = [
     "https://feedback-insight-hub.onrender.com",
+    "https://feedback-insight-hub-pa75.onrender.com",
 ]
 
 INSTALLED_APPS = [
