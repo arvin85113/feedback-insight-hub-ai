@@ -39,6 +39,9 @@
             <button type="submit" class="button button-primary button-wide">登入</button>
         </form>
         <p class="auth-link-row">
+            <a href="{% url 'accounts:password_reset' %}">忘記密碼？</a>
+        </p>
+        <p class="auth-link-row">
             還沒有帳戶？
             <a href="{% url 'accounts:signup' %}">建立顧客帳戶</a>
         </p>

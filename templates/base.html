@@ -25,6 +25,12 @@
                             <a href="{% url 'feedback:dashboard' %}">管理端</a>
                         {% else %}
                             <a href="{% url 'feedback:customer-home' %}">顧客端</a>
+                            <a href="{% url 'feedback:customer-notifications' %}" class="nav-notif-link">
+                                通知
+                                {% if unread_notification_count %}
+                                    <span class="nav-badge">{{ unread_notification_count }}</span>
+                                {% endif %}
+                            </a>
                             <a href="{% url 'accounts:preferences' %}">通知偏好</a>
                             <a href="{% url 'accounts:profile' %}">資料設定</a>
                         {% endif %}

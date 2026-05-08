@@ -280,3 +280,59 @@ Builder UI 規則：
 **資料庫：** Supabase PostgreSQL，`DATABASE_URL` 需在 Render dashboard 兩個服務各自設定。Migration 0007 已加入 SurveyCategory。
 
 **本地開發：** `python-dotenv` 自動載入 `.env`，不需手動 export。
+
+---
+
+## 2026-05-07 Merge 事故處理紀錄
+
+### 問題來源
+
+遠端 `origin/main` 合入組員文字分析更新時，同時帶入一條危險 migration：
+
+- `feedback/migrations/0010_remove_answer_analysis_text_and_more.py`
+
+該 migration 會移除 Supabase production 已存在且正在使用的三個欄位：
+
+- `feedback_answer.analysis_text`
+- `feedback_answer.analysis_version`
+- `feedback_answer.sentiment_score`
+
+這三欄是新版文字分析快取與情感分數資料流的一部分，不能在未規劃資料遷移的情況下刪除。
+
+### 風險
+
+如果 Render 部署時執行該 migration，PostgreSQL 會實際 `DROP COLUMN`，造成：
+
+- 文字分析快取欄位消失
+- 依賴 `analysis_text` / `sentiment_score` 的本地服務與管理命令失效
+- Supabase production schema 與目前程式碼不一致
+
+遠端另有 `build.sh` 的 `migrate feedback 0011 --fake` workaround。此做法同樣不保留，因為它會把 migration 標記為已執行但不實際修改 DB，容易讓 production schema 進入不可預期狀態。
+
+### 採用解法
+
+本次 merge 以「保留 production-safe schema」為原則：
+
+- 保留本地既有安全 migration 鏈：`0007_add_is_read_to_improvementdispatch.py` + `0010_merge_20260505_2155.py`
+- 移除遠端危險 migration：`0010_remove_answer_analysis_text_and_more.py`
+- 移除遠端重複 migration：`0011_improvementdispatch_is_read.py`
+- 移除 `build.sh` 的 `--fake` migration workaround
+- 保留遠端安全功能：
+  - pa75 Render 網址加入 `CSRF_TRUSTED_ORIGINS`
+  - `text_analysis_summary()` / `category_sentiment_summary()` helper
+
+### 驗證項目
+
+合併後需確認：
+
+```bash
+python manage.py check
+python manage.py makemigrations --check --dry-run
+python manage.py migrate --plan
+python -m py_compile feedback/models.py feedback/views.py feedback/local_service.py accounts/views.py
+```
+
+目前判定標準：
+
+- `makemigrations --check --dry-run` 應顯示 `No changes detected`
+- `migrate --plan` 不應出現會刪除 `Answer.analysis_*` 或 `sentiment_score` 的操作
