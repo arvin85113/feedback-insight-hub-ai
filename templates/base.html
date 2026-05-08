@@ -29,7 +29,8 @@
                         <a href="{% url 'feedback:dashboard' %}">管理端</a>
                     {% else %}
                         <a href="{% url 'feedback:customer-home' %}">顧客端</a>
-                        <a href="{% url 'feedback:customer-notifications' %}" class="nav-notif-link">
+                        <a href="{% url 'feedback:customer-notifications' %}"
+                           class="nav-notif-link {% if unread_notification_count %}nav-notif-unread{% else %}nav-notif-clear{% endif %}">
                             通知
                             {% if unread_notification_count %}
                                 <span class="nav-badge">{{ unread_notification_count }}</span>
