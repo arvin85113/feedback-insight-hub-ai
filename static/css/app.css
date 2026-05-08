@@ -4392,7 +4392,7 @@ input[type="checkbox"] {
     border: 1px solid #ddd6c8;
     border-radius: 12px;
     background: #fbfaf6;
-    box-shadow: 0 1px 4px rgba(26, 24, 21, 0.07);
+    box-shadow: 0 2px 8px rgba(26, 24, 21, 0.13);
 }
 
 .public-hero-card {
@@ -4830,7 +4830,7 @@ input[type="checkbox"] {
     background: rgba(255, 255, 255, 0.70);
     border: 1px solid #ddd6c8;
     border-radius: 10px;
-    box-shadow: 0 1px 4px rgba(26, 24, 21, 0.07);
+    box-shadow: 0 2px 8px rgba(26, 24, 21, 0.13);
 }
 
 .auth-page-public .summary-card .info-label {
@@ -4870,7 +4870,7 @@ input[type="checkbox"] {
     background: rgba(255, 255, 255, 0.78);
     border: 1px solid #ddd6c8;
     border-radius: 12px;
-    box-shadow: 0 1px 4px rgba(26, 24, 21, 0.07);
+    box-shadow: 0 2px 8px rgba(26, 24, 21, 0.13);
 }
 
 .auth-page-public .panel-head {
@@ -5199,7 +5199,7 @@ input[type="checkbox"] {
     background: rgba(255, 255, 255, 0.72);
     border: 1px solid #ddd6c8;
     border-radius: 12px;
-    box-shadow: 0 1px 4px rgba(29, 26, 23, 0.07);
+    box-shadow: 0 2px 8px rgba(29, 26, 23, 0.13);
 }
 
 .customer-kpi-card {
