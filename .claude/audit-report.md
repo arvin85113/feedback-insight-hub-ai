@@ -1,6 +1,136 @@
 # 全面健檢報告
 
-> 初次檢查：2026-04-20　|　最後更新：2026-04-28
+## 2026-05-09 更新：公開頁與顧客端 UI 重整
+
+### 結論
+
+- 公開首頁已改為 Claude Design 方向的極簡 landing page：低資訊密度、大留白、黑白米色系、弱化行銷感。
+- 登入、註冊、密碼重設、密碼更改頁面已往同一套公開頁視覺靠攏。
+- 顧客端 `/app/`、通知中心、通知偏好、個人資料頁已改成一致的 customer workspace 風格。
+- Manager dashboard / survey builder / 統計分析等管理端工作區暫時維持原本風格，避免 demo 前全站大改造成回歸風險。
+
+### 已完成 UI 範圍
+
+| 頁面 / 區塊 | 狀態 |
+|---|---|
+| 首頁 `/` | ✅ 改為 Claude-like 極簡 SaaS landing page；移除公開 Active Surveys 清單，符合 B2B login-only 定位 |
+| 公開頁 shell | ✅ 新增/調整 public 專用視覺，首頁使用獨立 landing 結構，不污染管理端 |
+| 登入 / 註冊 | ✅ 改為較一致的公開頁入口風格 |
+| 密碼重設流程 | ✅ reset form / done / confirm / complete 頁面已換成新版 auth 視覺 |
+| 密碼更改頁 | ✅ 改為 customer workspace 風格，與個人資料頁一致 |
+| 顧客端首頁 `/app/` | ✅ 標題改為歡迎語；通知與最新狀態卡片重排；通知預覽限制為最新幾筆 |
+| 通知中心 `/app/notifications/` | ✅ 標題字級統一；KPI 卡片精簡；最新通知整合為可滾動列表 |
+| 通知偏好 `/accounts/preferences/` | ✅ 全域改善通知開關與儲存按鈕改為同列對齊；返回按鈕改為回到通知 |
+| 個人資料 `/accounts/profile/` | ✅ 標題字級對齊通知頁；新增帳號欄位；主要 CTA 改為變更密碼 |
+| 顧客端導覽列 | ✅ 保留首頁 / 顧客端 / 通知 / 個人資料 / 登出；通知與個人資料有明確背景狀態 |
+
+### 設計決策
+
+- 首頁移除公開問卷入口是有意決策：目前產品定位是企業客戶使用的 login-only 智慧問卷平台，問卷入口保留在登入後顧客端。
+- 首頁與公開 auth 頁可使用較獨立的 Claude-like 風格；登入後 manager/customer 工作區先維持既有產品語言，不在 demo 前做全站 redesign。
+- UI 調整以 typography、spacing、留白、弱化卡片陰影為主，不導入 Tailwind / HTMX / Alpine，也不做 schema 或統計引擎變更。
+
+### 後續注意
+
+- 若後續要全站一致化，應先決定是否把 manager dashboard 也遷移到同一套 Claude-like token，而不是逐頁零散調整。
+- 目前首頁與工作區仍有視覺語言差異，屬於 demo 前可接受的分階段交付。
+- 若要上 Render，需要確認 `collectstatic` 後新版 `static/css/app.css` 正確載入，避免瀏覽器快取看到舊樣式。
+
+---
+
+## 2026-05-08 更新：Gmail SMTP 密碼重設寄信已驗證
+
+### 結論
+
+- 本機 Django 密碼重設寄信已成功改用 Gmail SMTP。
+- 原本失敗原因不是 Django view 或 template 問題，而是 Gmail 拒絕一般帳號密碼登入 SMTP。
+- 正確做法是使用 Google「應用程式密碼」作為 `EMAIL_HOST_PASSWORD`。
+
+### 已確認現況
+
+| 項目 | 狀態 |
+|---|---|
+| `EMAIL_BACKEND` | 使用 `django.core.mail.backends.smtp.EmailBackend` |
+| `EMAIL_HOST` | `smtp.gmail.com` |
+| `EMAIL_PORT` | `587` |
+| `EMAIL_USE_TLS` | `True` |
+| `EMAIL_HOST_USER` | 已設定 |
+| `EMAIL_HOST_PASSWORD` | 已改為 Google App Password |
+| 密碼重設信 | 已成功寄出 |
+
+### 操作紀錄
+
+1. 本機測試密碼重設時，server log 顯示 `SMTPAuthenticationError 535 Username and Password not accepted`。
+2. 判定原因為 Gmail SMTP 不接受一般 Google 帳號密碼。
+3. 在 Google 帳號安全性頁面建立 App Password。
+4. 將 `.env` 的 `EMAIL_HOST_PASSWORD` 改為 App Password。
+5. 重新啟動 Django development server。
+6. 再次測試 `/accounts/password-reset/`，寄信成功。
+
+### 後續注意
+
+- `.env` 不可提交到 git。
+- Render production 也需要設定相同類型的 SMTP 環境變數，不能只依賴本機 `.env`。
+- 若之後更換 Gmail 密碼或停用 App Password，需要重新產生並更新 `EMAIL_HOST_PASSWORD`。
+
+---
+
+> 初次檢查：2026-04-20　|　最後更新：2026-05-05
+
+---
+
+## 2026-05-05 最新協作狀態
+
+### 已完成
+
+| 項目 | 狀態 |
+|---|---|
+| 密碼重設流程 | ✅ Django 內建 auth views；`accounts/urls.py` 新增 4 個 URL；`templates/accounts/` 新增 7 個模板（form / done / confirm / complete / email / subject / change） |
+| 密碼更改流程 | ✅ `/accounts/password-change/` 與 `/accounts/password-change/done/`，登入頁加入「忘記密碼」連結 |
+| SMTP 郵件自動偵測 | ✅ `config/settings.py`：有 `EMAIL_HOST` 環境變數時切換 SMTP；否則 console fallback，本機開發免設定 |
+| `ImprovementDispatch.is_read` 欄位 | ✅ 新增 bool 欄位，default False；migration `feedback/0007_add_is_read_to_improvementdispatch` |
+| 未讀通知 badge（context processor） | ✅ `feedback/context_processors.py` 注入 `unread_notification_count`；`base.html` customer 導覽列顯示紅點 badge（`unread_notification_count > 0` 時） |
+| AJAX 標記已讀 | ✅ `MarkNoticeReadView` at `/app/notifications/<pk>/read/`；JS 收到 `{"ok": true}` 後移除 `record-row-unread` 樣式、遞減 badge、更新狀態 pill，再跳轉問卷頁 |
+| `NoticeDetailView` | ✅ `/dashboard/notices/<pk>/` 顯示通知詳情；`feedback/urls.py` 新增路由 |
+| `seed_notification_test` 管理指令 | ✅ 完全自給自足：建立 4 個測試使用者 + 問卷 + 填答紀錄 + `ImprovementDispatch` + Email，支援完整通知測試流程 |
+| `keyword_summary()` 效能升級 | ✅ 預先載入所有 `KeywordCategory` 規則（1 query），模糊子字串比對；消除 N+1 查詢 |
+| Schema 回歸修復 | ✅ commit `4c8288f` 誤刪 `SurveyCategory`、`Survey.category` FK、`Answer.analysis_text/sentiment_score/analysis_version`；已在 `d73c241` 全數恢復 |
+| 誤加回欄位移除 | ✅ 同一 commit 誤將已刪 `Survey.access_mode` 和 `FeedbackSubmission.source` 加回；已在 `d73c241` 移除 |
+| Migration 0010 | ✅ merge migration `feedback/0010_merge_20260505_2155`：合併 `is_read` 分支與 `0009`，解除分叉 |
+| 重複設定修復 | ✅ `config/settings.py` 移除重複的 `load_dotenv()` 呼叫與重複的 `EMAIL_*` 設定區塊 |
+| `.env.example` 補齊 | ✅ 新增 `EMAIL_HOST` / `EMAIL_PORT` / `EMAIL_USE_TLS` / `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` / `DEFAULT_FROM_EMAIL` 說明 |
+
+### Schema 回歸事件紀要（2026-05-05）
+
+commit `4c8288f`（組員 alan，文字洞察串接改善追蹤）在合入 main 時帶入了舊版的 `feedback/models.py`，造成以下回歸：
+
+| 被刪除的欄位 | 影響 |
+|---|---|
+| `SurveyCategory` model 整個消失 | 問卷分類功能完全失效 |
+| `Survey.category` FK | 同上 |
+| `Answer.analysis_text` | 文字分析快取失效 |
+| `Answer.sentiment_score` | 情感分析快取失效 |
+| `Answer.analysis_version` | 版本追蹤失效 |
+
+| 誤加回的欄位 | 影響 |
+|---|---|
+| `Survey.access_mode` | 違反 0008 migration；若 migrate 會試圖加回已刪除欄位 |
+| `FeedbackSubmission.source` | 同上 |
+
+commit `d73c241` 全數修正。Supabase production DB 未受影響（欄位狀態以 DB 為準）。
+
+### 新增 URL 路由（2026-05-05）
+
+| URL | View | Name |
+|---|---|---|
+| `/accounts/password-reset/` | `PasswordResetView` | `accounts:password_reset` |
+| `/accounts/password-reset/done/` | `PasswordResetDoneView` | `accounts:password_reset_done` |
+| `/accounts/reset/<uidb64>/<token>/` | `PasswordResetConfirmView` | `accounts:password_reset_confirm` |
+| `/accounts/reset/done/` | `PasswordResetCompleteView` | `accounts:password_reset_complete` |
+| `/accounts/password-change/` | `PasswordChangeView` | `accounts:password_change` |
+| `/accounts/password-change/done/` | `PasswordChangeDoneView` | `accounts:password_change_done` |
+| `/app/notifications/<pk>/read/` | `MarkNoticeReadView` | `feedback:notice-mark-read` |
+| `/dashboard/notices/<pk>/` | `NoticeDetailView` | `feedback:notice-detail` |
 
 ---
 
@@ -18,6 +148,8 @@
 | Scale widget 與設定脫節 | ✅ 有 `options_text` 時改用 RadioSelect；無選項時 max 收斂為 5 |
 | 通知中心「建立新通知」跳第一份問卷 | ✅ 改為下拉選擇問卷後才啟用按鈕；每筆通知旁加「同問卷新增」捷徑 |
 | `builder_tabs` dead code 清除 | ✅ `SurveyBuilderView.get_context_data` 移除未使用的三 tab 列表 |
+| QR code 按鈕重排與 popover 定位修復（commit 10a03b3） | ✅ QR 按鈕移至 copy-link 前；按鈕文字改為「QRcode」；popover 改用 absolute 定位不撐版面；向左展開、垂直置中 |
+| 通知中心 UI 改善與 Email 功能（commit 75eb022） | ✅ Gmail SMTP 設定加入 `config/settings.py`；context processor 注入未讀通知數；navbar 未讀紅點 badge；未讀通知藍色左邊框 + 淡藍底色；點擊通知 AJAX 自動標記已讀並跳轉；`seed_notification_test` 改寫為自給自足 |
 
 ### 首頁問卷清單確認
 
@@ -247,6 +379,11 @@ Builder UI 規則：
 | ef76217 | Enforce improvement_tracking, redesign survey create form with toggle and callout |
 | d7d92c2 | Add survey category with filter/sort, redesign create form layout |
 | 517603f | Implement tabbed survey builder with inline edit, responses, and settings tab |
+| 10a03b3 | QR code 按鈕移至 copy-link 前、改名為 QRcode；popover 改 absolute 定位，向左展開不撐版面 |
+| 75eb022 | 通知中心 UI 改善：Gmail SMTP、context processor 未讀注入、navbar 紅點 badge、AJAX 標記已讀、seed_notification_test 改寫 |
+| 4c8288f | 文字洞察串接改善追蹤（建立改善按鈕、預填功能、模糊分類比對）⚠️ 此 commit 造成 models.py schema 回歸，已由 d73c241 修復 |
+| 577e1e9 | 密碼重設 / 密碼更改流程；SMTP 郵件自動偵測；帳號 templates 新增（組員 mikao07） |
+| d73c241 | 整合 notification-center + password-reset；修復 schema 回歸；keyword_summary 1-query 升級；migration 0010 merge |
 
 ---
 
@@ -256,6 +393,7 @@ Builder UI 規則：
 |---|---|---|
 | ⚠️ 低 | Flask `/api/stats` 未接 Pandas 統計契約 | 若重新啟用 Flask stats，推論統計區塊會缺資料；目前 Django-only fallback 不受影響 |
 | ⚠️ 低 | 題目排序仍是簡易上下移動 | 已可移動題目，但尚未做 drag-and-drop |
+| ⚠️ 低 | Flask `text-analysis` text 類型建議文字輕微不一致 | 與 Django fallback 不影響功能，低優先 |
 
 ---
 
@@ -277,62 +415,48 @@ Builder UI 規則：
 
 **註冊頁：** 欄位精簡為 username / first_name / email / password / notification_opt_in，頂部有 Google 登入預留位（disabled）。
 
-**資料庫：** Supabase PostgreSQL，`DATABASE_URL` 需在 Render dashboard 兩個服務各自設定。Migration 0007 已加入 SurveyCategory。
+**密碼管理：** 支援完整的密碼重設（寄 email token）和密碼更改流程。登入頁有「忘記密碼」連結。
+
+**通知系統：** `ImprovementDispatch.is_read` 追蹤客戶已讀狀態。context processor 全域注入未讀數。客戶端 navbar 顯示紅點 badge；點擊通知卡片 AJAX 標記已讀並跳轉問卷頁。
+
+**Email 後端：** 有 `EMAIL_HOST` 環境變數時自動切換 SMTP；否則 console fallback。支援 Gmail App Password。
+
+**資料庫：** Supabase PostgreSQL，`DATABASE_URL` 需在 Render dashboard 兩個服務各自設定。Migration 0010 已整合所有分支。
 
 **本地開發：** `python-dotenv` 自動載入 `.env`，不需手動 export。
+# 2026-05-08 更新：Gmail SMTP 密碼重設寄信已驗證
+
+## 結論
+
+- 本機 Django 密碼重設寄信已成功改用 Gmail SMTP。
+- 原本失敗原因不是 Django view 或 template 問題，而是 Gmail 拒絕一般帳號密碼登入 SMTP。
+- 正確做法是使用 Google「應用程式密碼」作為 `EMAIL_HOST_PASSWORD`。
+
+## 已確認現況
+
+| 項目 | 狀態 |
+|---|---|
+| `EMAIL_BACKEND` | 使用 `django.core.mail.backends.smtp.EmailBackend` |
+| `EMAIL_HOST` | `smtp.gmail.com` |
+| `EMAIL_PORT` | `587` |
+| `EMAIL_USE_TLS` | `True` |
+| `EMAIL_HOST_USER` | 已設定 |
+| `EMAIL_HOST_PASSWORD` | 已改為 Google App Password |
+| 密碼重設信 | 已成功寄出 |
+
+## 操作紀錄
+
+1. 本機測試密碼重設時，server log 顯示 `SMTPAuthenticationError 535 Username and Password not accepted`。
+2. 判定原因為 Gmail SMTP 不接受一般 Google 帳號密碼。
+3. 在 Google 帳號安全性頁面建立 App Password。
+4. 將 `.env` 的 `EMAIL_HOST_PASSWORD` 改為 App Password。
+5. 重新啟動 Django development server。
+6. 再次測試 `/accounts/password-reset/`，寄信成功。
+
+## 後續注意
+
+- `.env` 不可提交到 git。
+- Render production 也需要設定相同類型的 SMTP 環境變數，不能只依賴本機 `.env`。
+- 若之後更換 Gmail 密碼或停用 App Password，需要重新產生並更新 `EMAIL_HOST_PASSWORD`。
 
 ---
-
-## 2026-05-07 Merge 事故處理紀錄
-
-### 問題來源
-
-遠端 `origin/main` 合入組員文字分析更新時，同時帶入一條危險 migration：
-
-- `feedback/migrations/0010_remove_answer_analysis_text_and_more.py`
-
-該 migration 會移除 Supabase production 已存在且正在使用的三個欄位：
-
-- `feedback_answer.analysis_text`
-- `feedback_answer.analysis_version`
-- `feedback_answer.sentiment_score`
-
-這三欄是新版文字分析快取與情感分數資料流的一部分，不能在未規劃資料遷移的情況下刪除。
-
-### 風險
-
-如果 Render 部署時執行該 migration，PostgreSQL 會實際 `DROP COLUMN`，造成：
-
-- 文字分析快取欄位消失
-- 依賴 `analysis_text` / `sentiment_score` 的本地服務與管理命令失效
-- Supabase production schema 與目前程式碼不一致
-
-遠端另有 `build.sh` 的 `migrate feedback 0011 --fake` workaround。此做法同樣不保留，因為它會把 migration 標記為已執行但不實際修改 DB，容易讓 production schema 進入不可預期狀態。
-
-### 採用解法
-
-本次 merge 以「保留 production-safe schema」為原則：
-
-- 保留本地既有安全 migration 鏈：`0007_add_is_read_to_improvementdispatch.py` + `0010_merge_20260505_2155.py`
-- 移除遠端危險 migration：`0010_remove_answer_analysis_text_and_more.py`
-- 移除遠端重複 migration：`0011_improvementdispatch_is_read.py`
-- 移除 `build.sh` 的 `--fake` migration workaround
-- 保留遠端安全功能：
-  - pa75 Render 網址加入 `CSRF_TRUSTED_ORIGINS`
-  - `text_analysis_summary()` / `category_sentiment_summary()` helper
-
-### 驗證項目
-
-合併後需確認：
-
-```bash
-python manage.py check
-python manage.py makemigrations --check --dry-run
-python manage.py migrate --plan
-python -m py_compile feedback/models.py feedback/views.py feedback/local_service.py accounts/views.py
-```
-
-目前判定標準：
-
-- `makemigrations --check --dry-run` 應顯示 `No changes detected`
-- `migrate --plan` 不應出現會刪除 `Answer.analysis_*` 或 `sentiment_score` 的操作

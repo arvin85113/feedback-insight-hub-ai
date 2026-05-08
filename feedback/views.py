@@ -454,7 +454,10 @@ class TextAnalysisView(DashboardBaseMixin, TemplateView):
         context["categories"] = SurveyCategory.objects.all()
         context["current_sort"] = sort
         context["current_category"] = category_id
-        context["keywords"] = service_client.get_text_analysis(selected_slug)["keywords"] if survey else []
+        text_analysis_payload = service_client.get_text_analysis(selected_slug) if survey else {}
+        context["keywords"] = text_analysis_payload.get("keywords", []) if survey else []
+        context["analysis_summary"] = text_analysis_payload.get("summary", {}) if survey else {}
+        context["category_sentiments"] = text_analysis_payload.get("category_sentiments", []) if survey else []
         context["text_questions"] = survey.questions.filter(data_type=Question.DataType.TEXT) if survey else []
         context["keyword_categories"] = (
             KeywordCategory.objects.filter(survey=survey).order_by("category", "keyword")

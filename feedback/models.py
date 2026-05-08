@@ -1,3 +1,5 @@
+from collections import Counter
+import re
 from statistics import mean
 
 from django.conf import settings
@@ -5,8 +7,6 @@ from django.db import models
 from django.db.models import Count
 from django.urls import reverse
 from django.utils import timezone
-
-from .text_pipeline import keyword_counts, tokenize_feedback
 
 
 class SurveyCategory(models.Model):
@@ -173,89 +173,61 @@ class ImprovementDispatch(models.Model):
         unique_together = ("improvement", "submission")
 
 
+def tokenize_feedback(text):
+    tokens = re.findall(r"[A-Za-z\u4e00-\u9fff]{2,}", (text or "").lower())
+    stop_words = {"我們", "你們", "這個", "那個", "非常", "feedback", "問卷", "改善"}
+    return [token for token in tokens if token not in stop_words]
+
+
+def _resolve_keyword_category(keyword, *, count, rules):
+    normalized = (keyword or "").strip().lower()
+    if not normalized:
+        return "未分類"
+
+    best_rule = None
+    best_score = None
+    for rule in rules:
+        if count < rule.threshold:
+            continue
+        rule_keyword = (rule.keyword or "").strip().lower()
+        if not rule_keyword:
+            continue
+        if rule_keyword == normalized:
+            score = (3, len(rule_keyword), rule.threshold)
+        elif rule_keyword in normalized or normalized in rule_keyword:
+            score = (2, len(rule_keyword), rule.threshold)
+        else:
+            continue
+        if best_score is None or score > best_score:
+            best_rule = rule
+            best_score = score
+    return best_rule.category if best_rule else "未分類"
+
+
 def keyword_summary(survey):
     answer_pairs = Answer.objects.filter(
         question__survey=survey,
         question__enable_keyword_tracking=True,
     ).values_list("analysis_text", "value")
-    text_values = [analysis_text or value for analysis_text, value in answer_pairs if (analysis_text or value)]
-    counts = keyword_counts(text_values)
+
+    counts = Counter()
+    for analysis_text, value in answer_pairs:
+        counts.update(tokenize_feedback(analysis_text or value))
+
+    all_rules = list(survey.keyword_categories.all())
 
     all_rules = list(survey.keyword_categories.all())
 
     categories = []
     for keyword, count in counts.most_common(20):
-        mapping = None
-        for rule in all_rules:
-            if count >= rule.threshold and (
-                rule.keyword == keyword or
-                rule.keyword in keyword or
-                keyword in rule.keyword
-            ):
-                mapping = rule
-                break
         categories.append(
             {
                 "keyword": keyword,
                 "count": count,
-                "category": mapping.category if mapping else "未分類",
+                "category": _resolve_keyword_category(keyword, count=count, rules=all_rules),
             }
         )
     return categories
-
-
-def text_analysis_summary(survey):
-    answers = Answer.objects.filter(
-        question__survey=survey,
-        question__enable_keyword_tracking=True,
-    )
-    total_answers = answers.count()
-    analyzed_answers = answers.exclude(analysis_text__isnull=True).exclude(analysis_text="")
-    sentiment_values = list(answers.exclude(sentiment_score__isnull=True).values_list("sentiment_score", flat=True))
-    sentiment_avg = round(mean(sentiment_values), 3) if sentiment_values else None
-    return {
-        "total_answers": total_answers,
-        "analyzed_answers": analyzed_answers.count(),
-        "analysis_coverage": round(analyzed_answers.count() / total_answers, 3) if total_answers else 0,
-        "avg_sentiment_score": sentiment_avg,
-    }
-
-
-def category_sentiment_summary(survey):
-    answers = Answer.objects.filter(
-        question__survey=survey,
-        question__enable_keyword_tracking=True,
-    ).values_list("analysis_text", "value", "sentiment_score")
-    category_map = {
-        keyword: category
-        for keyword, category in survey.keyword_categories.values_list("keyword", "category")
-    }
-    bucket = {}
-
-    for analysis_text, value, sentiment_score in answers:
-        tokens = tokenize_feedback(analysis_text or value or "")
-        if not tokens:
-            continue
-        categories = {category_map.get(token, "未分類") for token in tokens}
-        if not categories:
-            categories = {"未分類"}
-
-        for category in categories:
-            row = bucket.setdefault(
-                category,
-                {"category": category, "positive": 0, "neutral": 0, "negative": 0, "total": 0},
-            )
-            row["total"] += 1
-            if sentiment_score is None:
-                row["neutral"] += 1
-            elif sentiment_score > 0.1:
-                row["positive"] += 1
-            elif sentiment_score < -0.1:
-                row["negative"] += 1
-            else:
-                row["neutral"] += 1
-
-    return sorted(bucket.values(), key=lambda item: item["total"], reverse=True)
 
 
 def chart_summary(survey):
@@ -301,26 +273,59 @@ def recommend_analysis(question):
 
 
 def text_analysis_summary(survey):
-    text_values = Answer.objects.filter(
+    answers = Answer.objects.filter(
         question__survey=survey,
         question__enable_keyword_tracking=True,
-    ).values_list("value", flat=True)
-    total = len(text_values)
-    keywords = keyword_summary(survey)
+    )
+    total_answers = answers.count()
+    analyzed_answers = answers.exclude(analysis_text__isnull=True).exclude(analysis_text="")
+    sentiment_values = list(
+        answers.exclude(sentiment_score__isnull=True).values_list("sentiment_score", flat=True)
+    )
+    sentiment_avg = round(mean(sentiment_values), 3) if sentiment_values else None
     return {
-        "total_responses": total,
-        "unique_keywords": len(keywords),
-        "top_keyword": keywords[0]["keyword"] if keywords else None,
+        "total_answers": total_answers,
+        "analyzed_answers": analyzed_answers.count(),
+        "analysis_coverage": round(analyzed_answers.count() / total_answers, 3) if total_answers else 0,
+        "avg_sentiment_score": sentiment_avg,
     }
 
 
 def category_sentiment_summary(survey):
-    keywords = keyword_summary(survey)
-    category_map = {}
-    for item in keywords:
-        cat = item["category"]
-        if cat not in category_map:
-            category_map[cat] = {"category": cat, "keywords": [], "total_count": 0}
-        category_map[cat]["keywords"].append(item["keyword"])
-        category_map[cat]["total_count"] += item["count"]
-    return list(category_map.values())
+    answers = Answer.objects.filter(
+        question__survey=survey,
+        question__enable_keyword_tracking=True,
+    ).values_list("analysis_text", "value", "sentiment_score")
+    all_rules = list(survey.keyword_categories.all())
+    answer_tokens = []
+    token_counts = Counter()
+    for analysis_text, value, sentiment_score in answers:
+        tokens = tokenize_feedback(analysis_text or value or "")
+        if not tokens:
+            continue
+        answer_tokens.append((tokens, sentiment_score))
+        token_counts.update(tokens)
+
+    bucket = {}
+    for tokens, sentiment_score in answer_tokens:
+        categories = {
+            _resolve_keyword_category(token, count=token_counts[token], rules=all_rules)
+            for token in set(tokens)
+        } or {"未分類"}
+
+        for category in categories:
+            row = bucket.setdefault(
+                category,
+                {"category": category, "positive": 0, "neutral": 0, "negative": 0, "total": 0},
+            )
+            row["total"] += 1
+            if sentiment_score is None:
+                row["neutral"] += 1
+            elif sentiment_score > 0.1:
+                row["positive"] += 1
+            elif sentiment_score < -0.1:
+                row["negative"] += 1
+            else:
+                row["neutral"] += 1
+
+    return sorted(bucket.values(), key=lambda item: item["total"], reverse=True)

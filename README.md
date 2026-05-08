@@ -148,6 +148,110 @@ python manage.py sync_keyword_categories
 python manage.py top_uncategorized_keywords --survey <survey-slug>
 ```
 
+Text-analysis payload contract from `service_client.get_text_analysis(slug)`:
+
+- `keywords`: keyword frequency rows
+- `summary`: coverage + average sentiment score
+- `category_sentiments`: per-category positive / neutral / negative counts
+
+Text-analysis rule source-of-truth policy:
+
+- Runtime source: `KeywordCategory` in database (Django / Supabase).
+- Versioned seed source: `feedback/data/keyword_category_map.json`.
+- Recommended workflow: edit JSON in git, then sync to DB via management command.
+
+### Keyword Rule Sync SOP
+
+Use this when updating keyword-to-category mappings:
+
+1. Edit `feedback/data/keyword_category_map.json` and commit the change.
+2. Preview sync result:
+
+```bash
+python manage.py sync_keyword_categories --dry-run
+```
+
+3. Apply to database:
+
+```bash
+python manage.py sync_keyword_categories
+```
+
+4. Verify expected rule counts on target survey and then check text-analysis page.
+
+Do not rely on ad-hoc manual DB edits as the primary process; JSON + sync keeps rules auditable and consistent across environments.
+
+### Text Analysis Troubleshooting
+
+If the text-analysis page shows keywords but sentiment distribution appears empty, check:
+
+1. `TextAnalysisView` passes `analysis_summary` and `category_sentiments` to template context (not just `keywords`).
+2. Historical answers may not have cached `analysis_text` / `sentiment_score` yet. Rebuild once:
+
+```bash
+python manage.py rebuild_text_analysis
+```
+
+3. In `feedback/models.py`, avoid duplicate helper definitions for `text_analysis_summary()` and `category_sentiment_summary()`. Duplicate definitions can silently override newer sentiment logic.
+
+### 文字分類規則操作 SOP（給操作人員）
+
+適用對象：維護文字洞察 / 文字雲關鍵字分類的人員。
+
+核心原則：
+
+- 版控來源：`feedback/data/keyword_category_map.json`
+- 執行來源：資料庫 `KeywordCategory`（本機 DB / Supabase）
+- 標準流程：先改 JSON，再同步 DB；不要只改 DB
+
+#### 新增或修改規則
+
+1. 編輯 `feedback/data/keyword_category_map.json`。
+2. 先預覽（不寫入）：
+
+```bash
+python manage.py sync_keyword_categories --dry-run
+```
+
+3. 正式套用：
+
+```bash
+python manage.py sync_keyword_categories
+```
+
+4. 到文字洞察頁面確認分類與文字雲是否符合預期。
+
+#### 刪除規則（重要）
+
+目前 `sync_keyword_categories` 以新增/更新（upsert）為主，不會自動刪除資料庫中已存在但 JSON 已移除的舊規則。
+
+建議刪除流程：
+
+1. 先從 JSON 移除該規則。
+2. 執行 dry-run 與正式同步。
+3. 若資料庫仍有舊規則，再於資料庫刪除該筆。
+4. 重新整理文字洞察頁面驗證結果。
+
+#### 常用參數
+
+- 指定問卷：
+
+```bash
+python manage.py sync_keyword_categories --survey <survey-slug>
+```
+
+- 覆寫門檻：
+
+```bash
+python manage.py sync_keyword_categories --threshold <number>
+```
+
+- 指定 JSON 檔：
+
+```bash
+python manage.py sync_keyword_categories --file feedback/data/keyword_category_map.json
+```
+
 ## Local Setup
 
 ### 1. Create environment
