@@ -1,35 +1,156 @@
 # Feedback Insight Hub
 
-以 Django 作為門面層，負責：
+Feedback Insight Hub 是一套以登入制問卷為核心的顧客回饋管理平台。系統把「問卷建立、填答紀錄、統計分析、文字洞察、改善追蹤、通知回推」串成同一個工作流，目標不是只收集表單，而是讓管理者能把回饋轉換成可追蹤的改善行動。
 
-- 使用者驗證與角色分流
-- 模板頁面與後台入口
-- Django Admin 與帳號管理
+目前專案以 Django 為主要執行入口，並保留 Flask feedback domain service 的微服務設計。正式 demo / Render 部署建議先使用 Django fallback 路徑，除非 Flask service 已部署且確認 schema 與統計 payload 完全相容。
 
-以 Flask 作為 feedback domain 微服務，負責：
+## Current Status
 
-- 首頁統計摘要
-- 顧客端回饋紀錄與通知列表
-- 管理端儀表板彙整
-- 問卷提交寫入
-- 統計分析與文字分析 API
+- 問卷已改為 100% login-only，舊的 quick / hybrid access mode 已從 UI、schema 與 payload 中移除。
+- Django 是目前主要穩定服務：頁面、登入、ORM、問卷填答、統計、文字分析與改善追蹤都可透過 Django fallback 運作。
+- Flask service 仍存在於 `services/feedback_service/`，但 `/api/stats` 尚未完整同步 Django fallback 的 Pandas/SciPy 推論統計格式。
+- 生產資料庫使用 Supabase PostgreSQL；本地預設使用 SQLite。
+- Manager workspace 目前包含問卷管理、統計分析、文字洞察、改善追蹤、通知中心。
+- Customer portal 目前包含填答紀錄、通知摘要、個人資料設定與通知偏好設定。
+- Google OAuth / Google login placeholder 必須保留，這是另一位組員負責的整合項目。
 
-## 架構
+## Tech Stack
 
-- `accounts/`
-  - Django 帳號、登入、偏好設定
-- `feedback/`
-  - Django façade views
-  - 問卷建置與改善公告管理
-  - Flask service client
-- `services/feedback_service/`
-  - Flask app
-  - SQLAlchemy data access
-  - feedback domain API
+| Layer | Tech |
+|---|---|
+| Web app | Django 6.0.3 |
+| Domain service | Flask 3.1.2 |
+| Database | SQLite local / Supabase PostgreSQL production |
+| ORM | Django ORM + SQLAlchemy mirror models |
+| Statistics | pandas + scipy |
+| Text analysis | jieba + dictionary-based keyword / sentiment pipeline |
+| Static files | Whitenoise |
+| Deployment | Render |
+| Frontend | Django templates + custom CSS only |
 
-## 本機啟動
+No frontend framework is used. Most UI styling lives in `static/css/app.css`.
 
-1. 安裝依賴
+## Repository Structure
+
+```text
+accounts/                    User model, auth views, signup, profile, preferences
+config/                      Django settings, root URLs, WSGI / ASGI
+feedback/                    Main Django app: surveys, views, local service, stats, text pipeline
+feedback/data/               Text-analysis dictionaries and keyword maps
+feedback/management/commands Custom seed / rebuild / sync commands
+services/feedback_service/   Flask microservice and SQLAlchemy models
+static/css/app.css           Main handcrafted stylesheet
+templates/                   Django templates
+build.sh                     Render build script
+render.yaml                  Render blueprint
+```
+
+## Core Architecture
+
+```text
+Browser
+  |
+  v
+Django app
+  |-- Django ORM -> shared database
+  |-- feedback/service_client.py
+        |-- Flask service if FEEDBACK_SERVICE_URL is set and healthy
+        |-- feedback/local_service.py fallback otherwise
+
+Shared database:
+  - local: db.sqlite3
+  - production: Supabase PostgreSQL
+```
+
+`feedback/service_client.py` implements a circuit-breaker style fallback. If `FEEDBACK_SERVICE_URL` is not set, Django uses `feedback/local_service.py` directly. This is the recommended current deployment mode because the Django fallback contains the newest Pandas/SciPy statistics contract.
+
+## Main Product Flow
+
+1. Manager creates a survey and questions.
+2. Customer logs in and fills the survey.
+3. Manager reviews response volume and descriptive statistics.
+4. System recommends and runs eligible inferential tests.
+5. Text answers are normalized, tokenized, categorized, and summarized.
+6. Manager creates improvement updates from insights.
+7. Customers receive improvement notifications and can track follow-up status.
+
+## Key Features
+
+### Manager Workspace
+
+- Survey management with category filter and sort controls.
+- Survey builder with question preview, data type hints, QR code, and settings tab.
+- Stats analysis index: select a survey, then inspect descriptive and inferential analysis.
+- Text analysis index: keyword frequency, category sentiment, keyword rules.
+- Improvement tracking: per-survey tracking toggle and improvement update creation.
+- Notice center: survey-first notification management.
+
+### Customer Portal
+
+- Customer home dashboard with account summary.
+- Submission records with status filters.
+- Notification summary and read status.
+- `/accounts/profile/` for profile data.
+- `/accounts/preferences/` for global and per-survey notification preferences.
+
+### Statistics Engine
+
+The project uses an analysis-oriented data type model:
+
+| Data type | Meaning | Analysis behavior |
+|---|---|---|
+| `continuous` | meaningful numeric magnitude, e.g. rating, amount, duration | numeric summary, t-test / ANOVA DV, Pearson correlation |
+| `discrete` | count-like or code-like number | numeric summary only |
+| `nominal` | unordered category, e.g. department, region | frequency chart, IV for selected tests |
+| `ordinal` | ordered category without guaranteed equal spacing | frequency chart, rank tests where safe |
+| `text` | open-ended answer | text-analysis pipeline |
+
+Implemented inferential methods in Django fallback include:
+
+- Welch independent-samples t-test
+- One-way ANOVA
+- Chi-square test of independence
+- Mann-Whitney U
+- Kruskal-Wallis
+- Pearson correlation
+- Spearman correlation
+
+Invalid or unsafe combinations return `skipped_reason` instead of silently producing misleading results.
+
+### Text Analysis
+
+Text analysis is dictionary-driven and cached on `Answer` rows.
+
+Important files:
+
+```text
+feedback/text_pipeline.py
+feedback/data/
+feedback/local_service.py
+services/feedback_service/app.py
+```
+
+Important cached fields on `Answer`:
+
+- `analysis_text`
+- `sentiment_score`
+- `analysis_version`
+
+Useful commands:
+
+```bash
+python manage.py rebuild_text_analysis --dry-run
+python manage.py rebuild_text_analysis
+python manage.py rebuild_text_analysis --survey <survey-slug>
+
+python manage.py sync_keyword_categories --dry-run
+python manage.py sync_keyword_categories
+python manage.py top_uncategorized_keywords --survey <survey-slug>
+```
+
+## Local Setup
+
+### 1. Create environment
 
 ```bash
 python -m venv .venv
@@ -37,7 +158,30 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-2. 初始化 Django
+### 2. Configure environment variables
+
+Copy `.env.example` to `.env`:
+
+```bash
+copy .env.example .env
+```
+
+For local SQLite development, `DATABASE_URL` can be omitted. For Supabase / PostgreSQL, set `DATABASE_URL` in `.env`.
+
+Minimum local variables:
+
+```text
+DJANGO_SECRET_KEY=replace-me
+DEBUG=True
+ALLOWED_HOSTS=127.0.0.1,localhost
+ADMIN_USERNAME=admin
+ADMIN_EMAIL=admin@example.com
+ADMIN_PASSWORD=change-me
+```
+
+If you are not running Flask locally, leave `FEEDBACK_SERVICE_URL` unset.
+
+### 3. Initialize database
 
 ```bash
 python manage.py migrate
@@ -45,76 +189,161 @@ python manage.py ensure_superuser
 python manage.py seed_demo
 ```
 
-3. 可選：啟動 Flask 微服務
-
-```bash
-python -m flask --app services.feedback_service.app run --host 127.0.0.1 --port 5001
-```
-
-4. 啟動 Django façade
+### 4. Run Django
 
 ```bash
 python manage.py runserver
 ```
 
-目前所有問卷都採登入後填答，沒有匿名或快速填答模式。
-若未設定 `FEEDBACK_SERVICE_URL`，Django 會直接使用本地 provider，適合目前的 Django-only 開發或部署方式。
-若設定 `FEEDBACK_SERVICE_URL`，Django 會優先呼叫 Flask 微服務；Flask 暫時不可用時，Django 仍會在短 timeout 後自動退回本地 provider，並在冷卻期間避免重複等待。
-
-## 共用測試基準資料
-
-- 問卷 mock 資料放在 `feedback/fixtures/beverage_survey_mock_100.csv`。
-- 此檔案用於團隊共用測試、整合驗證與展示，不是正式營運資料。
-- 請勿放入真實個資；若更新內容，請在 PR 說明欄位、筆數或分布變更。
-
-## 重要環境變數
+Open:
 
 ```text
-DJANGO_SECRET_KEY=replace-me
-DEBUG=True
-ALLOWED_HOSTS=127.0.0.1,localhost
-DEFAULT_FROM_EMAIL=noreply@example.com
-EMAIL_BACKEND=
-EMAIL_HOST=smtp.gmail.com
-EMAIL_PORT=587
-EMAIL_HOST_USER=your-email@example.com
-EMAIL_HOST_PASSWORD=your-app-password
-EMAIL_USE_TLS=True
-EMAIL_USE_SSL=False
-FEEDBACK_SERVICE_URL=http://127.0.0.1:5001
-FEEDBACK_SERVICE_CONNECT_TIMEOUT=0.35
-FEEDBACK_SERVICE_READ_TIMEOUT=0.8
-FEEDBACK_SERVICE_FAILURE_COOLDOWN=30
+http://127.0.0.1:8000/
 ```
 
-`EMAIL_HOST` 有填值時，系統預設走 SMTP 寄信；未填時會使用 console backend（開發環境）。
+### 5. Optional: run Flask service
 
-## Render Blueprint
-
-`render.yaml` 已拆成兩個 service：
-
-- `feedback-insight-hub`: Django 對外 Web Service
-- `feedback-domain-service`: Flask 私有服務
-
-Django 透過內網 URL 呼叫 Flask 服務；兩者共用同一份 `DATABASE_URL`。
-
-## Schema Migration 協作流程
-
-此專案的 Django 與 Flask 共用同一個資料庫，請遵循以下流程避免協作環境故障：
-
-1. 只用 Django migration 變更 schema，避免在 Supabase Dashboard 手動改欄位。
-2. 新欄位先採 `null=True`（或安全預設值），先確保舊資料可相容。
-3. 變更後同步更新 `services/feedback_service/models.py` 的 SQLAlchemy 欄位定義。
-4. 部署順序建議為：先部署可相容新舊 schema 的程式碼，再執行 `python manage.py migrate`。
-
-本次已新增 `feedback_answer.analysis_text`、`feedback_answer.sentiment_score`、`feedback_answer.analysis_version`，對應 migration：`feedback/migrations/0007_answer_analysis_text_answer_analysis_version_and_more.py`。
-
-歷史資料回填指令：
+Only run this when you specifically want to test the microservice path:
 
 ```bash
-python manage.py rebuild_text_analysis --dry-run
-python manage.py rebuild_text_analysis
-python manage.py rebuild_text_analysis --survey <survey-slug>
+python -m flask --app services.feedback_service.app run --host 127.0.0.1 --port 5001
 ```
 
-若只部署 Django，請不要設定 `FEEDBACK_SERVICE_URL`，系統會直接走 Django fallback。
+Then set:
+
+```text
+FEEDBACK_SERVICE_URL=http://127.0.0.1:5001
+```
+
+## Important Environment Variables
+
+| Variable | Purpose |
+|---|---|
+| `DJANGO_SECRET_KEY` | Django secret key |
+| `DEBUG` | `True` local, `False` production |
+| `ALLOWED_HOSTS` | Comma-separated host list |
+| `DATABASE_URL` | PostgreSQL URL; omitted falls back to SQLite |
+| `ADMIN_USERNAME` | Used by `ensure_superuser` |
+| `ADMIN_EMAIL` | Used by `ensure_superuser` |
+| `ADMIN_PASSWORD` | Used by `ensure_superuser` |
+| `FEEDBACK_SERVICE_URL` | Optional Flask service URL |
+| `FEEDBACK_SERVICE_CONNECT_TIMEOUT` | Flask connect timeout |
+| `FEEDBACK_SERVICE_READ_TIMEOUT` | Flask read timeout |
+| `FEEDBACK_SERVICE_FAILURE_COOLDOWN` | Circuit-breaker cooldown |
+| `EMAIL_HOST` | If set, enables SMTP backend |
+| `EMAIL_HOST_USER` | SMTP username |
+| `EMAIL_HOST_PASSWORD` | SMTP password / Gmail app password |
+| `DEFAULT_FROM_EMAIL` | Outgoing email sender |
+
+Email backend auto-detects:
+
+- `EMAIL_HOST` set -> SMTP backend
+- `EMAIL_HOST` empty -> console backend
+
+## Deployment Notes
+
+The repository includes `render.yaml`:
+
+- `feedback-insight-hub`: Django web service
+- `feedback-domain-service`: Flask private service
+
+Important practical note: Render private services may require a paid plan depending on current Render product rules. If Flask is not deployed, keep `FEEDBACK_SERVICE_URL` unset and run Django-only fallback.
+
+`build.sh` runs:
+
+```bash
+pip install -r requirements.txt
+python manage.py migrate
+python manage.py ensure_superuser
+python manage.py seed_demo
+python manage.py collectstatic --noinput
+```
+
+Production requirements:
+
+- Set `DATABASE_URL` in Render environment variables.
+- Set `DEBUG=False`.
+- Set `ALLOWED_HOSTS`.
+- Set admin env vars for `ensure_superuser`.
+- Use Python 3.13.2 or another Django 6-compatible Python version.
+
+## Database and Migration Safety
+
+The Django ORM is the source of truth. SQLAlchemy models in `services/feedback_service/models.py` must mirror the same database schema when Flask writes or reads shared tables.
+
+Fields that must not be removed without a planned production migration:
+
+| Model | Field |
+|---|---|
+| `Survey` | `category` |
+| `Answer` | `analysis_text` |
+| `Answer` | `sentiment_score` |
+| `Answer` | `analysis_version` |
+| `ImprovementDispatch` | `is_read` |
+
+Fields intentionally removed and must not be added back:
+
+| Model | Field |
+|---|---|
+| `Survey` | `access_mode` |
+| `FeedbackSubmission` | `source` |
+
+Before opening a PR that touches models or migrations:
+
+```bash
+python manage.py check
+python manage.py makemigrations --check --dry-run
+python manage.py migrate --plan
+```
+
+## Collaboration Rules
+
+Before pushing or opening a PR:
+
+```bash
+git fetch origin
+git merge origin/main
+python manage.py check
+python manage.py makemigrations --check --dry-run
+python -m py_compile feedback/models.py feedback/views.py feedback/local_service.py
+```
+
+Rules:
+
+- Do not commit `.env`.
+- Do not commit `supabase密碼.txt` or any credential file.
+- Do not remove production text-analysis fields.
+- Do not reintroduce quick / hybrid access mode.
+- Do not fake migrations in `build.sh` to bypass schema conflicts.
+- Keep `CLAUDE.md` / `.claude/` updates separate from feature changes unless explicitly requested.
+
+## Useful Commands
+
+```bash
+# System checks
+python manage.py check
+python manage.py makemigrations --check --dry-run
+python manage.py migrate --plan
+
+# Admin and demo data
+python manage.py ensure_superuser
+python manage.py seed_demo
+python manage.py seed_notification_test
+
+# Text analysis
+python manage.py rebuild_text_analysis --dry-run
+python manage.py rebuild_text_analysis
+python manage.py sync_keyword_categories --dry-run
+python manage.py sync_keyword_categories
+
+# Static files
+python manage.py collectstatic --noinput
+```
+
+## Current Caveats
+
+- Public homepage / landing page design is still being redesigned and should not be treated as final product UI.
+- Flask stats endpoint is behind the Django fallback stats contract.
+- `render.yaml` includes a Flask private service blueprint, but practical deployment may remain Django-only on Render free tier.
+- Some legacy documentation and source comments may still contain mojibake from earlier Windows terminal encoding issues; user-facing templates should be checked visually before demo.
+
