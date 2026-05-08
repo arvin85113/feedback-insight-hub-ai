@@ -66,22 +66,22 @@ class HomeView(TemplateView):
                 "featured_capabilities": [
                     {
                         "title": "Survey Operations",
-                        "description": "統一管理問卷、題型與填答入口，讓前台首頁與後台配置維持同一套產品語言。",
+                        "description": "以登入制問卷集中管理題型、資料型態與填答流程，讓回饋收集維持一致脈絡。",
                     },
                     {
-                        "title": "Customer Follow-up",
-                        "description": "顧客登入後可查看自己填過的問卷與改善通知，形成完整的回饋閉環。",
+                        "title": "Statistical Insight",
+                        "description": "依照資料型態整理描述統計與可執行推論，並清楚標示條件不通過的原因。",
                     },
                     {
-                        "title": "Insight Workspace",
-                        "description": "管理端集中檢視量化統計、文字關鍵字與改善追蹤，維持正式 SaaS 工作流。",
+                        "title": "Closed-loop Follow-up",
+                        "description": "把文字洞察與改善追蹤串接起來，讓管理者能把回饋轉成後續通知與行動。",
                     },
                 ],
                 "homepage_steps": [
-                    "建立正式問卷與通知規則",
-                    "收集回覆並沉澱顧客原聲",
-                    "從統計與文字分析提取線索",
-                    "發布改善並回推通知給顧客",
+                    "建立登入制問卷與題型資料標籤",
+                    "收集回覆並保留填答者追蹤偏好",
+                    "從統計與文字分析提取決策線索",
+                    "發布改善更新並回推給相關顧客",
                 ],
             }
         )

@@ -1,0 +1,54 @@
+{% load static %}
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}FeedBack IQ{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'css/app.css' %}">
+</head>
+<body class="{% block body_class %}public-body{% endblock %}">
+    <nav class="public-nav-shell" aria-label="公開頁導覽">
+        <div class="public-nav-inner">
+            <a class="public-nav-brand" href="{% url 'feedback:home' %}">
+                <span class="public-nav-mark">FI</span>
+                FeedBack IQ
+            </a>
+
+            <div class="public-nav-links">
+                <a href="{% url 'feedback:home' %}#capabilities">產品功能</a>
+                <a href="{% url 'feedback:home' %}#workflow">流程</a>
+                <a href="{% url 'feedback:home' %}#roles">角色入口</a>
+            </div>
+
+            <div class="public-nav-actions">
+                {% if user.is_authenticated %}
+                    {% if user.is_manager %}
+                        <a class="public-nav-login" href="{% url 'feedback:dashboard' %}">管理端</a>
+                    {% else %}
+                        <a class="public-nav-login" href="{% url 'feedback:customer-home' %}">顧客端</a>
+                    {% endif %}
+                    <form method="post" action="{% url 'accounts:logout' %}">
+                        {% csrf_token %}
+                        <button type="submit" class="public-btn public-btn-form">登出</button>
+                    </form>
+                {% else %}
+                    <a class="public-nav-login" href="{% url 'accounts:login' %}">登入</a>
+                    <a class="public-btn" href="{% url 'accounts:signup' %}">建立帳號</a>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+
+    {% if messages %}
+        <section class="public-message-wrap" aria-live="polite" aria-label="系統訊息">
+            {% for message in messages %}
+                <div class="flash-message">{{ message }}</div>
+            {% endfor %}
+        </section>
+    {% endif %}
+
+    {% block content %}{% endblock %}
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

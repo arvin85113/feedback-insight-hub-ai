@@ -1,31 +1,33 @@
-{% extends "base.html" %}
+{% extends "public_base.html" %}
 
 {% block title %}登入 | FeedBack IQ{% endblock %}
+{% block body_class %}public-body auth-public-body{% endblock %}
 
 {% block content %}
-<section class="auth-layout auth-layout-wide">
+<main class="auth-layout auth-layout-wide auth-page-public">
     <article class="auth-copy">
         <p class="section-kicker">Secure Access</p>
-        <h1>登入 FeedBack IQ 工作區</h1>
+        <h1>回到你的回饋分析工作區。</h1>
         <p>
-            管理者可進入營運後台查看問卷、分析與改善追蹤；顧客則可登入顧客中心查看自己提交過的問卷、
-            通知紀錄與通知偏好設定。所有角色都使用同一個安全登入入口。
+            登入後依照你的角色進入管理端或顧客端，繼續查看問卷、統計分析、文字洞察與改善通知。
+            FeedBack IQ 會把回饋收集到後續追蹤維持在同一條工作流裡。
         </p>
-        <div class="summary-grid">
+        <div class="summary-grid auth-quiet-grid">
             <div class="summary-card">
-                <span class="info-label">管理端</span>
-                <strong>查看儀表板、分析報表與改善任務</strong>
+                <span class="info-label">Manager</span>
+                <strong>管理問卷、檢視統計、追蹤改善任務。</strong>
             </div>
             <div class="summary-card">
-                <span class="info-label">顧客端</span>
-                <strong>查看填答紀錄、通知更新與個人偏好</strong>
+                <span class="info-label">Customer</span>
+                <strong>查看填答紀錄、通知與回饋後續狀態。</strong>
             </div>
         </div>
     </article>
+
     <article class="auth-card">
         <div class="panel-head">
-            <h2>登入帳戶</h2>
-            <span class="pill">SaaS Workspace</span>
+            <h2>登入帳號</h2>
+            <span class="pill">Workspace</span>
         </div>
         <form method="post" class="form-stack">
             {% csrf_token %}
@@ -42,9 +44,9 @@
             <a href="{% url 'accounts:password_reset' %}">忘記密碼？</a>
         </p>
         <p class="auth-link-row">
-            還沒有帳戶？
-            <a href="{% url 'accounts:signup' %}">建立顧客帳戶</a>
+            還沒有帳號？
+            <a href="{% url 'accounts:signup' %}">建立顧客帳號</a>
         </p>
     </article>
-</section>
+</main>
 {% endblock %}
