@@ -139,9 +139,15 @@
                             {% endif %}
                         </dl>
                         {% if chart.counts %}
-                            <div class="analytics-frequency-row">
+                            <div class="bar-chart">
                                 {% for row in chart.counts %}
-                                    <span>{{ row.value }}：{{ row.total }}</span>
+                                    <div class="bar-row">
+                                        <span class="bar-label">{{ row.value }}</span>
+                                        <div class="bar-track">
+                                            <div class="bar-fill" style="width: {{ row.percent|default:0 }}%"></div>
+                                        </div>
+                                        <strong class="bar-value">{{ row.total }}{% if row.percent is not None %}（{{ row.percent }}%）{% endif %}</strong>
+                                    </div>
                                 {% endfor %}
                             </div>
                         {% endif %}

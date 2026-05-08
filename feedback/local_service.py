@@ -372,6 +372,14 @@ def get_survey_pandas_stats(survey):
             return None
         return _round_or_none(ss_between / ss_total, 4)
 
+    def format_numeric_bucket(value):
+        rounded = _round_or_none(value)
+        if rounded is None:
+            return ""
+        if float(rounded).is_integer():
+            return str(int(rounded))
+        return str(rounded)
+
     for question in questions:
         col = f"Q_{question.id}"
         if col not in df.columns:
@@ -387,6 +395,7 @@ def get_survey_pandas_stats(survey):
                 continue
             numeric_columns[col] = pd.to_numeric(df[col], errors="coerce")
             value_counts = numeric_series.value_counts().sort_index()
+            total_count = int(value_counts.sum())
             ci_low, ci_high = mean_confidence_interval(numeric_series)
             charts.append(
                 {
@@ -401,11 +410,13 @@ def get_survey_pandas_stats(survey):
                     "ci_low": ci_low,
                     "ci_high": ci_high,
                     "counts": [
-                        {"value": _round_or_none(value), "total": int(total)}
+                        {
+                            "value": format_numeric_bucket(value),
+                            "total": int(total),
+                            "percent": _round_or_none((int(total) / total_count) * 100) if total_count else 0,
+                        }
                         for value, total in value_counts.items()
-                    ]
-                    if question.data_type == Question.DataType.DISCRETE
-                    else [],
+                    ],
                 }
             )
         elif question.data_type in {Question.DataType.NOMINAL, Question.DataType.ORDINAL}:
