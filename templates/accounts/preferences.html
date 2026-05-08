@@ -1,25 +1,26 @@
 {% extends "base.html" %}
 
 {% block title %}通知偏好 | FeedBack IQ{% endblock %}
+{% block body_class %}site-body customer-workspace-body{% endblock %}
 
 {% block content %}
-<section class="portal-header">
+<section class="customer-page-head customer-page-head-wide">
     <div>
         <p class="section-kicker">Notification Preferences</p>
-        <h1>管理你已填問卷的後續通知</h1>
+        <h1>管理你願意接收的改善通知。</h1>
         <p>
-            你可以先用最上方開關控制所有改善通知，再針對已填過的問卷個別開啟或關閉後續追蹤。
-            個人姓名、Email 與所屬單位已移到資料設定頁面。
+            你可以先設定全域通知，再針對已填過的問卷調整追蹤開關。
+            關閉通知不會刪除填答紀錄，只會停止後續改善通知。
         </p>
     </div>
-    <div class="portal-actions">
+    <nav class="customer-page-actions" aria-label="通知偏好操作">
         <a class="button button-ghost" href="{% url 'feedback:customer-home' %}">返回顧客端</a>
-        <a class="button button-primary" href="{% url 'accounts:profile' %}">資料設定</a>
-    </div>
+        <a class="button button-primary" href="{% url 'feedback:customer-notifications' %}">回到通知</a>
+    </nav>
 </section>
 
-<section class="surface-card notification-master-card">
-    <form method="post" class="tracking-toggle-form">
+<section class="customer-panel customer-toggle-panel">
+    <form method="post" class="tracking-toggle-form customer-toggle-row">
         {% csrf_token %}
         <input type="hidden" name="action" value="toggle-global">
         <label class="toggle-label">
@@ -28,69 +29,70 @@
                 <span class="toggle-track"><span class="toggle-thumb"></span></span>
             </span>
             <span class="toggle-text">
-                <span class="toggle-title">接收所有改善通知</span>
+                <span class="toggle-title">所有改善通知</span>
                 <span class="toggle-desc">
                     {% if user.notification_opt_in %}
-                        已開啟。符合條件的問卷通知會依照下方逐問卷設定寄送。
+                        目前已開啟。若你填過的問卷有新的改善結果，系統會寄送 Email 並同步顯示在通知中心。
                     {% else %}
-                        已關閉。即使下方問卷開啟追蹤，也不會主動寄送通知。
+                        目前已關閉。你仍可保留填答紀錄，但不會收到後續改善通知。
                     {% endif %}
                 </span>
             </span>
         </label>
-        <button type="submit" class="button button-primary button-small">儲存全域設定</button>
+        <button type="submit" class="button button-primary button-small">儲存設定</button>
     </form>
 </section>
 
-<section class="manager-toolbar stats-list-toolbar">
-    <div class="toolbar-filters">
+<section class="customer-toolbar">
+    <nav class="toolbar-filters" aria-label="問卷分類">
         <a class="filter-pill {% if not current_category %}filter-pill-active{% endif %}"
            href="?sort={{ current_sort }}">全部</a>
         {% for cat in categories %}
             <a class="filter-pill {% if current_category == cat.id|stringformat:'s' %}filter-pill-active{% endif %}"
                href="?sort={{ current_sort }}&category={{ cat.id }}">{{ cat.name }}</a>
         {% endfor %}
-    </div>
+    </nav>
     <div class="toolbar-sort">
-        <select class="sort-select" onchange="location.href=this.value">
+        <select class="sort-select" onchange="location.href=this.value" aria-label="排序">
             <option value="?sort=newest{% if current_category %}&category={{ current_category }}{% endif %}"
-                {% if current_sort == 'newest' %}selected{% endif %}>最近填答</option>
+                {% if current_sort == 'newest' %}selected{% endif %}>最新提交</option>
             <option value="?sort=oldest{% if current_category %}&category={{ current_category }}{% endif %}"
-                {% if current_sort == 'oldest' %}selected{% endif %}>最早填答</option>
+                {% if current_sort == 'oldest' %}selected{% endif %}>最舊提交</option>
             <option value="?sort=title{% if current_category %}&category={{ current_category }}{% endif %}"
-                {% if current_sort == 'title' %}selected{% endif %}>名稱 A-Z</option>
+                {% if current_sort == 'title' %}selected{% endif %}>標題 A-Z</option>
         </select>
     </div>
 </section>
 
-<section class="surface-card">
-    <div class="card-topline">
+<section class="customer-panel">
+    <div class="customer-panel-head">
         <div>
             <p class="section-kicker">Submitted Surveys</p>
             <h2>已填問卷通知設定</h2>
         </div>
         <span class="muted-text">{{ survey_rows|length }} 份問卷</span>
     </div>
-    <div class="record-list">
+    <div class="customer-record-list">
         {% for row in survey_rows %}
-            <div class="record-row record-row-stack stats-survey-row">
+            <div class="customer-record-row">
                 <div>
-                    <strong>{{ row.survey.title }}</strong>
-                    {% if row.survey.category %}
-                        <span class="pill pill-category">{{ row.survey.category.name }}</span>
-                    {% endif %}
-                    <p>最近填答：{{ row.latest_submission.submitted_at|date:"Y/m/d H:i" }}</p>
-                    <p>填答次數：{{ row.submission_count }}</p>
+                    <div class="customer-row-title">
+                        <strong>{{ row.survey.title }}</strong>
+                        {% if row.survey.category %}
+                            <span class="pill pill-category">{{ row.survey.category.name }}</span>
+                        {% endif %}
+                    </div>
+                    <p>{{ row.submission_count }} 次填答，最近提交：{{ row.latest_submission.submitted_at|date:"Y/m/d H:i" }}</p>
                 </div>
-                <div class="record-meta">
+                <div class="customer-record-meta">
                     <span class="pill {% if row.consent_follow_up %}pill-active{% endif %}">
-                        {% if row.consent_follow_up %}已開啟追蹤{% else %}未開啟追蹤{% endif %}
+                        {% if row.consent_follow_up %}願意接收追蹤{% else %}未開啟通知{% endif %}
                     </span>
                     <form method="post" class="survey-notification-toggle">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="toggle-survey">
                         <input type="hidden" name="survey_id" value="{{ row.survey.id }}">
-                        <label class="google-toggle" title="切換此問卷通知">
+                        <label class="google-toggle" title="切換這份問卷的改善通知">
                             <input type="checkbox" name="enabled" {% if row.consent_follow_up %}checked{% endif %} onchange="this.form.submit()">
                             <span class="slider"></span>
                         </label>
@@ -98,11 +100,9 @@
                 </div>
             </div>
         {% empty %}
-            <div class="empty-card">
-                <div>
-                    <h3>尚無已填問卷</h3>
-                    <p>填寫問卷後，這裡會出現逐問卷通知開關。</p>
-                </div>
+            <div class="customer-empty">
+                <h3>目前沒有已填問卷</h3>
+                <p>完成問卷後，你可以在這裡設定是否接收該問卷的後續改善通知。</p>
             </div>
         {% endfor %}
     </div>

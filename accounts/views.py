@@ -30,7 +30,7 @@ class CustomerSignUpView(CreateView):
     success_url = reverse_lazy("accounts:login")
 
     def form_valid(self, form):
-        messages.success(self.request, "顧客帳號已建立，現在可以登入查看填答紀錄與通知。")
+        messages.success(self.request, "顧客帳號已建立，請登入後查看填答紀錄與通知。")
         return super().form_valid(form)
 
 
@@ -45,7 +45,7 @@ def customer_preferences_view(request):
             form = CustomerPreferenceForm(request.POST, instance=request.user)
             if form.is_valid():
                 form.save()
-                messages.success(request, "全域通知偏好已更新。")
+                messages.success(request, "通知偏好已儲存。")
                 return redirect("accounts:preferences")
         elif action == "toggle-survey":
             survey_id = request.POST.get("survey_id")
@@ -55,7 +55,7 @@ def customer_preferences_view(request):
             )
             if updated:
                 state = "開啟" if enabled else "關閉"
-                messages.success(request, f"此問卷的後續通知已{state}。")
+                messages.success(request, f"這份問卷的改善通知已{state}。")
             return redirect("accounts:preferences")
 
     form = CustomerPreferenceForm(instance=request.user)
@@ -118,7 +118,7 @@ def customer_profile_view(request):
         form = CustomerProfileForm(request.POST, instance=request.user)
         if form.is_valid():
             form.save()
-            messages.success(request, "個人資料已更新。")
+            messages.success(request, "個人資料已儲存。")
             return redirect("accounts:profile")
     else:
         form = CustomerProfileForm(instance=request.user)

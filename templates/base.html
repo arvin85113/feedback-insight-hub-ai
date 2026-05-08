@@ -2,61 +2,63 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}FeedBack IQ{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'css/app.css' %}">
+    {% block extra_head %}{% endblock %}
 </head>
 <body class="{% block body_class %}site-body{% endblock %}">
-    {% block shell %}
-        <header class="site-header">
-            <div class="shell-wrap site-header-inner">
-                <a class="brand-mark" href="{% url 'feedback:home' %}">
-                    <span class="brand-mark-icon">FI</span>
-                    <span>
-                        <strong>FeedBack IQ</strong>
-                        <small>Customer Intelligence SaaS</small>
-                    </span>
-                </a>
-                <nav class="site-nav">
-                    <a href="{% url 'feedback:home' %}">首頁</a>
-                    {% if user.is_authenticated %}
-                        {% if user.is_manager %}
-                            <a href="{% url 'feedback:dashboard' %}">管理端</a>
-                        {% else %}
-                            <a href="{% url 'feedback:customer-home' %}">顧客端</a>
-                            <a href="{% url 'feedback:customer-notifications' %}" class="nav-notif-link">
-                                通知
-                                {% if unread_notification_count %}
-                                    <span class="nav-badge">{{ unread_notification_count }}</span>
-                                {% endif %}
-                            </a>
-                            <a href="{% url 'accounts:preferences' %}">通知偏好</a>
-                            <a href="{% url 'accounts:profile' %}">資料設定</a>
-                        {% endif %}
-                        <form method="post" action="{% url 'accounts:logout' %}">
-                            {% csrf_token %}
-                            <button type="submit" class="button button-ghost">登出</button>
-                        </form>
+{% block shell %}
+    <header class="site-header">
+        <div class="shell-wrap site-header-inner">
+            <a class="brand-mark" href="{% url 'feedback:home' %}">
+                <span class="brand-mark-icon">FI</span>
+                <span>
+                    <strong>FeedBack IQ</strong>
+                    <small>Customer Intelligence SaaS</small>
+                </span>
+            </a>
+            <nav class="site-nav">
+                <a href="{% url 'feedback:home' %}">首頁</a>
+                {% if user.is_authenticated %}
+                    {% if user.is_manager %}
+                        <a href="{% url 'feedback:dashboard' %}">管理端</a>
                     {% else %}
-                        <a href="{% url 'accounts:login' %}">登入</a>
-                        <a class="button button-primary button-small" href="{% url 'accounts:signup' %}">建立帳號</a>
+                        <a href="{% url 'feedback:customer-home' %}">顧客端</a>
+                        <a href="{% url 'feedback:customer-notifications' %}" class="nav-notif-link">
+                            通知
+                            {% if unread_notification_count %}
+                                <span class="nav-notif-badge">{{ unread_notification_count }}</span>
+                            {% endif %}
+                        </a>
+                        <a href="{% url 'accounts:profile' %}" class="nav-profile-link">個人資料</a>
                     {% endif %}
-                </nav>
-            </div>
-        </header>
-
-        <main class="shell-wrap site-main">
-            {% if messages %}
-                <section class="flash-stack" aria-live="polite" aria-label="操作通知">
-                    {% for message in messages %}
-                        <div class="flash-message">{{ message }}</div>
-                    {% endfor %}
-                </section>
-            {% endif %}
-            {% block content %}{% endblock %}
-        </main>
-    {% endblock %}
+                    <form method="post" action="{% url 'accounts:logout' %}">
+                        {% csrf_token %}
+                        <button type="submit" class="button button-ghost">登出</button>
+                    </form>
+                {% else %}
+                    <a href="{% url 'accounts:login' %}">登入</a>
+                    <a class="button button-primary button-small" href="{% url 'accounts:signup' %}">建立帳號</a>
+                {% endif %}
+            </nav>
+        </div>
+    </header>
+    <main class="shell-wrap site-main">
+        {% if messages %}
+            <section class="flash-stack" aria-live="polite" aria-label="系統訊息">
+                {% for message in messages %}
+                    <div class="flash-message flash-{{ message.tags|default:'info' }}">{{ message }}</div>
+                {% endfor %}
+            </section>
+        {% endif %}
+        {% block content %}{% endblock %}
+    </main>
+{% endblock %}
 {% block extra_js %}{% endblock %}
 </body>
 </html>

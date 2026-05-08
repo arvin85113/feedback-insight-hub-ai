@@ -1,76 +1,77 @@
 {% extends "base.html" %}
 
 {% block title %}通知紀錄 | FeedBack IQ{% endblock %}
+{% block body_class %}site-body customer-workspace-body{% endblock %}
 
 {% block content %}
-<section class="portal-header">
+<section class="customer-page-head customer-page-head-compact">
     <div>
         <p class="section-kicker">Notification History</p>
-        <h1>追蹤我收到的改善更新與通知內容</h1>
+        <h1>追蹤改善通知與更新紀錄。</h1>
         <p>
-            所有與你填答問卷相關的改善通知都會集中在這裡，包含通知時間、對應問卷與改善摘要，
-            方便你回頭確認哪些建議已被採納、哪些服務已完成優化。
+            當管理端根據問卷回饋建立改善任務並發出通知時，紀錄會集中在這裡。
+            點擊通知可標記已讀，並回到對應問卷查看脈絡。
         </p>
     </div>
-    <div class="portal-actions">
-        <a class="button button-ghost" href="{% url 'feedback:customer-home' %}">回顧客中心</a>
-        <a class="button button-primary" href="{% url 'accounts:preferences' %}">調整通知偏好</a>
-    </div>
+    <nav class="customer-page-actions" aria-label="通知操作">
+        <a class="button button-ghost" href="{% url 'feedback:customer-home' %}">返回顧客端</a>
+        <a class="button button-primary" href="{% url 'accounts:preferences' %}">通知偏好</a>
+    </nav>
 </section>
 
-<section class="portal-grid">
-    <article class="surface-card stat-surface">
+<section class="customer-kpi-grid customer-kpi-grid-three customer-notice-kpis" aria-label="通知摘要">
+    <article class="customer-kpi-card">
         <span>通知總數</span>
         <strong>{{ notice_count }}</strong>
     </article>
-    <article class="surface-card stat-surface">
+    <article class="customer-kpi-card">
         <span>未讀通知</span>
         <strong>{{ unread_count }}</strong>
     </article>
-    <article class="surface-card stat-surface">
-        <span>目前通知設定</span>
+    <article class="customer-kpi-card">
+        <span>通知設定</span>
         <strong>{% if notification_opt_in %}已開啟{% else %}已關閉{% endif %}</strong>
-    </article>
-    <article class="surface-card stat-surface">
-        <span>最近通知日期</span>
-        <strong>{% if latest_notice %}{{ latest_notice.sent_at|date:"Y/m/d" }}{% else %}尚無{% endif %}</strong>
     </article>
 </section>
 
-<section class="surface-card">
-    <div class="record-list">
+<section class="customer-panel">
+    <div class="customer-panel-head">
+        <div>
+            <p class="section-kicker">Latest Notifications</p>
+            <h2>最新通知</h2>
+        </div>
+    </div>
+    <div class="customer-record-list customer-notification-scroll-list">
         {% for notice in notices %}
-            <div class="record-row record-row-stack record-row-clickable {% if not notice.is_read %}record-row-unread{% endif %}"
+            <div class="customer-record-row customer-record-clickable {% if not notice.is_read %}customer-record-unread{% endif %}"
                  data-pk="{{ notice.id }}"
                  data-is-read="{{ notice.is_read|yesno:'true,false' }}"
                  data-survey-url="{% url 'feedback:survey-detail' notice.submission.survey.slug %}">
                 <div>
-                    <strong>{{ notice.improvement.title }}</strong>
-                    <p>{{ notice.submission.survey.title }} | {{ notice.sent_at|date:"Y/m/d H:i" }}</p>
+                    <div class="customer-row-title">
+                        <strong>{{ notice.improvement.title }}</strong>
+                        <span class="pill {% if notice.is_read %}pill-active{% endif %}">
+                            {% if notice.is_read %}已讀{% else %}未讀{% endif %}
+                        </span>
+                    </div>
+                    <p>{{ notice.submission.survey.title }}，{{ notice.sent_at|date:"Y/m/d H:i" }}</p>
                     <p>{{ notice.improvement.summary }}</p>
                     {% if notice.personalized_note %}
-                        <p class="panel-note">{{ notice.personalized_note }}</p>
+                        <p class="customer-note">{{ notice.personalized_note }}</p>
                     {% endif %}
-                </div>
-                <div class="record-meta">
-                    <span class="pill {% if notice.is_read %}pill-active{% endif %}">
-                        {% if notice.is_read %}已讀{% else %}未讀{% endif %}
-                    </span>
                 </div>
             </div>
         {% empty %}
-            <div class="empty-card">
-                <div>
-                    <h3>目前還沒有通知紀錄</h3>
-                    <p>當你填答過的問卷有新的改善進度時，系統會把更新內容同步整理到這個頁面。</p>
-                </div>
+            <div class="customer-empty">
+                <h3>目前沒有通知紀錄</h3>
+                <p>當管理端發出改善通知後，系統會依你的通知偏好整理在這裡。</p>
             </div>
         {% endfor %}
     </div>
 </section>
 
 <script>
-document.querySelectorAll('.record-row-clickable').forEach(function(row) {
+document.querySelectorAll('.customer-record-clickable').forEach(function(row) {
     row.addEventListener('click', async function () {
         const pk = this.dataset.pk;
         const isRead = this.dataset.isRead === 'true';
@@ -86,13 +87,16 @@ document.querySelectorAll('.record-row-clickable').forEach(function(row) {
                     'X-Requested-With': 'XMLHttpRequest',
                 },
             });
-            this.classList.remove('record-row-unread');
+            this.classList.remove('customer-record-unread');
             this.dataset.isRead = 'true';
             const pill = this.querySelector('.pill');
-            if (pill) { pill.classList.add('pill-active'); pill.textContent = '已讀'; }
-            const badge = document.querySelector('.nav-badge');
+            if (pill) {
+                pill.classList.add('pill-active');
+                pill.textContent = '已讀';
+            }
+            const badge = document.querySelector('.nav-notif-badge');
             if (badge) {
-                const count = parseInt(badge.textContent) - 1;
+                const count = parseInt(badge.textContent, 10) - 1;
                 if (count <= 0) { badge.remove(); }
                 else { badge.textContent = count; }
             }

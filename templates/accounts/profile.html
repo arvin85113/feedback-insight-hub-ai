@@ -1,24 +1,38 @@
 {% extends "base.html" %}
 
-{% block title %}資料設定 | FeedBack IQ{% endblock %}
+{% block title %}個人資料 | FeedBack IQ{% endblock %}
+{% block body_class %}site-body customer-workspace-body{% endblock %}
 
 {% block content %}
-<section class="portal-header">
+<section class="customer-page-head customer-page-head-compact">
     <div>
         <p class="section-kicker">Profile Settings</p>
-        <h1>更新你的個人資料</h1>
-        <p>這裡只管理姓名、Email 與所屬單位；通知開關與逐問卷追蹤設定請到通知偏好頁面調整。</p>
+        <h1>維護你的個人資料。</h1>
+        <p>
+            請保持姓名、Email 與所屬單位正確。這些資料會用於通知寄送與顧客端顯示，
+            不會改變你已提交的問卷紀錄。
+        </p>
     </div>
-    <div class="portal-actions">
+    <nav class="customer-page-actions" aria-label="個人資料操作">
         <a class="button button-ghost" href="{% url 'feedback:customer-home' %}">返回顧客端</a>
-        <a class="button button-ghost" href="{% url 'accounts:password_change' %}">修改密碼</a>
-        <a class="button button-primary" href="{% url 'accounts:preferences' %}">通知偏好</a>
-    </div>
+        <a class="button button-primary" href="{% url 'accounts:password_change' %}">變更密碼</a>
+    </nav>
 </section>
 
-<section class="portal-grid portal-grid-wide">
-    <article class="surface-card">
-        <h2>個人資料</h2>
+<section class="customer-layout-grid">
+    <article class="customer-panel">
+        <div class="customer-panel-head">
+            <div>
+                <p class="section-kicker">Account</p>
+                <h2>個人資料</h2>
+            </div>
+        </div>
+
+        <div class="customer-static-field">
+            <span>帳號：</span>
+            <strong>{{ user.username }}</strong>
+        </div>
+
         <form method="post" class="form-stack">
             {% csrf_token %}
             {% for field in form %}
@@ -31,12 +45,18 @@
             <button type="submit" class="button button-primary">儲存資料</button>
         </form>
     </article>
-    <article class="surface-card muted-card">
-        <h2>資料用途</h2>
+
+    <article class="customer-panel customer-muted-panel">
+        <div class="customer-panel-head">
+            <div>
+                <p class="section-kicker">Notes</p>
+                <h2>資料用途</h2>
+            </div>
+        </div>
         <ul class="feature-list">
-            <li>Email 會用於登入識別與改善通知寄送。</li>
-            <li>姓名與所屬單位只用於讓你在顧客端辨識自己的帳戶資料。</li>
-            <li>是否接收改善通知請到通知偏好頁面調整。</li>
+            <li>Email 會用於寄送改善通知與帳號相關訊息。</li>
+            <li>姓名與所屬單位協助管理端辨識回饋來源。</li>
+            <li>通知接收設定請到通知偏好頁調整。</li>
         </ul>
     </article>
 </section>
