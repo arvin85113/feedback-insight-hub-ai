@@ -148,6 +148,25 @@ python manage.py sync_keyword_categories
 python manage.py top_uncategorized_keywords --survey <survey-slug>
 ```
 
+Text-analysis payload contract from `service_client.get_text_analysis(slug)`:
+
+- `keywords`: keyword frequency rows
+- `summary`: coverage + average sentiment score
+- `category_sentiments`: per-category positive / neutral / negative counts
+
+### Text Analysis Troubleshooting
+
+If the text-analysis page shows keywords but sentiment distribution appears empty, check:
+
+1. `TextAnalysisView` passes `analysis_summary` and `category_sentiments` to template context (not just `keywords`).
+2. Historical answers may not have cached `analysis_text` / `sentiment_score` yet. Rebuild once:
+
+```bash
+python manage.py rebuild_text_analysis
+```
+
+3. In `feedback/models.py`, avoid duplicate helper definitions for `text_analysis_summary()` and `category_sentiment_summary()`. Duplicate definitions can silently override newer sentiment logic.
+
 ## Local Setup
 
 ### 1. Create environment
