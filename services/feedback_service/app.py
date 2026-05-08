@@ -143,6 +143,7 @@ def home():
                 "active_survey_count": active_survey_count,
                 "response_count": total_submissions,
                 "improvement_count": total_improvements,
+                # TODO: Deprecate these marketing-style homepage fields alongside the Django fallback payload.
                 "managed_clients": max(12, active_survey_count * 3 or 12),
                 "response_velocity": round(total_submissions / active_survey_count, 1) if active_survey_count else 0,
                 "surveys": [serialize_survey(survey, response_counts.get(survey.id, 0)) for survey in surveys[:6]],

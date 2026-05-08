@@ -14,11 +14,16 @@ class CustomerSignUpForm(UserCreationForm):
         model = User
         fields = ("username", "first_name", "email", "notification_opt_in")
         labels = {
-            "username": "登入帳號",
-            "first_name": "名字",
+            "username": "帳號",
+            "first_name": "姓名",
             "email": "Email",
-            "notification_opt_in": "願意接收後續改善通知",
+            "notification_opt_in": "願意接收改善通知",
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["password1"].label = "密碼"
+        self.fields["password2"].label = "確認密碼"
 
     def save(self, commit=True):
         user = super().save(commit=False)
@@ -45,5 +50,5 @@ class CustomerPreferenceForm(forms.ModelForm):
         model = User
         fields = ("notification_opt_in",)
         labels = {
-            "notification_opt_in": "接收所有改善通知",
+            "notification_opt_in": "接收改善通知",
         }

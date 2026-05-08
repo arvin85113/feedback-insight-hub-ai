@@ -1,26 +1,27 @@
-{% extends "base.html" %}
+{% extends "public_base.html" %}
 
-{% block title %}建立帳戶 | FeedBack IQ{% endblock %}
+{% block title %}建立帳號 | FeedBack IQ{% endblock %}
+{% block body_class %}public-body auth-public-body{% endblock %}
 
 {% block content %}
-<section class="auth-layout auth-layout-wide">
+<main class="auth-layout auth-layout-wide auth-page-public">
     <article class="auth-copy">
         <p class="section-kicker">Customer Onboarding</p>
-        <h1>建立顧客帳戶，開始追蹤你的回饋進度</h1>
+        <h1>建立顧客帳號，追蹤每一次回饋後續。</h1>
         <p>
-            建立帳戶後，你可以登入顧客端查看曾填答過的問卷、是否有新通知，以及管理端是否已將你的建議轉為改善行動。
-            這能讓整個回饋流程從提交、處理到回覆形成完整閉環。
+            建立帳號後，你可以填寫登入制問卷、查看自己的填答紀錄，並接收改善完成後的通知。
+            你的回饋會被保存成可追蹤的紀錄，而不是一次性的表單提交。
         </p>
-        <ul class="feature-list">
-            <li>查看個人填答紀錄與最近一次提交時間。</li>
-            <li>自行管理問卷更新通知是否開啟。</li>
-            <li>追蹤改善任務發布後的更新內容。</li>
+        <ul class="feature-list auth-quiet-list">
+            <li>問卷填答會關聯到你的帳號，避免重複提交。</li>
+            <li>可在顧客端查看通知、偏好與改善追蹤狀態。</li>
+            <li>Email 保持正確，才能收到後續改善通知。</li>
         </ul>
     </article>
 
     <article class="auth-card">
         <div class="panel-head">
-            <h2>建立帳戶</h2>
+            <h2>建立帳號</h2>
             <span class="pill">Customer Portal</span>
         </div>
 
@@ -29,15 +30,15 @@
                 type="button"
                 class="button-google"
                 disabled
-                title="即將推出"
+                title="Google OAuth 開發中"
                 aria-disabled="true"
             >
                 <span class="google-icon" aria-hidden="true">G</span>
-                使用 Google 帳號登入
+                使用 Google 登入（開發中）
             </button>
         </div>
 
-        <div class="auth-divider">── 或使用 Email 註冊 ──</div>
+        <div class="auth-divider">或使用 Email 建立帳號</div>
 
         <form method="post" class="form-stack">
             {% csrf_token %}
@@ -70,18 +71,18 @@
             <div class="field-block field-block-checkbox">
                 <label class="checkbox-label">
                     {{ form.notification_opt_in }}
-                    接收改善通知（預設開啟）
+                    願意接收改善通知
                 </label>
                 {{ form.notification_opt_in.errors }}
             </div>
 
-            <button type="submit" class="button button-primary button-wide">建立帳戶</button>
+            <button type="submit" class="button button-primary button-wide">建立帳號</button>
         </form>
 
         <p class="auth-link-row">
-            已經有帳戶？
-            <a href="{% url 'accounts:login' %}">直接登入</a>
+            已經有帳號？
+            <a href="{% url 'accounts:login' %}">返回登入</a>
         </p>
     </article>
-</section>
+</main>
 {% endblock %}

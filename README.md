@@ -342,8 +342,8 @@ python manage.py collectstatic --noinput
 
 ## Current Caveats
 
-- Public homepage / landing page design is still being redesigned and should not be treated as final product UI.
+- Public homepage now uses a dedicated `public_base.html` shell and `public-*` CSS classes. Login, signup, and password pages intentionally keep the existing public/auth layout for now.
+- The homepage no longer lists active surveys publicly. This is intentional for the B2B login-only positioning; survey entry points live behind the customer portal.
 - Flask stats endpoint is behind the Django fallback stats contract.
 - `render.yaml` includes a Flask private service blueprint, but practical deployment may remain Django-only on Render free tier.
 - Some legacy documentation and source comments may still contain mojibake from earlier Windows terminal encoding issues; user-facing templates should be checked visually before demo.
-
