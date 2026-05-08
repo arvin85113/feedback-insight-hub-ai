@@ -94,7 +94,7 @@ document.querySelectorAll('.customer-record-clickable').forEach(function(row) {
                 pill.classList.add('pill-active');
                 pill.textContent = '已讀';
             }
-            const badge = document.querySelector('.nav-notif-badge');
+            const badge = document.querySelector('.nav-badge');
             if (badge) {
                 const count = parseInt(badge.textContent, 10) - 1;
                 if (count <= 0) { badge.remove(); }

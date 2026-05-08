@@ -32,7 +32,7 @@
                         <a href="{% url 'feedback:customer-notifications' %}" class="nav-notif-link">
                             通知
                             {% if unread_notification_count %}
-                                <span class="nav-notif-badge">{{ unread_notification_count }}</span>
+                                <span class="nav-badge">{{ unread_notification_count }}</span>
                             {% endif %}
                         </a>
                         <a href="{% url 'accounts:profile' %}" class="nav-profile-link">個人資料</a>
