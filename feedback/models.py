@@ -121,6 +121,9 @@ class Answer(models.Model):
     submission = models.ForeignKey(FeedbackSubmission, on_delete=models.CASCADE, related_name="answers")
     question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name="answers")
     value = models.TextField()
+    analysis_text = models.TextField(null=True, blank=True)
+    sentiment_score = models.FloatField(null=True, blank=True)
+    analysis_version = models.CharField(max_length=32, null=True, blank=True)
 
     class Meta:
         unique_together = ("submission", "question")
@@ -176,33 +179,50 @@ def tokenize_feedback(text):
     return [token for token in tokens if token not in stop_words]
 
 
+def _resolve_keyword_category(keyword, *, count, rules):
+    normalized = (keyword or "").strip().lower()
+    if not normalized:
+        return "未分類"
+
+    best_rule = None
+    best_score = None
+    for rule in rules:
+        if count < rule.threshold:
+            continue
+        rule_keyword = (rule.keyword or "").strip().lower()
+        if not rule_keyword:
+            continue
+        if rule_keyword == normalized:
+            score = (3, len(rule_keyword), rule.threshold)
+        elif rule_keyword in normalized or normalized in rule_keyword:
+            score = (2, len(rule_keyword), rule.threshold)
+        else:
+            continue
+        if best_score is None or score > best_score:
+            best_rule = rule
+            best_score = score
+    return best_rule.category if best_rule else "未分類"
+
+
 def keyword_summary(survey):
-    text_values = Answer.objects.filter(
+    answer_pairs = Answer.objects.filter(
         question__survey=survey,
         question__enable_keyword_tracking=True,
-    ).values_list("value", flat=True)
+    ).values_list("analysis_text", "value")
+
     counts = Counter()
-    for value in text_values:
-        counts.update(tokenize_feedback(value))
+    for analysis_text, value in answer_pairs:
+        counts.update(tokenize_feedback(analysis_text or value))
 
     all_rules = list(survey.keyword_categories.all())
 
     categories = []
     for keyword, count in counts.most_common(20):
-        mapping = None
-        for rule in all_rules:
-            if count >= rule.threshold and (
-                rule.keyword == keyword or
-                rule.keyword in keyword or
-                keyword in rule.keyword
-            ):
-                mapping = rule
-                break
         categories.append(
             {
                 "keyword": keyword,
                 "count": count,
-                "category": mapping.category if mapping else "未分類",
+                "category": _resolve_keyword_category(keyword, count=count, rules=all_rules),
             }
         )
     return categories
@@ -248,5 +268,64 @@ def recommend_analysis(question):
     if question.data_type == Question.DataType.TEXT:
         return "適合做關鍵字、情緒傾向與主題聚類，提取具體改善線索。"
     return "建議先確認資料尺度，再選擇描述統計或推論統計方法。"
+
+
+def text_analysis_summary(survey):
+    answers = Answer.objects.filter(
+        question__survey=survey,
+        question__enable_keyword_tracking=True,
+    )
+    total_answers = answers.count()
+    analyzed_answers = answers.exclude(analysis_text__isnull=True).exclude(analysis_text="")
+    sentiment_values = list(
+        answers.exclude(sentiment_score__isnull=True).values_list("sentiment_score", flat=True)
+    )
+    sentiment_avg = round(mean(sentiment_values), 3) if sentiment_values else None
+    return {
+        "total_answers": total_answers,
+        "analyzed_answers": analyzed_answers.count(),
+        "analysis_coverage": round(analyzed_answers.count() / total_answers, 3) if total_answers else 0,
+        "avg_sentiment_score": sentiment_avg,
+    }
+
+
+def category_sentiment_summary(survey):
+    answers = Answer.objects.filter(
+        question__survey=survey,
+        question__enable_keyword_tracking=True,
+    ).values_list("analysis_text", "value", "sentiment_score")
+    all_rules = list(survey.keyword_categories.all())
+    answer_tokens = []
+    token_counts = Counter()
+    for analysis_text, value, sentiment_score in answers:
+        tokens = tokenize_feedback(analysis_text or value or "")
+        if not tokens:
+            continue
+        answer_tokens.append((tokens, sentiment_score))
+        token_counts.update(tokens)
+
+    bucket = {}
+    for tokens, sentiment_score in answer_tokens:
+        categories = {
+            _resolve_keyword_category(token, count=token_counts[token], rules=all_rules)
+            for token in set(tokens)
+        } or {"未分類"}
+
+        for category in categories:
+            row = bucket.setdefault(
+                category,
+                {"category": category, "positive": 0, "neutral": 0, "negative": 0, "total": 0},
+            )
+            row["total"] += 1
+            if sentiment_score is None:
+                row["neutral"] += 1
+            elif sentiment_score > 0.1:
+                row["positive"] += 1
+            elif sentiment_score < -0.1:
+                row["negative"] += 1
+            else:
+                row["neutral"] += 1
+
+    return sorted(bucket.values(), key=lambda item: item["total"], reverse=True)
 
 

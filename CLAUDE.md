@@ -240,6 +240,12 @@ Payload keys from `service_client.get_text_analysis(slug)`:
 - `summary`: includes answer coverage and average sentiment score.
 - `category_sentiments`: per-category positive / neutral / negative counts.
 
+Rule source-of-truth policy for text analysis:
+- Runtime classification uses `KeywordCategory` rows from DB.
+- `feedback/data/keyword_category_map.json` is a versioned seed file, not auto-loaded at runtime.
+- Team workflow should be: edit JSON -> run `sync_keyword_categories --dry-run` -> run `sync_keyword_categories` on target environment.
+- Avoid using manual DB edits as the primary update path, otherwise JSON and DB will drift.
+
 `TextAnalysisView` must pass all three payload sections into template context (`keywords`, `analysis_summary`, `category_sentiments`). If only `keywords` is passed, the word cloud/sentiment panel will partially render or appear empty.
 
 `keyword_summary()` in `feedback/models.py` pre-loads all `KeywordCategory` rules (1 query) then matches with fuzzy substring containment, avoiding N+1 queries.
