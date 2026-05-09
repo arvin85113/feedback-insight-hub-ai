@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Feedback Insight Hub** — a bilingual (Traditional Chinese / English) feedback and survey management platform. Django handles presentation, authentication, and ORM; a Flask microservice handles the feedback domain with analytics. The two services share the same PostgreSQL database (Supabase in production).
 
-## Current Collaboration Baseline (2026-05-05)
+## Current Collaboration Baseline (2026-05-09)
 
 - The product is now fully login-only. Old quick/hybrid access modes have been removed from UI, admin, runtime payloads, and schema.
 - `Survey.access_mode` and `FeedbackSubmission.source` were removed in migration `feedback/0008_remove_feedbacksubmission_source_and_more.py`.
@@ -24,6 +24,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Email backend auto-detects SMTP vs console: if `EMAIL_HOST` env var is set, Django uses SMTP; otherwise falls back to console (safe for local dev without `.env` config).
 - Text analysis selected-survey view should show KPI summary, word cloud, keyword cards, category sentiment distribution, text question list, and keyword-category rules.
 - A regression was fixed where duplicate `text_analysis_summary()` / `category_sentiment_summary()` definitions in `feedback/models.py` overrode sentiment logic and caused category sentiment to appear as empty. Keep only one active definition for each helper.
+
+### 2026-05-09 UI, analytics, and email baseline
+
+- Public homepage, login/signup, password reset/change, and customer-facing pages were restyled toward a quieter Claude Design-inspired visual language.
+- Manager pages intentionally keep the existing manager dashboard shell; do not let public/customer CSS changes pollute manager workspace pages.
+- Customer portal nav is simplified to Home / Customer Portal / Notifications / Profile / Logout. Notifications and Profile should have visible active/background states.
+- Notification history, preferences, profile, and password flows now use the newer customer/public styling.
+- Gmail SMTP password reset works when `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USE_TLS`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, and `DEFAULT_FROM_EMAIL` are configured. `EMAIL_HOST_PASSWORD` must be a Google App Password.
+- Stats descriptive charts now include distribution bars for continuous/discrete numeric questions when `chart.counts` exists, matching the categorical bar display.
+- `.claude/audit-report.md` and `docs/audit-2026-05-09.md` record the May 9 UI/email/stats handoff. Keep `.claude/settings.local.json` out of commits.
 
 ### ⚠️ Schema fields that must NOT be reverted
 

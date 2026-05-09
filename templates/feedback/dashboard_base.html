@@ -29,7 +29,7 @@
         <header class="manager-topbar">
             <div>
                 <p class="section-kicker">Manager Workspace</p>
-                <strong>{{ user.get_full_name|default:user.username }}</strong>
+                <strong>歡迎回來，{{ user.get_full_name|default:user.username }}，開始今天的工作。</strong>
             </div>
             <div class="manager-topbar-actions">
                 <a class="button button-ghost" href="{% url 'feedback:home' %}">返回官網首頁</a>

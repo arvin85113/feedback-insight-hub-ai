@@ -3,16 +3,15 @@
 {% block title %}營運總覽 | FeedBack IQ{% endblock %}
 
 {% block dashboard_content %}
-<section class="manager-header">
+<section class="manager-header manager-header-inline">
     <div>
         <p class="section-kicker">Manager Workspace</p>
-        <h1>掌握回饋流量、改善進度與下一步行動</h1>
         <p>
             這個首頁聚合近期回饋、改善任務與通知狀態，讓管理端能快速判斷目前最需要處理的問卷、
             哪些改善案應該優先推進，以及是否有顧客需要更新通知。
         </p>
     </div>
-    <div class="manager-header-inline">
+    <div class="manager-header-actions">
         <a class="button button-primary" href="{% url 'feedback:survey-create' %}">建立新問卷</a>
     </div>
 </section>

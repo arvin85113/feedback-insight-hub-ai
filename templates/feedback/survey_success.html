@@ -1,20 +1,24 @@
 {% extends "base.html" %}
 
 {% block title %}提交成功 | FeedBack IQ{% endblock %}
+{% block body_class %}site-body customer-workspace-body{% endblock %}
 
 {% block content %}
-<section class="success-panel">
-    <p class="section-kicker">Submitted</p>
-    <h1>你的回饋已成功送出</h1>
-    <p>
-        感謝你花時間提供意見。系統會將內容納入分析、統計與改善追蹤流程；
-        若你有開啟通知偏好，後續若有相關改善進度，也會同步通知你。
-    </p>
-    <div class="hero-actions">
-        <a class="button button-primary" href="{% url 'feedback:home' %}">回首頁</a>
-        {% if user.is_authenticated and not user.is_manager %}
-            <a class="button button-ghost" href="{% url 'feedback:customer-home' %}">前往顧客中心</a>
-        {% endif %}
+<section class="survey-shell">
+    <div class="survey-success-panel">
+        <div class="survey-success-icon">✓</div>
+        <p class="section-kicker">Submitted</p>
+        <h1>感謝你的回饋</h1>
+        <p>
+            你的意見已成功送出，系統將納入分析與改善追蹤流程。<br>
+            若你已開啟通知偏好，後續有改善進度時會主動通知你。
+        </p>
+        <div class="survey-success-actions">
+            <a class="button button-primary" href="{% url 'feedback:home' %}">回首頁</a>
+            {% if user.is_authenticated and not user.is_manager %}
+                <a class="button button-ghost" href="{% url 'feedback:customer-home' %}">前往顧客中心</a>
+            {% endif %}
+        </div>
     </div>
 </section>
 {% endblock %}

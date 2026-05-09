@@ -1,9 +1,11 @@
 import uuid
+from datetime import timedelta
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.core.mail import send_mail
-from django.db.models import Count, Q
+from django.db.models import Count, Max, Q
+from django.db.models.functions import TruncDate
 import segno
 
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
@@ -175,7 +177,15 @@ class SurveyManagerView(DashboardBaseMixin, TemplateView):
         sort = self.request.GET.get("sort", "newest")
         category_id = self.request.GET.get("category", "")
 
-        qs = Survey.objects.prefetch_related("questions").select_related("category")
+        qs = (
+            Survey.objects
+            .prefetch_related("questions")
+            .select_related("category")
+            .annotate(
+                submission_count=Count("submissions"),
+                latest_submission_at=Max("submissions__submitted_at"),
+            )
+        )
         if category_id:
             qs = qs.filter(category_id=category_id)
         if sort == "oldest":
@@ -185,7 +195,28 @@ class SurveyManagerView(DashboardBaseMixin, TemplateView):
         else:
             qs = qs.order_by("-created_at")
 
-        context["surveys"] = qs
+        # ── 近 3 日每日回覆數 ──
+        today = timezone.localdate()
+        trend_days = [today - timedelta(days=i) for i in range(2, -1, -1)]  # [day-2, day-1, today]
+        recent_rows = (
+            FeedbackSubmission.objects
+            .filter(submitted_at__date__gte=trend_days[0])
+            .annotate(sub_date=TruncDate("submitted_at"))
+            .values("survey_id", "sub_date")
+            .annotate(cnt=Count("id"))
+        )
+        count_map = {}
+        for row in recent_rows:
+            count_map.setdefault(row["survey_id"], {})[row["sub_date"]] = row["cnt"]
+
+        surveys_list = list(qs)
+        for survey in surveys_list:
+            day_map = count_map.get(survey.id, {})
+            survey.trend = [day_map.get(d, 0) for d in trend_days]
+            survey.trend_max = max(survey.trend) if any(survey.trend) else 1
+
+        context["surveys"] = surveys_list
+        context["trend_days"] = trend_days
         context["categories"] = SurveyCategory.objects.all()
         context["current_sort"] = sort
         context["current_category"] = category_id
@@ -362,6 +393,7 @@ class StatsOverviewView(DashboardBaseMixin, TemplateView):
             .annotate(
                 question_count=Count("questions", distinct=True),
                 response_count=Count("submissions", distinct=True),
+                latest_submission_at=Max("submissions__submitted_at"),
             )
         )
         if category_id:
@@ -440,6 +472,7 @@ class TextAnalysisView(DashboardBaseMixin, TemplateView):
                     filter=Q(questions__data_type=Question.DataType.TEXT),
                     distinct=True,
                 ),
+                latest_submission_at=Max("submissions__submitted_at"),
             )
         )
         if category_id:
@@ -495,6 +528,7 @@ class ImprovementListView(DashboardBaseMixin, TemplateView):
             .annotate(
                 improvement_count=Count("improvements", distinct=True),
                 response_count=Count("submissions", distinct=True),
+                latest_submission_at=Max("submissions__submitted_at"),
             )
         )
         if category_id:
@@ -538,6 +572,7 @@ class NoticeCenterView(DashboardBaseMixin, TemplateView):
             .annotate(
                 notice_count=Count("improvements", distinct=True),
                 response_count=Count("submissions", distinct=True),
+                latest_submission_at=Max("submissions__submitted_at"),
             )
         )
         if category_id:
@@ -617,8 +652,6 @@ class SurveyDetailView(DetailView):
         initial = {}
         if self.request.user.is_authenticated:
             initial = {
-                "respondent_name": self.request.user.get_full_name(),
-                "respondent_email": self.request.user.email,
                 "consent_follow_up": getattr(self.request.user, "notification_opt_in", False),
             }
         context["respondent_form"] = kwargs.get("respondent_form") or RespondentMetaForm(prefix="meta", initial=initial)
@@ -635,11 +668,14 @@ class SurveyDetailView(DetailView):
                 request.user.notification_opt_in = consent_follow_up
                 request.user.save(update_fields=["notification_opt_in"])
 
+            respondent_name = request.user.get_full_name() if request.user.is_authenticated else ""
+            respondent_email = request.user.email if request.user.is_authenticated else ""
+
             submission_result = service_client.submit_survey(
                 self.object,
                 user=request.user if request.user.is_authenticated else None,
-                respondent_name=respondent_form.cleaned_data["respondent_name"],
-                respondent_email=respondent_form.cleaned_data["respondent_email"],
+                respondent_name=respondent_name,
+                respondent_email=respondent_email,
                 consent_follow_up=consent_follow_up,
                 answers={key: value for key, value in form.cleaned_data.items()},
             )

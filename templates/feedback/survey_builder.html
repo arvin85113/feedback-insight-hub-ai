@@ -135,7 +135,7 @@
                     {% elif question.kind == question.Kind.SCALE %}
                         <div class="question-preview-scale">
                             {% if question.options %}
-                                {% for option in question.options|slice:":7" %}
+                                {% for option in question.options %}
                                     <label class="question-preview-scale-item">
                                         <span>{{ option }}</span>
                                         <i></i>

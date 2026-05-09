@@ -21,6 +21,7 @@ class Command(BaseCommand):
                 "kind": Question.Kind.SCALE,
                 "data_type": Question.DataType.CONTINUOUS,
                 "help_text": "1 代表非常不滿意，10 代表非常滿意",
+                "options_text": "1\n2\n3\n4\n5\n6\n7\n8\n9\n10",
             },
             {
                 "order": 2,

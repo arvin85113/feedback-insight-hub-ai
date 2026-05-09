@@ -6,7 +6,6 @@
 <section class="manager-header manager-header-inline">
     <div>
         <p class="section-kicker">Survey Management</p>
-        <h1>問卷管理</h1>
         <p>集中查看所有問卷的題目數、回覆量、啟用狀態與分類，並快速進入問卷編輯與檢視頁。</p>
     </div>
     <div class="manager-header-actions">
@@ -66,13 +65,53 @@
         {% for survey in surveys %}
             <div class="record-row record-row-stack survey-manager-row">
                 <a class="record-row-link" href="{% url 'feedback:survey-builder' survey.slug %}">
-                    <div>
-                        <strong>{{ survey.title }}</strong>
-                        {% if survey.category %}
-                            <span class="pill pill-category">{{ survey.category.name }}</span>
-                        {% endif %}
-                        <p>{{ survey.description|default:"此問卷已建立，可進一步設定題目、流程與分享方式。" }}</p>
-                        <p>{{ survey.questions.count }} 題 | {{ survey.submissions.count }} 份回覆</p>
+                    <div class="survey-row-body">
+                        <div class="survey-row-text">
+                            <strong>{{ survey.title }}</strong>
+                            {% if survey.category %}
+                                <span class="pill pill-category">{{ survey.category.name }}</span>
+                            {% endif %}
+                            <p>{{ survey.description|default:"此問卷已建立，可進一步設定題目、流程與分享方式。" }}</p>
+                            <div class="survey-stat-chips">
+                                <span class="survey-stat-chip">
+                                    <span class="survey-stat-chip-label">題目</span>
+                                    <span class="survey-stat-chip-value">{{ survey.questions.count }}</span>
+                                </span>
+                                <span class="survey-stat-chip">
+                                    <span class="survey-stat-chip-label">回覆</span>
+                                    <span class="survey-stat-chip-value">{{ survey.submission_count }}</span>
+                                </span>
+                                <span class="survey-stat-chip">
+                                    <span class="survey-stat-chip-label">最近回覆</span>
+                                    <span class="survey-stat-chip-value">
+                                        {% if survey.latest_submission_at %}
+                                            {{ survey.latest_submission_at|date:"m/d H:i" }}
+                                        {% else %}
+                                            —
+                                        {% endif %}
+                                    </span>
+                                </span>
+                            </div>
+                        </div>
+                        <div class="survey-trend-mini">
+                            <p class="survey-trend-title">近 3 日回覆</p>
+                            <div class="survey-trend-bars">
+                                {% for count in survey.trend %}
+                                    <div class="survey-trend-col">
+                                        <div class="survey-trend-bar-wrap">
+                                            <span class="survey-trend-bar"
+                                                  style="height: {% widthratio count survey.trend_max 44 %}px"></span>
+                                        </div>
+                                        <span class="survey-trend-label">
+                                            {% if forloop.counter == 1 %}前天
+                                            {% elif forloop.counter == 2 %}昨天
+                                            {% else %}今天{% endif %}
+                                        </span>
+                                        <span class="survey-trend-count">{{ count }}</span>
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        </div>
                     </div>
                 </a>
                 <div class="record-meta survey-manager-meta">

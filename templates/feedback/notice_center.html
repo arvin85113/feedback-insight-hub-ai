@@ -6,7 +6,6 @@
 <section class="manager-header manager-header-inline analytics-hero">
     <div>
         <p class="section-kicker">Notice Center</p>
-        <h1>通知中心</h1>
         <p>依問卷檢視已發布的改善通知，確認哪些改善已同步給顧客。</p>
     </div>
     {% if selected_survey %}
@@ -103,13 +102,28 @@
             {% for survey in notice_survey_rows %}
                 <div class="record-row record-row-stack stats-survey-row">
                     <a class="record-row-link" href="{% url 'feedback:notice-center' %}?survey={{ survey.slug }}">
-                        <div>
-                            <strong>{{ survey.title }}</strong>
-                            {% if survey.category %}
-                                <span class="pill pill-category">{{ survey.category.name }}</span>
-                            {% endif %}
-                            <p>{{ survey.description|default:"尚未填寫問卷說明。" }}</p>
-                            <p>{{ survey.notice_count }} 則通知 | {{ survey.response_count }} 份回覆</p>
+                        <div class="survey-row-body">
+                            <div class="survey-row-text">
+                                <strong>{{ survey.title }}</strong>
+                                {% if survey.category %}
+                                    <span class="pill pill-category">{{ survey.category.name }}</span>
+                                {% endif %}
+                                <p>{{ survey.description|default:"尚未填寫問卷說明。" }}</p>
+                                <div class="survey-stat-chips">
+                                    <span class="survey-stat-chip">
+                                        <span class="survey-stat-chip-label">通知</span>
+                                        <span class="survey-stat-chip-value">{{ survey.notice_count }}</span>
+                                    </span>
+                                    <span class="survey-stat-chip">
+                                        <span class="survey-stat-chip-label">回覆</span>
+                                        <span class="survey-stat-chip-value">{{ survey.response_count }}</span>
+                                    </span>
+                                    <span class="survey-stat-chip">
+                                        <span class="survey-stat-chip-label">最近回覆</span>
+                                        <span class="survey-stat-chip-value">{% if survey.latest_submission_at %}{{ survey.latest_submission_at|date:"m/d H:i" }}{% else %}—{% endif %}</span>
+                                    </span>
+                                </div>
+                            </div>
                         </div>
                     </a>
                     <div class="record-meta">

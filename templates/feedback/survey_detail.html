@@ -1,24 +1,16 @@
 {% extends "base.html" %}
 
 {% block title %}{{ survey.title }} | FeedBack IQ{% endblock %}
+{% block body_class %}site-body customer-workspace-body{% endblock %}
 
 {% block content %}
 <section class="survey-shell">
-    <div class="survey-shell-head">
-        <p class="section-kicker">Feedback Form</p>
-        <h1>{{ survey.title }}</h1>
-        <p>{{ survey.description|default:"請根據你的實際體驗填寫下列問題，協助團隊更有效率地整理意見、啟動改善並追蹤後續結果。" }}</p>
-    </div>
-
-    <div class="kpi-strip">
-        <article class="kpi-chip">
-            <span>問題數量</span>
-            <strong>{{ survey.questions.count }}</strong>
-        </article>
-        <article class="kpi-chip">
-            <span>改善追蹤</span>
-            <strong>{% if survey.improvement_tracking_enabled %}已啟用{% else %}未啟用{% endif %}</strong>
-        </article>
+    <div class="customer-page-head customer-page-head-compact">
+        <div>
+            <p class="section-kicker">Feedback Form</p>
+            <h1>{{ survey.title }}</h1>
+            <p>{{ survey.description|default:"請根據你的實際體驗填寫下列問題，協助團隊更有效率地整理意見、啟動改善並追蹤後續結果。" }}</p>
+        </div>
     </div>
 
     {% if survey_notice %}
@@ -26,23 +18,52 @@
             <p>{{ survey_notice }}</p>
         </article>
     {% else %}
-    <form method="post" class="survey-card-stack">
+
+    <div class="survey-progress-strip" id="surveyProgressStrip" style="display:none">
+        <div class="survey-progress-meta">
+            <span class="survey-progress-label" id="surveyProgressLabel"></span>
+            <span class="survey-progress-fraction" id="surveyProgressFraction"></span>
+        </div>
+        <div class="survey-progress-track">
+            <div class="survey-progress-fill" id="surveyProgressFill"></div>
+        </div>
+    </div>
+
+    <form method="post" class="survey-card-stack" id="surveyForm" novalidate
+          data-total-q="{{ survey.questions.count }}">
         {% csrf_token %}
-        <article class="survey-card survey-card-accent">
-            <h2>基本填答資訊</h2>
-            <div class="form-grid">
-                {% for field in respondent_form %}
-                    <div class="field-block">
-                        {{ field.label_tag }}
+
+        {# Step 0: respondent info + consent #}
+        <article class="survey-card survey-card-accent survey-step"
+                 data-step="0"
+                 data-has-error="{{ respondent_form.errors|yesno:'1,0' }}">
+            <h2>填答者資訊</h2>
+            <div class="respondent-info-row">
+                <div class="respondent-info-field">
+                    <span class="respondent-info-label">姓名</span>
+                    <span class="respondent-info-value">{{ request.user.get_full_name|default:request.user.username }}</span>
+                </div>
+                <div class="respondent-info-field">
+                    <span class="respondent-info-label">Email</span>
+                    <span class="respondent-info-value">{{ request.user.email|default:"—" }}</span>
+                </div>
+            </div>
+            <div class="respondent-consent-row">
+                {% with field=respondent_form.consent_follow_up %}
+                    <label class="consent-label">
                         {{ field }}
-                        {{ field.errors }}
-                    </div>
-                {% endfor %}
+                        <span>{{ field.label }}</span>
+                    </label>
+                    {{ field.errors }}
+                {% endwith %}
             </div>
         </article>
 
+        {# Steps 1-N: questions #}
         {% for field in form %}
-            <article class="survey-card">
+            <article class="survey-card survey-step"
+                     data-step="{{ forloop.counter }}"
+                     data-has-error="{{ field.errors|yesno:'1,0' }}">
                 <div class="question-index">{{ forloop.counter }}</div>
                 <div class="field-block">
                     {{ field.label_tag }}
@@ -55,10 +76,87 @@
             </article>
         {% endfor %}
 
-        <div class="survey-submit">
+        {# Navigation (JS-driven) #}
+        <div class="survey-nav" id="surveyNav" style="display:none">
+            <button type="button" class="button button-ghost" id="surveyPrev">← 上一題</button>
+            <div class="survey-nav-right">
+                <button type="button" class="button button-primary" id="surveyNext">下一步 →</button>
+                <button type="submit" class="button button-primary" id="surveySubmit" style="display:none">送出回饋</button>
+            </div>
+        </div>
+
+        {# Fallback submit: shown only if JS is disabled #}
+        <div class="survey-submit" id="surveyFallbackSubmit" style="display:none">
             <button type="submit" class="button button-primary">送出回饋</button>
         </div>
     </form>
     {% endif %}
 </section>
+
+<script>
+(function () {
+    const form = document.getElementById('surveyForm');
+    if (!form) return;
+
+    const steps    = Array.from(form.querySelectorAll('.survey-step'));
+    const totalQ   = parseInt(form.dataset.totalQ, 10);
+    const last     = steps.length - 1;
+    let current    = 0;
+
+    const strip     = document.getElementById('surveyProgressStrip');
+    const label     = document.getElementById('surveyProgressLabel');
+    const fraction  = document.getElementById('surveyProgressFraction');
+    const fill      = document.getElementById('surveyProgressFill');
+    const nav       = document.getElementById('surveyNav');
+    const prevBtn   = document.getElementById('surveyPrev');
+    const nextBtn   = document.getElementById('surveyNext');
+    const submitBtn = document.getElementById('surveySubmit');
+    const fallback  = document.getElementById('surveyFallbackSubmit');
+
+    // Activate step mode
+    strip.style.display    = '';
+    nav.style.display      = '';
+    fallback.style.display = 'none';
+
+    function showStep(n) {
+        steps.forEach(function (s, i) { s.style.display = i === n ? '' : 'none'; });
+
+        const isInfo = n === 0;
+        const isLast = n === last;
+
+        // Progress
+        var pct = isInfo ? 0 : (n / totalQ) * 100;
+        fill.style.width = pct + '%';
+
+        if (isInfo) {
+            label.textContent    = '填答者資訊';
+            fraction.textContent = '';
+        } else {
+            label.textContent    = '第 ' + n + ' 題';
+            fraction.textContent = n + ' / ' + totalQ;
+        }
+
+        // Buttons
+        prevBtn.style.display   = n === 0 ? 'none' : '';
+        nextBtn.style.display   = isLast ? 'none' : '';
+        submitBtn.style.display = isLast ? '' : 'none';
+        nextBtn.textContent     = isInfo ? '開始填答 →' : '下一題 →';
+
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    prevBtn.addEventListener('click', function () {
+        if (current > 0) { current--; showStep(current); }
+    });
+
+    nextBtn.addEventListener('click', function () {
+        if (current < last) { current++; showStep(current); }
+    });
+
+    // On validation errors: jump to first step that has an error
+    var errorIdx = steps.findIndex(function (s) { return s.dataset.hasError === '1'; });
+    current = errorIdx >= 0 ? errorIdx : 0;
+    showStep(current);
+})();
+</script>
 {% endblock %}
