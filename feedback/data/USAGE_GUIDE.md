@@ -72,10 +72,10 @@ python manage.py rebuild_text_analysis --survey beverage-feedback
 python manage.py top_uncategorized_keywords --survey beverage-feedback --limit 30 --min-count 1
 ```
 
-### D. 重新建立示範問卷（讀取 keyword_category_map）
+### D. 重新建立飲料店示範問卷（讀取 keyword_category_map）
 
 ```bash
-python manage.py seed_beverage_demo
+python manage.py seed_demo_beverage
 ```
 
 ---
