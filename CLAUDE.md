@@ -35,6 +35,32 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Stats descriptive charts now include distribution bars for continuous/discrete numeric questions when `chart.counts` exists, matching the categorical bar display.
 - `.claude/audit-report.md` and `docs/audit-2026-05-09.md` record the May 9 UI/email/stats handoff. Keep `.claude/settings.local.json` out of commits.
 
+### Codex Windows Encoding Notes
+
+Claude Code usually reads these Markdown files without extra handling. Codex on Windows may show mojibake when PowerShell uses its default text decoding for UTF-8 files that contain Traditional Chinese or symbols such as `—`, `→`, and `⚠️`.
+
+Current working location is intentionally simplified to `C:\Projects\Project`. Keep this path for Codex work instead of moving the project back to Desktop or another path with Chinese / synced-folder segments.
+
+When Codex reads Markdown or other text files in PowerShell, use explicit UTF-8 decoding:
+
+```powershell
+Get-Content README.md -Encoding utf8
+Get-Content CLAUDE.md -Encoding utf8
+Get-Content docs\audit-2026-05-09.md -Encoding utf8
+Get-Content .claude\audit-report.md -Encoding utf8
+```
+
+To verify whether a file is genuinely corrupted or only displayed with the wrong terminal decoding, use the repository diagnostic script:
+
+```powershell
+python scripts\diagnose_text_encoding.py --preview README.md
+python scripts\diagnose_text_encoding.py --preview CLAUDE.md
+python scripts\diagnose_text_encoding.py --preview docs\audit-2026-05-09.md
+python scripts\diagnose_text_encoding.py --preview .claude\audit-report.md
+```
+
+If the diagnostic script outputs correct Unicode escapes / readable content, do not rewrite the file to "fix" mojibake; read it again with `-Encoding utf8`.
+
 ### ⚠️ Schema fields that must NOT be reverted
 
 The following fields exist in the database (Supabase production) and are used by production code. **Never remove them from `feedback/models.py` or create a migration that drops them without a coordinated schema migration plan:**
