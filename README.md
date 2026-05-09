@@ -256,9 +256,19 @@ python manage.py sync_keyword_categories --file feedback/data/keyword_category_m
 
 ### 1. Create environment
 
-```bash
+Windows PowerShell:
+
+```powershell
 python -m venv .venv
 .venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+macOS / Linux / WSL:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
@@ -266,8 +276,16 @@ pip install -r requirements.txt
 
 Copy `.env.example` to `.env`:
 
-```bash
+Windows PowerShell:
+
+```powershell
 copy .env.example .env
+```
+
+macOS / Linux / WSL:
+
+```bash
+cp .env.example .env
 ```
 
 For local SQLite development, `DATABASE_URL` can be omitted. For Supabase / PostgreSQL, set `DATABASE_URL` in `.env`.
