@@ -454,20 +454,49 @@ class KeywordCategoryCreateView(ManagerRequiredMixin, View):
         survey = get_object_or_404(Survey, slug=slug)
         if not keyword or not category:
             messages.error(request, "關鍵字與分類名稱不能空白。")
-            return redirect(f"{reverse('feedback:text-analysis')}?survey={slug}")
+            return redirect(f"{reverse('feedback:text-analysis')}?survey={slug}#text-rules")
         try:
             threshold = int(threshold)
             if threshold < 1:
                 raise ValueError
         except ValueError:
             messages.error(request, "門檻值須為正整數。")
-            return redirect(f"{reverse('feedback:text-analysis')}?survey={slug}")
+            return redirect(f"{reverse('feedback:text-analysis')}?survey={slug}#text-rules")
         if KeywordCategory.objects.filter(survey=survey, keyword=keyword).exists():
             messages.error(request, f"關鍵字「{keyword}」已有分類規則。")
-            return redirect(f"{reverse('feedback:text-analysis')}?survey={slug}")
+            return redirect(f"{reverse('feedback:text-analysis')}?survey={slug}#text-rules")
         KeywordCategory.objects.create(survey=survey, keyword=keyword, category=category, threshold=threshold)
         messages.success(request, f"關鍵字規則「{keyword}」已建立。")
-        return redirect(f"{reverse('feedback:text-analysis')}?survey={slug}")
+        return redirect(f"{reverse('feedback:text-analysis')}?survey={slug}#text-rules")
+
+
+class KeywordCategoryUpdateView(ManagerRequiredMixin, View):
+    def post(self, request, pk):
+        kc = get_object_or_404(KeywordCategory, pk=pk)
+        slug = kc.survey.slug
+        keyword = request.POST.get("keyword", "").strip()
+        category = request.POST.get("category", "").strip()
+        threshold = request.POST.get("threshold", "2").strip()
+        redirect_url = f"{reverse('feedback:text-analysis')}?survey={slug}#text-rules"
+        if not keyword or not category:
+            messages.error(request, "關鍵字與分類名稱不能空白。")
+            return redirect(redirect_url)
+        try:
+            threshold = int(threshold)
+            if threshold < 1:
+                raise ValueError
+        except ValueError:
+            messages.error(request, "門檻值須為正整數。")
+            return redirect(redirect_url)
+        if KeywordCategory.objects.filter(survey=kc.survey, keyword=keyword).exclude(pk=kc.pk).exists():
+            messages.error(request, f"關鍵字「{keyword}」已有分類規則。")
+            return redirect(redirect_url)
+        kc.keyword = keyword
+        kc.category = category
+        kc.threshold = threshold
+        kc.save(update_fields=["keyword", "category", "threshold"])
+        messages.success(request, f"關鍵字規則「{keyword}」已更新。")
+        return redirect(redirect_url)
 
 
 class KeywordCategoryDeleteView(ManagerRequiredMixin, View):
@@ -476,7 +505,7 @@ class KeywordCategoryDeleteView(ManagerRequiredMixin, View):
         slug = kc.survey.slug
         kc.delete()
         messages.success(request, "關鍵字規則已刪除。")
-        return redirect(f"{reverse('feedback:text-analysis')}?survey={slug}")
+        return redirect(f"{reverse('feedback:text-analysis')}?survey={slug}#text-rules")
 
 
 class TextAnalysisView(DashboardBaseMixin, TemplateView):

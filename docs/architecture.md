@@ -60,21 +60,23 @@ Shared DB:
 - 建立問卷：支援題型 — 簡答 / 詳答、單選、多選、量化（scale）、整數、小數
 - 題目資料型別：`continuous` / `discrete` / `nominal` / `ordinal` / `text`（對應統計分析方法）
 - 問卷設定：標題、分類（SurveyCategory）、說明、是否開放、感謝信
-- Survey Builder：題目設定 tab + 問卷設定 tab，含題目預覽
+- Survey Builder：題目設定 tab + 問卷設定 tab，含題目預覽；頂部使用與分析二級頁一致的 KPI 膠囊列
 - 問卷管理列表：分類篩選、排序、統計 chips（題目 / 回覆 / 最近回覆）、3 日趨勢圖
 
 ### 3. 統計分析 (`/dashboard/stats/`)
 - 問卷索引 → 選擇問卷 → 進入分析工作台
+- 單一問卷頁：頂部 KPI 膠囊列 + 資料地圖 / 描述統計 / 推論分析 tab
 - 描述統計：計數、平均、中位數、標準差、信賴區間、分布長條圖
 - 推論統計（自動匹配）：Welch t-test、One-way ANOVA、Chi-square、Mann-Whitney U、Kruskal-Wallis、Pearson / Spearman 相關
 - ⚠️ 推論統計目前僅 Django fallback 路徑實作；Flask `/api/stats` 尚未同步
 
 ### 4. 文字洞察 (`/dashboard/text-analysis/`)
 - 問卷索引 → 選擇問卷 → 進入分析工作台
+- 單一問卷頁：頂部 KPI 膠囊列 + 關鍵字摘要 / 情緒分布 / 分類規則 tab
 - 字典驅動關鍵字提取 + 情緒分數（快取於 `Answer.analysis_text` / `sentiment_score`）
-- 文字雲（關鍵字模式 / 分類模式可切換）
-- 分類情緒分布（正向 / 中性 / 負向 stacked bar）
-- 關鍵字分類規則（`KeywordCategory`）管理
+- 文字雲（關鍵字模式 / 分類模式可切換）+ 三欄精簡關鍵字卡
+- 分類情緒分布：每個分類一張卡，正向 / 中性 / 負向 stacked bar 內直接顯示數字
+- 關鍵字分類規則（`KeywordCategory`）支援新增、inline 編輯、刪除
 
 ### 5. 改善追蹤 (`/dashboard/improvements/`)
 - 問卷索引 → 選擇問卷 → 查看改善項目 + 建立新通知

@@ -3,16 +3,29 @@
 {% block title %}{{ survey.title }} | 問卷編排{% endblock %}
 
 {% block dashboard_content %}
-<section class="manager-header builder-header">
-    <div>
-        <p class="section-kicker">Survey Builder</p>
-        <h1>{{ survey.title }}</h1>
-        <p>{{ survey.description|default:"這份問卷尚未補充說明，可在建立後再逐步補齊題目結構與引導文字。" }}</p>
+<section class="manager-header manager-header-inline analytics-hero builder-header">
+    <div class="analytics-meta-strip" aria-label="問卷編輯摘要">
+        <span class="analytics-meta-item analytics-meta-item-wide">
+            <span class="analytics-meta-label">問卷</span>
+            <strong class="analytics-meta-value">{{ survey.title }}</strong>
+        </span>
+        <span class="analytics-meta-item">
+            <span class="analytics-meta-label">題目</span>
+            <strong class="analytics-meta-value">{{ survey.questions.count }}</strong>
+        </span>
+        <span class="analytics-meta-item">
+            <span class="analytics-meta-label">回覆</span>
+            <strong class="analytics-meta-value">{{ responses_count }}</strong>
+        </span>
+        <span class="analytics-meta-item">
+            <span class="analytics-meta-label">最近回覆</span>
+            <strong class="analytics-meta-value">{% if latest_response %}{{ latest_response.submitted_at|date:"m/d H:i" }}{% else %}尚無{% endif %}</strong>
+        </span>
     </div>
     <div class="builder-header-meta">
-        <span class="builder-response-info">{{ responses_count }} 份回覆・最近回覆：{% if latest_response %}{{ latest_response.submitted_at|date:"m/d H:i" }}{% else %}尚無{% endif %}</span>
         <a class="builder-meta-link" href="{% url 'feedback:stats-overview' %}?survey={{ survey.slug }}">統計分析</a>
         <a class="builder-meta-link" href="{% url 'feedback:text-analysis' %}?survey={{ survey.slug }}">文字洞察</a>
+        <a class="button button-ghost" href="{% url 'feedback:survey-manager' %}">返回問卷列表</a>
     </div>
 </section>
 

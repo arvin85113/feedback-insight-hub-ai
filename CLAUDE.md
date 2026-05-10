@@ -24,7 +24,7 @@ This file provides guidance to Claude when working with code in this repository.
 - Notification AJAX mark-as-read added: `MarkNoticeReadView` at `/app/notifications/<pk>/read/`. `ImprovementDispatch.is_read` field added in migration `feedback/0007_add_is_read_to_improvementdispatch.py`.
 - Unread notification count injected via `feedback/context_processors.py` → `unread_notification_count`; registered in `TEMPLATES.context_processors`.
 - Email backend auto-detects SMTP vs console: if `EMAIL_HOST` env var is set, Django uses SMTP; otherwise falls back to console (safe for local dev without `.env` config).
-- Text analysis selected-survey view should show KPI summary, word cloud, keyword cards, category sentiment distribution, text question list, and keyword-category rules.
+- Text analysis selected-survey view should show KPI summary, word cloud, compact keyword cards, category sentiment distribution, and keyword-category rules.
 - A regression was fixed where duplicate `text_analysis_summary()` / `category_sentiment_summary()` definitions in `feedback/models.py` overrode sentiment logic and caused category sentiment to appear as empty. Keep only one active definition for each helper.
 
 ### 2026-05-10 UI and UX baseline
@@ -36,8 +36,11 @@ This file provides guidance to Claude when working with code in this repository.
 - Each step card has a `data-has-error` attribute set by the template; JS always stays in step mode and navigates to the first error step on server-side validation failure.
 - Survey manager list cards now show stat chips (題目 / 回覆 / 最近回覆, font-size 18px) and a 3-day response trend mini bar chart inside the clickable area.
 - Stats / text-analysis / improvement / notice center pages now use the same `.survey-row-body` card layout as the survey manager, with page-specific first chip and the same green background on the clickable area (`.stats-survey-row .record-row-link`).
+- Stats selected-survey page uses compact header KPI pills and a three-tab workflow: data map, descriptive statistics, inferential analysis.
+- Text analysis selected-survey page uses compact header KPI pills and three tabs: keyword summary, sentiment distribution, keyword-category rules. Keyword cards are compact 3-column cards; category sentiment is shown as card-based stacked bars with inline labels.
 - Builder scale question preview no longer truncates at 7 options; CSS uses `flex-wrap: wrap`.
-- Builder header meta (response count, stats/text-analysis links) is now displayed at a larger, more prominent size using `.builder-meta-link` green outline button style.
+- Builder header uses the same compact KPI pill layout as stats/text-analysis selected-survey pages, with actions for stats, text insight, and returning to the survey list.
+- Keyword-category rules can be created, edited inline, and deleted from the text-analysis rules tab. Create/update/delete redirects preserve `#text-rules`.
 - `seed_demo.py` scale question now includes `options_text` for 1–10 to avoid the fallback 1–5 IntegerField bug.
 - `docs/CHANGELOG.md` is the consolidated change log going forward. `TASK_REVIEW_2026-05-08.md`, `docs/audit-2026-05-09.md`, and `.claude/audit-report.md` have been merged there and can be deleted.
 
@@ -307,8 +310,11 @@ Rule source-of-truth policy for text analysis:
 Text analysis UI (`templates/feedback/text_analysis.html`) now matches the survey-manager / stats index pattern:
 - category pills and sort dropdown: `newest` (default), `oldest`, `title`
 - list of surveys with text-analysis availability status
-- selecting a survey via `?survey=<slug>` opens the keyword analysis panel
-- selected survey view includes KPI summary, word cloud, keyword cards, category sentiment distribution, text question list, and keyword-category rules
+- selecting a survey via `?survey=<slug>` opens the selected-survey analysis workspace
+- selected survey view includes compact header KPI pills, word cloud, compact keyword cards, category sentiment distribution, and keyword-category rules
+- selected survey view is split into tabs: keyword summary, sentiment distribution, keyword-category rules
+- category sentiment rows are card-based stacked bars with inline positive / neutral / negative counts and percentages; the dominant sentiment controls the card background
+- keyword-category rules support create, inline edit, and delete; redirects preserve `#text-rules`
 - old right-side selector / execute button flow has been removed
 
 ### Statistical Analysis
@@ -342,10 +348,9 @@ Important: this engine is currently wired through Django fallback (`feedback/loc
 
 Stats overview UI (`templates/feedback/stats_overview.html`) is structured as an analysis workflow:
 - default entry page is a survey index, aligned with survey manager: category pills, sort dropdown, and survey cards with "查看統計"
-- survey selector and KPI strip
-- flow strip: select survey -> read data types -> recommend methods -> validate conditions and explain
+- selected survey view uses compact header KPI pills instead of a large workflow description
+- tabs: data map, descriptive statistics, inferential analysis
 - data map cards for each question
-- method router cards explaining descriptive stats, mean comparison, categorical association, rank tests, and correlation
 - descriptive statistics cards
 - inferential analysis grouped by `analysis_family`, with executed results and skipped-condition cards
 
@@ -357,6 +362,7 @@ Builder UI rules:
 - `integer` / `decimal` -> user chooses `continuous` or `discrete`; current UI defaults to `continuous`.
 
 Survey builder UI current state:
+- Header uses the same compact KPI pill layout as stats/text-analysis selected-survey pages, with actions for stats, text insight, and returning to the survey list.
 - Question cards now include a lightweight answer preview below the title row.
 - `scale` preview renders radio-style points, using `question.options` when present and defaulting to 1-5 when empty.
 - `single_choice` / `multiple_choice` previews render radio/checkbox option rows, capped to the first 5 options.

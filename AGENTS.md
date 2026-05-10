@@ -24,7 +24,7 @@ This file provides guidance to Codex when working with code in this repository.
 - Notification AJAX mark-as-read added: `MarkNoticeReadView` at `/app/notifications/<pk>/read/`. `ImprovementDispatch.is_read` field added in migration `feedback/0007_add_is_read_to_improvementdispatch.py`.
 - Unread notification count injected via `feedback/context_processors.py` → `unread_notification_count`; registered in `TEMPLATES.context_processors`.
 - Email backend auto-detects SMTP vs console: if `EMAIL_HOST` env var is set, Django uses SMTP; otherwise falls back to console (safe for local dev without `.env` config).
-- Text analysis selected-survey view should show KPI summary, word cloud, keyword cards, category sentiment distribution, text question list, and keyword-category rules.
+- Text analysis selected-survey view should show KPI summary, word cloud, compact keyword cards, category sentiment distribution, and keyword-category rules.
 - A regression was fixed where duplicate `text_analysis_summary()` / `category_sentiment_summary()` definitions in `feedback/models.py` overrode sentiment logic and caused category sentiment to appear as empty. Keep only one active definition for each helper.
 
 ### 2026-05-10 UI and UX baseline
@@ -36,8 +36,11 @@ This file provides guidance to Codex when working with code in this repository.
 - Each step card has a `data-has-error` attribute set by the template; JS always stays in step mode and navigates to the first error step on validation failure.
 - Survey manager list cards now show stat chips (題目 / 回覆 / 最近回覆, font-size 18px) and a 3-day response trend mini bar chart inside the clickable area.
 - Stats / text-analysis / improvement / notice center pages now use the same `.survey-row-body` card layout as the survey manager, with page-specific first chip and the same green background on the clickable area.
+- Stats selected-survey page uses compact header KPI pills and a three-tab workflow: data map, descriptive statistics, inferential analysis.
+- Text analysis selected-survey page uses compact header KPI pills and three tabs: keyword summary, sentiment distribution, keyword-category rules. Keyword cards are compact 3-column cards; category sentiment is shown as card-based stacked bars with inline labels.
 - Builder scale question preview no longer truncates at 7 options; CSS uses `flex-wrap: wrap`.
-- Builder header meta (response count, stats/text-analysis links) is now displayed at a larger, more prominent size using `.builder-meta-link` green outline button style.
+- Builder header uses the same compact KPI pill layout as stats/text-analysis selected-survey pages, with actions for stats, text insight, and returning to the survey list.
+- Keyword-category rules can be created, edited inline, and deleted from the text-analysis rules tab. Create/update/delete redirects preserve `#text-rules`.
 - `seed_demo.py` scale question now includes `options_text` for 1–10 to avoid the fallback 1–5 IntegerField.
 
 ### 2026-05-09 UI, analytics, and email baseline
@@ -245,7 +248,7 @@ Admin: `SurveyCategoryAdmin` registered; `improvement_tracking_enabled` is `read
 | 題目設定 | `questions` | Question list (with inline edit) + add-question form |
 | 問卷設定 | `settings` | `SurveyEditForm`: title, category, description, is_active (toggle), thank_you_email_enabled (checkbox), slug (read-only + copy button) |
 
-Response count and latest response time are shown inline in the builder page header, alongside links to stats and text-analysis. Tab state is preserved via `?tab=<key>` query param on redirect after POST.
+The builder page header uses compact KPI pills for survey title, question count, response count, and latest response time. Header actions link to stats, text-analysis, and the survey list. Tab state is preserved via `?tab=<key>` query param on redirect after POST.
 
 POST actions (`action` hidden input):
 - `delete-question` — delete a question by `question_id`
@@ -298,6 +301,13 @@ Rule source-of-truth policy for text analysis:
 - Avoid using manual DB edits as the primary update path, otherwise JSON and DB will drift.
 
 `TextAnalysisView` must pass all three payload sections into template context (`keywords`, `analysis_summary`, `category_sentiments`). If only `keywords` is passed, the word cloud/sentiment panel will partially render or appear empty.
+
+Text analysis selected-survey UI:
+- Uses compact header KPI pills instead of a large workflow description.
+- Uses tabs for keyword summary, sentiment distribution, and keyword-category rules.
+- Keyword summary uses a word cloud plus compact three-column keyword cards.
+- Sentiment distribution uses one card per category; the stacked bar includes inline positive / neutral / negative counts and percentages.
+- Keyword-category rules support create, inline edit, and delete from the rules tab.
 
 `keyword_summary()` in `feedback/models.py` pre-loads all `KeywordCategory` rules (1 query) then matches with fuzzy substring containment, avoiding N+1 queries.
 

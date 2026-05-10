@@ -79,9 +79,9 @@ Shared database:
 ### Manager Workspace
 
 - Survey management with category filter and sort controls.
-- Survey builder with question preview, data type hints, QR code, and settings tab.
-- Stats analysis index: select a survey, then inspect descriptive and inferential analysis.
-- Text analysis index: keyword frequency, category sentiment, keyword rules.
+- Survey builder with compact KPI header, question preview, data type hints, QR code, and settings tab.
+- Stats analysis index: select a survey, then inspect data map, descriptive statistics, and inferential analysis tabs.
+- Text analysis index: keyword frequency, category sentiment cards, and editable keyword rules.
 - Improvement tracking: per-survey tracking toggle and improvement update creation.
 - Notice center: survey-first notification management.
 
@@ -159,6 +159,7 @@ Text-analysis rule source-of-truth policy:
 - Runtime source: `KeywordCategory` in database (Django / Supabase).
 - Versioned seed source: `feedback/data/keyword_category_map.json`.
 - Recommended workflow: edit JSON in git, then sync to DB via management command.
+- Manager UI also supports creating, inline-editing, and deleting per-survey keyword rules from the text-analysis rules tab.
 
 ### Keyword Rule Sync SOP
 
