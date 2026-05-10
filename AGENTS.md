@@ -1,8 +1,8 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude when working with code in this repository.
+This file provides guidance to Codex when working with code in this repository.
 
-> **Sync note:** This file mirrors `AGENTS.md` (for Codex) with tool-specific naming. When updating one, update the other. For the full change history see `docs/CHANGELOG.md`.
+> **Sync note:** This file mirrors `CLAUDE.md` (for Claude) with tool-specific naming. When updating one, update the other. For the full change history see `docs/CHANGELOG.md`.
 
 ## Project Overview
 
@@ -19,7 +19,7 @@ This file provides guidance to Claude when working with code in this repository.
 - Google login on signup is an intentional disabled placeholder owned by another teammate. Do not remove it as stale UI.
 - Manager analysis-related pages now use a unified survey-index first flow: pick a survey from list cards, then drill into stats / text analysis / improvements / notices.
 - Customer portal has been split into account profile (`/accounts/profile/`) and notification preferences (`/accounts/preferences/`). The customer home page focuses on account summary, submission records, and notification summaries.
-- Uncommitted local collaboration files may exist (`CLAUDE.md`, `AGENTS.md`, `scripts/`). Do not mix them into unrelated feature commits unless requested.
+- Uncommitted local collaboration files may exist (`AGENTS.md`, `CLAUDE.md`, `scripts/`). Do not mix them into unrelated feature commits unless requested.
 - Password reset / password change flows added via Django built-in auth views (`accounts/urls.py`). Templates live in `templates/accounts/`.
 - Notification AJAX mark-as-read added: `MarkNoticeReadView` at `/app/notifications/<pk>/read/`. `ImprovementDispatch.is_read` field added in migration `feedback/0007_add_is_read_to_improvementdispatch.py`.
 - Unread notification count injected via `feedback/context_processors.py` → `unread_notification_count`; registered in `TEMPLATES.context_processors`.
@@ -30,30 +30,26 @@ This file provides guidance to Claude when working with code in this repository.
 ### 2026-05-10 UI and UX baseline
 
 - Survey fill page (`survey_detail.html`) is now a step-by-step one-question-per-page form with a progress bar.
-- Step 0 shows read-only respondent info (name + email auto-filled from `request.user`) and the `consent_follow_up` checkbox. Respondent name/email are no longer editable fields; they are read from `request.user` in the view POST handler.
+- Step 0 shows read-only respondent info (name + email auto-filled from `request.user`) and the `consent_follow_up` checkbox. Respondent name/email are no longer editable fields.
 - The improvement-tracking KPI card was removed from the survey fill page (irrelevant from the customer's perspective).
 - The form uses `novalidate` to prevent HTML5 browser validation from blocking submission on hidden steps. Django server-side validation still runs.
-- Each step card has a `data-has-error` attribute set by the template; JS always stays in step mode and navigates to the first error step on server-side validation failure.
+- Each step card has a `data-has-error` attribute set by the template; JS always stays in step mode and navigates to the first error step on validation failure.
 - Survey manager list cards now show stat chips (題目 / 回覆 / 最近回覆, font-size 18px) and a 3-day response trend mini bar chart inside the clickable area.
-- Stats / text-analysis / improvement / notice center pages now use the same `.survey-row-body` card layout as the survey manager, with page-specific first chip and the same green background on the clickable area (`.stats-survey-row .record-row-link`).
+- Stats / text-analysis / improvement / notice center pages now use the same `.survey-row-body` card layout as the survey manager, with page-specific first chip and the same green background on the clickable area.
 - Builder scale question preview no longer truncates at 7 options; CSS uses `flex-wrap: wrap`.
 - Builder header meta (response count, stats/text-analysis links) is now displayed at a larger, more prominent size using `.builder-meta-link` green outline button style.
-- `seed_demo.py` scale question now includes `options_text` for 1–10 to avoid the fallback 1–5 IntegerField bug.
-- `docs/CHANGELOG.md` is the consolidated change log going forward. `TASK_REVIEW_2026-05-08.md`, `docs/audit-2026-05-09.md`, and `.claude/audit-report.md` have been merged there and can be deleted.
+- `seed_demo.py` scale question now includes `options_text` for 1–10 to avoid the fallback 1–5 IntegerField.
 
 ### 2026-05-09 UI, analytics, and email baseline
 
-- Public homepage, login/signup, password reset/change, and customer-facing pages were restyled toward a quieter Claude Design-inspired visual language.
+- Public homepage, login/signup, password reset/change, and customer-facing pages were restyled toward a quieter visual language.
 - Manager pages intentionally keep the existing manager dashboard shell; do not let public/customer CSS changes pollute manager workspace pages.
 - Customer portal nav is simplified to Home / Customer Portal / Notifications / Profile / Logout. Notifications and Profile should have visible active/background states.
 - Notification history, preferences, profile, and password flows now use the newer customer/public styling.
 - Gmail SMTP password reset works when `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USE_TLS`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, and `DEFAULT_FROM_EMAIL` are configured. `EMAIL_HOST_PASSWORD` must be a Google App Password.
 - Stats descriptive charts now include distribution bars for continuous/discrete numeric questions when `chart.counts` exists, matching the categorical bar display.
-- Keep `.claude/settings.local.json` out of commits.
 
 ### Codex Windows Encoding Notes
-
-Claude Code usually reads these Markdown files without extra handling. Codex on Windows may show mojibake when PowerShell uses its default text decoding for UTF-8 files that contain Traditional Chinese or symbols such as `—`, `→`, and `⚠️`.
 
 Current working location is intentionally simplified to `C:\Projects\Project`. Keep this path for Codex work instead of moving the project back to Desktop or another path with Chinese / synced-folder segments.
 
@@ -61,22 +57,14 @@ When Codex reads Markdown or other text files in PowerShell, use explicit UTF-8 
 
 ```powershell
 Get-Content README.md -Encoding utf8
-Get-Content CLAUDE.md -Encoding utf8
 Get-Content AGENTS.md -Encoding utf8
-Get-Content docs\CHANGELOG.md -Encoding utf8
-Get-Content docs\architecture.md -Encoding utf8
 ```
 
-To verify whether a file is genuinely corrupted or only displayed with the wrong terminal decoding, use the repository diagnostic script:
+To verify whether a file is genuinely corrupted or only displayed with the wrong terminal decoding:
 
 ```powershell
-python scripts\diagnose_text_encoding.py --preview README.md
-python scripts\diagnose_text_encoding.py --preview CLAUDE.md
 python scripts\diagnose_text_encoding.py --preview AGENTS.md
-python scripts\diagnose_text_encoding.py --preview docs\CHANGELOG.md
 ```
-
-If the diagnostic script outputs correct Unicode escapes / readable content, do not rewrite the file to "fix" mojibake; read it again with `-Encoding utf8`.
 
 ### ⚠️ Schema fields that must NOT be reverted
 
@@ -112,7 +100,7 @@ python manage.py seed_demo
 
 # Diagnose text encoding / mojibake safely in Windows terminals
 python scripts/diagnose_text_encoding.py
-python scripts/diagnose_text_encoding.py --preview CLAUDE.md
+python scripts/diagnose_text_encoding.py --preview AGENTS.md
 
 # Start Flask microservice (port 5001)
 python -m flask --app services.feedback_service.app run --host 127.0.0.1 --port 5001
@@ -267,6 +255,16 @@ POST actions (`action` hidden input):
 
 `SurveyEditForm` fields: `title`, `category`, `description`, `is_active`, `thank_you_email_enabled`.
 
+### Survey Fill Form (Step-by-Step)
+
+`survey_detail.html` is a stepped one-question-per-page form:
+- Step 0: read-only respondent info (name + email from `request.user`) + `consent_follow_up` checkbox only.
+- Steps 1–N: one question per step.
+- Navigation: "開始填答 →" on step 0, "下一題 →" on middle steps, "送出回饋" on last step.
+- `<form novalidate>` prevents browser HTML5 validation from blocking on hidden steps.
+- `data-has-error` attribute on each step card; JS navigates to first error step on server-side validation failure.
+- `respondent_name` and `respondent_email` are read from `request.user` in the view POST handler, not from form fields.
+
 ### Text Analysis
 
 Text analysis is dictionary-driven and cached on `Answer` rows.
@@ -301,124 +299,65 @@ Rule source-of-truth policy for text analysis:
 
 `TextAnalysisView` must pass all three payload sections into template context (`keywords`, `analysis_summary`, `category_sentiments`). If only `keywords` is passed, the word cloud/sentiment panel will partially render or appear empty.
 
-
 `keyword_summary()` in `feedback/models.py` pre-loads all `KeywordCategory` rules (1 query) then matches with fuzzy substring containment, avoiding N+1 queries.
-
-Text analysis UI (`templates/feedback/text_analysis.html`) now matches the survey-manager / stats index pattern:
-- category pills and sort dropdown: `newest` (default), `oldest`, `title`
-- list of surveys with text-analysis availability status
-- selecting a survey via `?survey=<slug>` opens the keyword analysis panel
-- selected survey view includes KPI summary, word cloud, keyword cards, category sentiment distribution, text question list, and keyword-category rules
-- old right-side selector / execute button flow has been removed
 
 ### Statistical Analysis
 
 `feedback/local_service.py` contains the current Pandas/SciPy statistical engine used by the Django fallback stats path.
 
-The project uses an **analysis-purpose data type model**, not a pure Stevens four-scale model and not a pure data-science-only categorical/numeric split. The goal is to let the builder capture the minimum information needed for safe automated Pandas analysis.
-
 `get_survey_pandas_stats(survey)` returns:
 - `charts`: template-compatible chart records (`type="numeric"` or `type="category"`).
-- `inferential_analysis`: automatic statistical test records. Each record can include `analysis_family`, `method_key`, `test_name`, `statistic`, `p_value`, `effect_size`, `effect_label`, `is_significant`, `insight`, `warning`, or `skipped_reason`.
+- `inferential_analysis`: automatic statistical test records.
 
-Rules:
-- `continuous`: numeric quantity with meaningful magnitude, such as score, money, time, or ratio. It gets numeric summaries and can be a dependent variable (DV) in t-test / ANOVA.
-- `discrete`: count-like or code-like numeric value, such as visit count, item count, or numeric level code. It gets numeric summaries only and is not automatically used as a DV.
-- `nominal`: unordered category, such as department, region, role, or issue type. It gets category distribution; single-choice nominal questions can be independent variables (IV).
-- `multiple_choice + nominal`: split/explode frequency chart only, not IV, because one submission may belong to multiple groups.
-- `ordinal`: ordered category where spacing is not guaranteed, such as very satisfied / satisfied / neutral / dissatisfied. It gets category distribution only and is intentionally excluded from t-test / ANOVA.
-- `text`: handled by text analysis, not the stats inference engine.
+Data type rules:
+- `continuous`: numeric quantity with meaningful magnitude. Gets numeric summaries; eligible DV for t-test / ANOVA / Pearson.
+- `discrete`: count-like numeric. Gets numeric summaries only; not auto-used as DV.
+- `nominal`: unordered category. Gets frequency chart; single-choice can be IV.
+- `ordinal`: ordered category without guaranteed equal spacing. Gets frequency chart; used in rank tests.
+- `text`: handled by text analysis pipeline only.
 
 Inference rules:
-- `nominal IV x continuous DV`: 2 valid groups use Welch independent-samples t-test; 3 to 5 valid groups use one-way ANOVA. Each group needs at least 2 numeric values. Effect size is Cohen's d for t-test and eta squared for ANOVA.
-- `nominal x nominal`: uses chi-square test of independence for single-choice nominal questions. Multiple-choice nominal questions are excluded because one response can belong to multiple groups. Effect size is Cramer's V.
-- `nominal IV x ordinal DV`: uses Mann-Whitney U for 2 groups and Kruskal-Wallis for 3 to 5 groups. Ordinal questions need `options_text` so the engine can safely map labels to ranks.
-- `continuous x continuous`: uses Pearson correlation.
-- Any pair involving ordinal ranks in correlation uses Spearman correlation.
-- Numeric charts include count, mean, median, std, min, max, and 95% confidence interval for the mean when there are at least 2 values.
-- Invalid combinations return `skipped_reason`.
+- `nominal IV x continuous DV`: Welch t-test (2 groups) or one-way ANOVA (3–5 groups).
+- `nominal x nominal`: chi-square (single-choice only). Effect size: Cramer's V.
+- `nominal IV x ordinal DV`: Mann-Whitney U (2 groups) or Kruskal-Wallis (3–5 groups).
+- `continuous x continuous`: Pearson correlation.
+- Ordinal-rank pairs: Spearman correlation.
 
-Important: this engine is currently wired through Django fallback (`feedback/local_service.py`). Flask `/api/stats` has not yet been upgraded to this Pandas contract.
-
-Stats overview UI (`templates/feedback/stats_overview.html`) is structured as an analysis workflow:
-- default entry page is a survey index, aligned with survey manager: category pills, sort dropdown, and survey cards with "查看統計"
-- survey selector and KPI strip
-- flow strip: select survey -> read data types -> recommend methods -> validate conditions and explain
-- data map cards for each question
-- method router cards explaining descriptive stats, mean comparison, categorical association, rank tests, and correlation
-- descriptive statistics cards
-- inferential analysis grouped by `analysis_family`, with executed results and skipped-condition cards
-
-Builder UI rules:
-- `short_text` / `long_text` -> fixed `text`.
-- `single_choice` -> user chooses `ordinal` or `nominal`.
-- `multiple_choice` -> fixed `nominal`.
-- `scale` -> user chooses `continuous` or `ordinal`.
-- `integer` / `decimal` -> user chooses `continuous` or `discrete`; current UI defaults to `continuous`.
-
-Survey builder UI current state:
-- Question cards now include a lightweight answer preview below the title row.
-- `scale` preview renders radio-style points, using `question.options` when present and defaulting to 1-5 when empty.
-- `single_choice` / `multiple_choice` previews render radio/checkbox option rows, capped to the first 5 options.
-- Text and numeric questions render disabled-looking input/textarea previews.
-- The builder add-question form shows the next question number and a lightweight usage hint when the question kind changes.
-- Manager dashboard pages no longer render the global Django messages banner from `dashboard_base.html`; the frontend `base.html` messages block remains available for non-dashboard pages.
-
-`SurveyFormBuilder` widget rules (actual survey fill form):
-- `single_choice` → `RadioSelect` (previously `<select>`).
-- `multiple_choice` → `CheckboxSelectMultiple` (unchanged).
-- `scale` with `options_text` → `RadioSelect` using those options.
-- `scale` without `options_text` → `IntegerField(min_value=1, max_value=5)`.
-- `short_text` / `long_text` / `integer` / `decimal` → unchanged.
+Important: this engine is wired through Django fallback only. Flask `/api/stats` has not been upgraded to this Pandas contract.
 
 ### Notice Center
 
-`/dashboard/notices/` now follows the same survey-index first pattern as stats and text analysis. It lists surveys with category filter and sort controls; selecting a survey via `?survey=<slug>` opens the notice list for that survey. The old right-side survey selector flow has been removed.
-
-`NoticeCenterView.get_context_data` provides survey list context (`survey_rows`, `categories`, `current_category`, `current_sort`) and selected survey notice detail context (`selected_survey`, `selected_notices`).
+`/dashboard/notices/` follows the survey-index first pattern. It lists surveys with category filter and sort controls; selecting a survey via `?survey=<slug>` opens the notice list.
 
 ### Improvement List Page
 
-`/dashboard/improvements/` also uses the survey-index first pattern. Selecting a survey opens its improvement tracking workspace. The page supports an improvement-tracking toggle per survey; if tracking is disabled, inline creation is blocked and the UI explains why.
+`/dashboard/improvements/` uses the survey-index first pattern. Selecting a survey opens its improvement tracking workspace with a per-survey tracking toggle.
 
 POST actions:
 - `toggle-tracking` — enable / disable `Survey.improvement_tracking_enabled`
 - inline create improvement — only available when tracking is enabled
 
-The older accordion-only behavior is no longer the primary page structure.
-
 ### Customer Portal
 
-`/app/` is the customer-facing dashboard. It shows:
-- account summary and latest status
-- submission record cards with status filters: `all`, `pending`, `tracking`, `improved`
-- each submission row shows survey title, category pill, status pill, and concise metadata: `<answer_count> 題已作答，提交時間：YYYY/M/D`
-- answer snippets are intentionally not shown in the submission list to avoid leaking context such as organization / department answers into the overview
-- notification summary links to `/app/notifications/`
+`/app/` is the customer-facing dashboard:
+- Account summary and latest status.
+- Submission record cards with status filters: `all`, `pending`, `tracking`, `improved`.
+- Each submission row shows survey title, category pill, status pill, and metadata (`<answer_count> 題已作答，提交時間：YYYY/M/D`).
+- Answer snippets are intentionally not shown to avoid leaking context.
+- Notification summary links to `/app/notifications/`.
 
-Submission payloads from both Django fallback and Flask include:
-- `submitted_at` — ISO timestamp for machine use
-- `submitted_date` — display date, formatted `YYYY/M/D`
-- `submitted_datetime` — display datetime, formatted `YYYY/M/D HH:MM`
-
-`/accounts/preferences/` is now notification-specific:
-- global notification opt-in switch
-- per-filled-survey follow-up switches based on `FeedbackSubmission.consent_follow_up`
-- category pills and sort controls
-
-`/accounts/profile/` owns user profile data such as name, email, and organization. Keep profile fields out of notification preferences.
+`/accounts/preferences/` — global notification opt-in + per-survey follow-up switches.
+`/accounts/profile/` — user profile data (name, email, organization). Keep profile fields out of preferences.
 
 ### Manager Workspace Layout
 
-The manager sidebar (`dashboard_base.html`) is fixed: `position: sticky; height: 100vh` on `.manager-sidebar`, with `.manager-shell` set to `height: 100vh; overflow: hidden` and `.manager-main` set to `overflow-y: auto; height: 100vh`. This makes the sidebar stay in place while only the right content area scrolls.
+The manager sidebar (`dashboard_base.html`) is fixed: `position: sticky; height: 100vh` on `.manager-sidebar`, with `.manager-shell` set to `height: 100vh; overflow: hidden` and `.manager-main` set to `overflow-y: auto; height: 100vh`.
 
 ### Signup Form (`/accounts/signup/`)
 
-`CustomerSignUpForm` fields: `username`, `first_name`, `email`, `notification_opt_in`, `password1`, `password2`. `last_name` and `organization` have been removed. The signup page includes a disabled Google login placeholder button (coming soon) above the email form, separated by a divider.
+`CustomerSignUpForm` fields: `username`, `first_name`, `email`, `notification_opt_in`, `password1`, `password2`. The signup page includes a disabled Google login placeholder button (coming soon) — do not remove it.
 
 ## Environment Variables
-
-Copy `.env.example` to `.env`. Key variables:
 
 | Variable | Default | Notes |
 |---|---|---|
@@ -426,54 +365,40 @@ Copy `.env.example` to `.env`. Key variables:
 | `DEBUG` | `True` | Set `False` in production |
 | `ALLOWED_HOSTS` | — | Comma-separated |
 | `DATABASE_URL` | SQLite | PostgreSQL URL for production (Supabase) |
-| `FEEDBACK_SERVICE_URL` | — | Flask URL; omit to use Django fallback only. Recommended unset unless Flask is deployed and stats parity is updated. |
+| `FEEDBACK_SERVICE_URL` | — | Omit to use Django fallback only (recommended) |
 | `FEEDBACK_SERVICE_CONNECT_TIMEOUT` | `0.35` | Seconds |
 | `FEEDBACK_SERVICE_READ_TIMEOUT` | `0.8` | Seconds |
 | `FEEDBACK_SERVICE_FAILURE_COOLDOWN` | `30` | Seconds before retrying Flask |
-| `ADMIN_USERNAME` | — | Used by `ensure_superuser` command |
-| `ADMIN_EMAIL` | — | Used by `ensure_superuser` command |
-| `ADMIN_PASSWORD` | — | Used by `ensure_superuser` command |
-| `EMAIL_HOST` | — | If set, auto-switches `EMAIL_BACKEND` to SMTP. Leave unset for console (local dev). |
+| `ADMIN_USERNAME` | — | Used by `ensure_superuser` |
+| `ADMIN_EMAIL` | — | Used by `ensure_superuser` |
+| `ADMIN_PASSWORD` | — | Used by `ensure_superuser` |
+| `EMAIL_HOST` | — | If set, auto-switches to SMTP backend |
 | `EMAIL_PORT` | `587` | SMTP port |
 | `EMAIL_USE_TLS` | `True` | |
 | `EMAIL_USE_SSL` | `False` | Mutually exclusive with TLS |
 | `EMAIL_HOST_USER` | — | SMTP username / Gmail address |
-| `EMAIL_HOST_PASSWORD` | — | Gmail App Password (16-digit; requires 2FA enabled) |
-| `DEFAULT_FROM_EMAIL` | `noreply@feedback-platform.local` | Sender address in outgoing mail |
+| `EMAIL_HOST_PASSWORD` | — | Gmail App Password (16-digit; requires 2FA) |
+| `DEFAULT_FROM_EMAIL` | `noreply@feedback-platform.local` | Sender address |
 
 ## Data Models
 
-**Django ORM** (source of truth): `SurveyCategory`, `Survey`, `Question`, `FeedbackSubmission`, `Answer`, `KeywordCategory`, `ImprovementUpdate`, `ImprovementDispatch` in `feedback/models.py`. `Survey.access_mode` and `FeedbackSubmission.source` no longer exist. `ImprovementDispatch.is_read` (bool, default False) tracks customer read status. `User` (extends `AbstractUser`) with `role` and `notification_opt_in` in `accounts/models.py`.
+**Django ORM** (source of truth): `SurveyCategory`, `Survey`, `Question`, `FeedbackSubmission`, `Answer`, `KeywordCategory`, `ImprovementUpdate`, `ImprovementDispatch` in `feedback/models.py`. `ImprovementDispatch.is_read` (bool, default False) tracks customer read status. `User` (extends `AbstractUser`) with `role` and `notification_opt_in` in `accounts/models.py`.
 
-**SQLAlchemy models** in `services/feedback_service/models.py` mirror the Django schema — they read/write the same tables. When adding fields, update both ORMs and create a Django migration.
-
-### ImprovementListView Context
-
-`ImprovementListView.get_context_data` provides `survey_groups`, a list of dicts:
-
-```python
-{
-    "survey": Survey,           # Survey instance
-    "improvements": [...],      # list of ImprovementUpdate for this survey
-    "create_url": str,          # reverse("feedback:improvement-create", args=[survey.slug])
-}
-```
-
-Fetched in 2 queries (no N+1): one for all improvements, one for all surveys; grouped in Python.
+**SQLAlchemy models** in `services/feedback_service/models.py` mirror the Django schema. When adding fields, update both ORMs and create a Django migration.
 
 ## Migrations
 
 | Migration | Description |
 |---|---|
 | `feedback/0001` – `0004` | Initial schema |
-| `feedback/0005` | Remove QUICK/HYBRID choices from Survey.access_mode and FeedbackSubmission.source |
-| `feedback/0006` | Data migration: convert existing hybrid/quick records to login |
-| `feedback/0007_add_survey_category` | Add SurveyCategory model; add Survey.category FK |
-| `feedback/0007_answer_analysis_text_answer_analysis_version_and_more` | Add cached text-analysis fields to Answer (`analysis_text`, `analysis_version`, `sentiment_score`) |
+| `feedback/0005` | Remove QUICK/HYBRID choices |
+| `feedback/0006` | Data migration: convert hybrid/quick to login |
+| `feedback/0007_add_survey_category` | Add SurveyCategory; add Survey.category FK |
+| `feedback/0007_answer_analysis_text_...` | Add Answer cached text-analysis fields |
 | `feedback/0007_add_is_read_to_improvementdispatch` | Add `is_read` to ImprovementDispatch |
-| `feedback/0008` | Remove obsolete Survey.access_mode and FeedbackSubmission.source columns |
-| `feedback/0009_merge_20260428_2019` | Merge migration joining category/schema-removal branch with text-analysis field branch |
-| `feedback/0010_merge_20260505_2155` | Merge migration joining is_read branch with 0009 (2026-05-05 integration) |
+| `feedback/0008` | Remove Survey.access_mode and FeedbackSubmission.source |
+| `feedback/0009_merge_20260428_2019` | Merge migration |
+| `feedback/0010_merge_20260505_2155` | Merge migration |
 
 ## Deployment
 
@@ -483,26 +408,24 @@ Deployed on **Render** (see `render.yaml`):
 
 `build.sh` runs: `pip install`, `migrate`, `ensure_superuser`, `seed_demo`, `collectstatic`.
 
-Static files served by Whitenoise. `DATABASE_URL` must be set manually in Render dashboard for both services (points to Supabase PostgreSQL).
-
 ## Git Collaboration Rules
 
 **Before opening a PR, always run:**
 
 ```bash
-git fetch origin && git merge origin/main   # sync to latest main first
-python manage.py check                       # must show 0 issues
-python manage.py migrate --check            # must show no pending migrations
+git fetch origin && git merge origin/main
+python manage.py check
+python manage.py migrate --check
 python -m py_compile feedback/models.py feedback/views.py feedback/local_service.py
 ```
 
-**Hard rules to prevent schema regression:**
+**Hard rules:**
 
-1. **Never edit `feedback/models.py` without creating a matching migration.** Run `python manage.py makemigrations` after every model change and commit the migration file.
-2. **Never remove `SurveyCategory`, `Survey.category`, `Answer.analysis_text/sentiment_score/analysis_version`, or `ImprovementDispatch.is_read`** — these fields exist in the Supabase production database. See the ⚠️ table in the Collaboration Baseline section.
-3. **Never add back `Survey.access_mode` or `FeedbackSubmission.source`** — they were intentionally dropped in migration `0008`.
-4. **Feature branches must be rebased / merged from latest `main` before PR**, not from an older snapshot. Working from an outdated base causes fields that `main` already has to appear as "new" in your diff, and fields that `main` removed to silently return.
-5. **Do not commit `CLAUDE.md`, `.claude/settings.local.json`, or `scripts/` in feature PRs** unless the PR is explicitly about updating those files.
+1. Never edit `feedback/models.py` without creating a matching migration.
+2. Never remove `SurveyCategory`, `Survey.category`, `Answer.analysis_text/sentiment_score/analysis_version`, or `ImprovementDispatch.is_read`.
+3. Never add back `Survey.access_mode` or `FeedbackSubmission.source`.
+4. Feature branches must be rebased / merged from latest `main` before PR.
+5. Do not commit `AGENTS.md`, `CLAUDE.md`, or `scripts/` in feature PRs unless explicitly requested.
 
 ## Dependencies
 
@@ -511,7 +434,7 @@ Django==6.0.3
 dj-database-url==3.0.1
 Flask==3.1.2
 gunicorn==23.0.0
-psycopg[binary]==3.3.3      # psycopg3, not psycopg2
+psycopg[binary]==3.3.3
 python-dotenv==1.0.1
 pandas==2.3.3
 requests==2.32.5
@@ -524,58 +447,14 @@ No frontend JS/CSS framework. All UI is custom HTML + `static/css/app.css`.
 
 ### Notification System
 
-`feedback/context_processors.py` provides `unread_notification_count` — queries unread `ImprovementDispatch` rows for the logged-in customer (not managers) and injects it into every template context. Registered in `TEMPLATES.context_processors` in `config/settings.py`.
+`feedback/context_processors.py` provides `unread_notification_count` injected into every template context. Registered in `TEMPLATES.context_processors` in `config/settings.py`.
 
-**Navbar unread badge:** `base.html` customer nav link shows `.nav-badge` when `unread_notification_count > 0`. Styled in `static/css/app.css` as a red circle positioned top-right of the link.
-
-**AJAX mark-as-read flow** (`customer_notifications.html`):
+**AJAX mark-as-read flow:**
 1. Each notification row has `data-pk`, `data-is-read`, `data-survey-url` attributes.
-2. On click, JS checks if unread, then POSTs to `/app/notifications/<pk>/read/` with `X-Requested-With: XMLHttpRequest` and CSRF cookie.
+2. On click, JS POSTs to `/app/notifications/<pk>/read/` with `X-Requested-With: XMLHttpRequest` and CSRF cookie.
 3. `MarkNoticeReadView` returns `{"ok": true}` for AJAX, or redirects for non-AJAX.
-4. Frontend removes `record-row-unread` class, decrements badge, updates pill to "已讀", then navigates to `data-survey-url`.
-
-**Gmail App Password:** Google Account → Security → 2-Step Verification → App Passwords. Set `EMAIL_HOST=smtp.gmail.com` and `EMAIL_HOST_PASSWORD=<16-char-app-password>` in `.env`.
+4. Frontend removes `record-row-unread` class, decrements badge, updates pill to "已讀", navigates to `data-survey-url`.
 
 ## Merge Incident Log - 2026-05-07
 
-Context: `origin/main` contained teammate updates for text-analysis/improvement integration, but also introduced a dangerous migration chain:
-
-- `feedback/migrations/0010_remove_answer_analysis_text_and_more.py`
-- `feedback/migrations/0011_improvementdispatch_is_read.py`
-- `build.sh` workaround: `python manage.py migrate feedback 0011 --fake`
-
-Why this is dangerous:
-
-- `0010_remove_answer_analysis_text_and_more.py` removes `Answer.analysis_text`, `Answer.analysis_version`, and `Answer.sentiment_score`.
-- These columns already exist in Supabase production and are part of the text-analysis cache/sentiment pipeline.
-- Running that migration on production would execute `DROP COLUMN` for those fields and break the newer text-analysis flow.
-- Faking `0011` in `build.sh` is also unsafe because it can mark migrations as applied without actually creating required database columns.
-
-Resolution used:
-
-- Merged `origin/main` into local `main` without committing immediately.
-- Kept the local production-safe schema:
-  - `SurveyCategory`
-  - `Survey.category`
-  - `Answer.analysis_text`
-  - `Answer.analysis_version`
-  - `Answer.sentiment_score`
-  - `ImprovementDispatch.is_read`
-- Removed the dangerous/duplicate remote migration files from the merge result:
-  - `0010_remove_answer_analysis_text_and_more.py`
-  - `0011_improvementdispatch_is_read.py`
-- Removed the `build.sh` fake migration workaround.
-- Kept the safe remote additions:
-  - `https://feedback-insight-hub-pa75.onrender.com` in `CSRF_TRUSTED_ORIGINS`
-  - `text_analysis_summary()` and `category_sentiment_summary()` helper functions in `feedback/models.py`
-
-Validation before commit:
-
-```bash
-python manage.py check
-python manage.py makemigrations --check --dry-run
-python manage.py migrate --plan
-python -m py_compile feedback/models.py feedback/views.py feedback/local_service.py accounts/views.py
-```
-
-Expected result: no pending model migrations and no planned migration operations against Supabase.
+See `docs/CHANGELOG.md` for the full incident record. Summary: a dangerous migration chain (`0010_remove_answer_analysis_text_and_more`) from `origin/main` was identified and removed before production deployment. The production-safe schema was preserved.

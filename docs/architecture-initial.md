@@ -1,5 +1,6 @@
-# 系統架構說明 - Feedback Insight Hub
+# 系統架構說明 - Feedback Insight Hub（初始設計）
 > 生成日期：2026-04-22
+> **⚠️ 此為初始設計文件，部分內容已與現況不同。請參考 `docs/architecture.md` 取得最新架構說明。**
 
 ---
 
@@ -69,10 +70,12 @@
 7. **通過** → 分析執行 → 顯示結果與解釋
 8. **不通過** → 顯示錯誤訊息
 
-#### 支援統計方法
+#### 支援統計方法（初始設計）
+> ⚠️ 配對樣本 t 檢定未實作；現況新增 Mann-Whitney U / Kruskal-Wallis。參見 `docs/architecture.md`。
+
 - 卡方檢定
 - 獨立樣本 t 檢定
-- 配對樣本 t 檢定
+- 配對樣本 t 檢定（未實作）
 - 單因子 ANOVA
 - Pearson 相關
 - Spearman 相關
