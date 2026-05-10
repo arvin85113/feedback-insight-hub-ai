@@ -411,7 +411,37 @@ class StatsOverviewView(DashboardBaseMixin, TemplateView):
         payload = service_client.get_stats(selected_slug) if selected_slug else {"charts": [], "question_analysis": [], "inferential_analysis": []}
         context["charts"] = payload.get("charts", [])
         context["question_analysis"] = payload.get("question_analysis", [])
-        context["inferential_analysis"] = payload.get("inferential_analysis", [])
+        inferential = payload.get("inferential_analysis", [])
+        context["inferential_analysis"] = inferential
+        context["available_tests_count"] = sum(1 for r in inferential if not r.get("skipped_reason"))
+        context["skipped_tests_count"] = sum(1 for r in inferential if r.get("skipped_reason"))
+        _group_defs = [
+            {
+                "key": "mean_comparison",
+                "badge": "平均數比較", "badge_class": "method-mean",
+                "title": "名目分組 × 連續結果",
+                "desc": "2 組跑 Welch t-test，3-5 組跑單因子 ANOVA，並附上效果量。",
+                "families": ("mean_comparison",),
+            },
+            {
+                "key": "categorical_association",
+                "badge": "類別關聯", "badge_class": "method-category",
+                "title": "名目 × 名目",
+                "desc": "單選名目題之間跑卡方檢定；多選題只做多重回應頻率，不當分組。",
+                "families": ("categorical_association",),
+            },
+            {
+                "key": "rank_correlation",
+                "badge": "順序 / 相關", "badge_class": "method-rank",
+                "title": "排序與關聯",
+                "desc": "名目 × 順序跑非母數檢定；連續 × 連續跑 Pearson，涉及順序資料跑 Spearman。",
+                "families": ("nonparametric_rank", "correlation"),
+            },
+        ]
+        context["inference_groups"] = [
+            {**g, "results": [r for r in inferential if r.get("analysis_family") in g["families"]]}
+            for g in _group_defs
+        ]
         return context
 
 

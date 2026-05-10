@@ -1023,9 +1023,10 @@ ul.errorlist {
 .manager-shell .analytics-question-card,
 .manager-shell .method-router-card,
 .manager-shell .analytics-result-card {
-    background: rgba(255, 255, 255, 0.82);
-    border: 1px solid rgba(14, 26, 18, 0.09);
+    background: rgba(255, 255, 255, 0.94);
+    border: 3px solid rgba(87, 113, 98, 0.46);
     border-radius: 12px;
+    box-shadow: 0 4px 14px rgba(14, 26, 18, 0.09);
 }
 
 /* Flow strip & chips */
@@ -1085,6 +1086,308 @@ ul.errorlist {
     align-items: end;
 }
 
+/* ── Analytics compact meta strip (replaces kpi-strip) ── */
+.analytics-meta-strip {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+}
+
+.analytics-meta-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 42px;
+    padding: 8px 12px;
+    border: 2px solid rgba(87, 113, 98, 0.30);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.78);
+    box-shadow: 0 3px 10px rgba(14, 26, 18, 0.055);
+}
+
+.analytics-meta-item-wide {
+    flex: 1 1 260px;
+    min-width: min(100%, 260px);
+}
+
+.analytics-meta-label {
+    color: var(--muted);
+    font-size: 0.82rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.analytics-meta-value {
+    color: var(--text);
+    font-size: 1rem;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.analytics-meta-positive {
+    color: var(--brand);
+}
+
+.analytics-meta-muted {
+    color: var(--muted);
+}
+
+.analytics-meta-sep {
+    color: var(--border);
+    font-weight: 300;
+    user-select: none;
+}
+
+/* ── Analytics Tab Nav (replaces flow-strip) ── */
+.analytics-tab-nav {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 12px 16px;
+    margin-bottom: 20px;
+    border: 1px solid rgba(79, 125, 100, 0.18);
+    border-radius: 14px;
+    background: linear-gradient(135deg, rgba(79, 125, 100, 0.06), rgba(26, 53, 84, 0.03));
+    position: sticky;
+    top: 0;
+    z-index: 20;
+}
+
+.analytics-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    border: 1.5px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--muted);
+    font-size: 0.83rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+    white-space: nowrap;
+    line-height: 1;
+}
+
+.analytics-tab:hover {
+    border-color: rgba(79, 125, 100, 0.45);
+    color: var(--brand);
+    background: rgba(79, 125, 100, 0.06);
+}
+
+.analytics-tab-active,
+.analytics-tab-active:hover {
+    background: var(--brand);
+    border-color: var(--brand);
+    color: #fff;
+}
+
+.analytics-tab-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    font-size: 10px;
+    font-weight: 800;
+    background: rgba(79, 125, 100, 0.12);
+    color: var(--brand);
+    flex-shrink: 0;
+}
+
+.analytics-tab-active .analytics-tab-num {
+    background: rgba(255, 255, 255, 0.22);
+    color: #fff;
+}
+
+.analytics-tab-badge {
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: rgba(79, 125, 100, 0.1);
+    color: var(--brand);
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.analytics-tab-active .analytics-tab-badge {
+    background: rgba(255, 255, 255, 0.22);
+    color: #fff;
+}
+
+.analytics-tab-badge-active {
+    background: rgba(79, 125, 100, 0.18) !important;
+}
+
+.analytics-tab-arrow {
+    color: var(--muted);
+    font-weight: 700;
+    font-size: 13px;
+    flex-shrink: 0;
+}
+
+/* ── Tab panels ── */
+.analytics-tab-panel {
+    /* visibility controlled via hidden attribute by JS */
+}
+
+.analytics-tab-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 20px 0 8px;
+}
+
+/* ── Inference group <details> collapsibles (Tab 3) ── */
+.inference-group-list {
+    display: grid;
+    gap: 12px;
+}
+
+.inference-group {
+    border: 1px solid rgba(14, 26, 18, 0.12);
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.86);
+    box-shadow: 0 1px 3px rgba(14, 26, 18, 0.04);
+    overflow: hidden;
+}
+
+.inference-group[open] {
+    border-color: rgba(79, 125, 100, 0.24);
+    background: rgba(255, 255, 255, 0.94);
+    box-shadow: 0 2px 8px rgba(14, 26, 18, 0.05), 0 18px 44px rgba(14, 26, 18, 0.08);
+}
+
+.inference-group-summary {
+    display: flex;
+    align-items: center;
+    list-style: none;
+    cursor: pointer;
+    user-select: none;
+    padding: 0;
+}
+
+.inference-group-summary::-webkit-details-marker {
+    display: none;
+}
+
+.inference-group-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex: 1;
+    padding: 14px 16px;
+    transition: background 120ms ease;
+}
+
+.inference-group-summary:hover .inference-group-header {
+    background: rgba(79, 125, 100, 0.05);
+}
+
+.inference-group-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.inference-group-info strong {
+    font-size: 0.93rem;
+    font-weight: 700;
+    color: var(--ink);
+}
+
+.inference-group-desc {
+    font-size: 0.78rem;
+    color: var(--muted);
+    line-height: 1.5;
+}
+
+.inference-group-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+.inference-group-count {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 13px;
+    border-radius: 999px;
+    font-size: 0.88rem;
+    font-weight: 850;
+    line-height: 1;
+    background: rgba(79, 125, 100, 0.14);
+    color: var(--brand-deep);
+    border: 1px solid rgba(79, 125, 100, 0.18);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+}
+
+.inference-group[open] .inference-group-count {
+    background: var(--brand);
+    border-color: var(--brand);
+    color: #fff;
+}
+
+.inference-chevron {
+    font-size: 0.85rem;
+    color: var(--muted);
+    transition: transform 200ms ease;
+}
+
+.inference-group[open] .inference-chevron {
+    transform: rotate(180deg);
+}
+
+.inference-group-body {
+    gap: 16px;
+    padding: 18px 20px 20px;
+    border-top: 1px solid rgba(79, 125, 100, 0.16);
+    background: rgba(79, 125, 100, 0.055);
+}
+
+.inference-group-body .analytics-result-card {
+    background: rgba(255, 255, 255, 0.98);
+    border: 1.5px solid rgba(79, 125, 100, 0.24);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.72), 0 2px 6px rgba(14, 26, 18, 0.05);
+}
+
+.inference-group-body .inference-card:not(.inference-card-skipped) {
+    border-left: 4px solid rgba(79, 125, 100, 0.78);
+}
+
+/* ── Method note (bottom of Tab 2 descriptive panel) ── */
+.analytics-method-note {
+    margin: 20px 0 0;
+    padding: 12px 16px;
+    border-radius: 14px;
+    background: rgba(26, 53, 84, 0.04);
+    border: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 0.82rem;
+    line-height: 1.7;
+}
+
+.analytics-method-note strong {
+    color: var(--ink);
+    font-weight: 700;
+}
+
+/* legacy strips kept for any possible reuse */
 .analytics-flow-strip {
     display: flex;
     align-items: center;
@@ -1140,7 +1443,7 @@ ul.errorlist {
 .analytics-result-grid,
 .analytics-inference-list {
     display: grid;
-    gap: 14px;
+    gap: 12px;
 }
 
 .analytics-question-map {
@@ -1151,9 +1454,10 @@ ul.errorlist {
 .method-router-card,
 .analytics-result-card {
     padding: 16px;
-    border: 1px solid var(--line);
+    border: 3px solid rgba(87, 113, 98, 0.42);
     border-radius: 18px;
-    background: rgba(255, 255, 255, 0.72);
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 4px 12px rgba(14, 26, 18, 0.075);
 }
 
 .analytics-question-card p,
@@ -1241,7 +1545,9 @@ ul.errorlist {
 .analytics-metric-list div {
     padding: 10px 12px;
     border-radius: 14px;
-    background: rgba(26, 53, 84, 0.05);
+    background: rgba(75, 100, 124, 0.105);
+    border: 1.5px solid rgba(75, 100, 124, 0.20);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55);
 }
 
 .analytics-metric-list dt {
@@ -1270,7 +1576,9 @@ ul.errorlist {
     gap: 12px;
     padding: 9px 11px;
     border-radius: 12px;
-    background: rgba(26, 53, 84, 0.05);
+    background: rgba(75, 100, 124, 0.105);
+    border: 1.5px solid rgba(75, 100, 124, 0.20);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55);
     color: var(--ink);
 }
 
