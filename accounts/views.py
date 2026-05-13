@@ -15,9 +15,16 @@ class PlatformLoginView(LoginView):
     template_name = "accounts/login.html"
 
     def get_success_url(self):
-        # Respect ?next= first (e.g. survey QR redirect), then fall back to role-based home
-        next_url = self.get_redirect_url()
-        if next_url:
+        # Read ?next= directly from POST (hidden input) then GET param.
+        # Bypass get_redirect_url() which can silently drop the value in
+        # certain Django 6 + HTTPS configurations.
+        from django.utils.http import url_has_allowed_host_and_scheme
+        next_url = self.request.POST.get("next") or self.request.GET.get("next", "")
+        if next_url and url_has_allowed_host_and_scheme(
+            url=next_url,
+            allowed_hosts={self.request.get_host()},
+            require_https=False,   # allow http in dev; Render enforces HTTPS at proxy
+        ):
             return next_url
         if self.request.user.is_manager:
             return str(reverse_lazy("feedback:dashboard"))
@@ -103,37 +110,4 @@ def customer_preferences_view(request):
             if row["survey"].category_id and str(row["survey"].category_id) == category_id
         ]
     if sort == "oldest":
-        survey_rows.sort(key=lambda row: row["latest_submission"].submitted_at)
-    elif sort == "title":
-        survey_rows.sort(key=lambda row: row["survey"].title)
-    else:
-        survey_rows.sort(key=lambda row: row["latest_submission"].submitted_at, reverse=True)
-
-    return render(
-        request,
-        "accounts/preferences.html",
-        {
-            "form": form,
-            "survey_rows": survey_rows,
-            "categories": SurveyCategory.objects.all(),
-            "current_category": category_id,
-            "current_sort": sort,
-        },
-    )
-
-
-@login_required
-def customer_profile_view(request):
-    if request.user.is_manager:
-        return redirect("feedback:dashboard")
-
-    if request.method == "POST":
-        form = CustomerProfileForm(request.POST, instance=request.user)
-        if form.is_valid():
-            form.save()
-            messages.success(request, "個人資料已儲存。")
-            return redirect("accounts:profile")
-    else:
-        form = CustomerProfileForm(instance=request.user)
-
-    return render(request, "accounts/profile.html", {"form": form})
+        survey_rows.sort(key=lambda row: row["latest_submission"].submitted_a
