@@ -64,7 +64,7 @@
     <div class="record-list">
         {% for survey in surveys %}
             <div class="record-row record-row-stack survey-manager-row">
-                <a class="record-row-link" href="{% url 'feedback:survey-builder' survey.slug %}">
+                <a class="record-row-link" href="{% if survey.slug %}{% url 'feedback:survey-builder' survey.slug %}{% else %}{% url 'feedback:survey-manager' %}{% endif %}">
                     <div class="survey-row-body">
                         <div class="survey-row-text">
                             <strong>{{ survey.title }}</strong>
@@ -118,6 +118,7 @@
                     <span class="pill {% if survey.is_active %}pill-active{% endif %}">
                         {% if survey.is_active %}已啟用{% else %}草稿中{% endif %}
                     </span>
+                    {% if survey.slug %}
                     <div class="survey-link-group">
                         <div class="qr-popover-wrapper">
                             <button type="button" class="button button-ghost button-small qr-trigger" aria-label="QR Code" aria-expanded="false">
@@ -138,6 +139,7 @@
                         {% csrf_token %}
                         <button type="submit" class="button button-danger button-small">刪除</button>
                     </form>
+                    {% endif %}
                 </div>
             </div>
         {% empty %}

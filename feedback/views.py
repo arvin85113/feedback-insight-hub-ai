@@ -258,7 +258,7 @@ class SurveyCreateView(DashboardBaseMixin, CreateView):
 
     def form_valid(self, form):
         form.instance.improvement_tracking_enabled = True
-        response = super().form_valid(form)
+        self.object = form.save()
         base_slug = slugify(form.cleaned_data["title"]) or f"survey-{self.object.pk}"
         slug = base_slug
         counter = 2
@@ -268,7 +268,7 @@ class SurveyCreateView(DashboardBaseMixin, CreateView):
         if self.object.slug != slug:
             self.object.slug = slug
             self.object.save(update_fields=["slug"])
-        return response
+        return HttpResponseRedirect(self.get_success_url())
 
     def get_success_url(self):
         return reverse("feedback:survey-builder", args=[self.object.slug])

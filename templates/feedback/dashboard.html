@@ -98,7 +98,7 @@
         </div>
         <div class="record-list">
             {% for survey in top_surveys %}
-                <a class="record-row" href="{% url 'feedback:survey-builder' survey.slug %}">
+                <a class="record-row" href="{% if survey.slug %}{% url 'feedback:survey-builder' survey.slug %}{% else %}{% url 'feedback:survey-manager' %}{% endif %}">
                     <div>
                         <strong>{{ survey.title }}</strong>
                         <p>{{ survey.questions.count }} 題</p>
