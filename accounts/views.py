@@ -116,4 +116,24 @@ def customer_preferences_view(request):
             "form": form,
             "survey_rows": survey_rows,
             "categories": SurveyCategory.objects.all(),
-            "current_categor
+            "current_category": category_id,
+            "current_sort": sort,
+        },
+    )
+
+
+@login_required
+def customer_profile_view(request):
+    if request.user.is_manager:
+        return redirect("feedback:dashboard")
+
+    if request.method == "POST":
+        form = CustomerProfileForm(request.POST, instance=request.user)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "個人資料已儲存。")
+            return redirect("accounts:profile")
+    else:
+        form = CustomerProfileForm(instance=request.user)
+
+    return render(request, "accounts/profile.html", {"form": form})

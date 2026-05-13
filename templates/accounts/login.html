@@ -48,4 +48,8 @@
         </p>
         <p class="auth-link-row">
             還沒有帳號？
-       
+            <a href="{% url 'accounts:signup' %}{% if next %}?next={{ next }}{% endif %}">建立顧客帳號</a>
+        </p>
+    </article>
+</main>
+{% endblock %}

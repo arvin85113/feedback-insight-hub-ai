@@ -83,4 +83,9 @@
         </form>
 
         <p class="auth-link-row">
-        
+            已經有帳號？
+            <a href="{% url 'accounts:login' %}{% if request.GET.next %}?next={{ request.GET.next }}{% endif %}">返回登入</a>
+        </p>
+    </article>
+</main>
+{% endblock %}

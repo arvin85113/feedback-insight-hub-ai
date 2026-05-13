@@ -6660,4 +6660,66 @@ input[type="checkbox"] {
         justify-content: flex-start;
     }
 
-    .customer-workspace-body .custo
+    .customer-workspace-body .customer-toggle-row {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .customer-kpi-grid,
+    .customer-kpi-grid-four {
+        grid-template-columns: 1fr;
+    }
+
+    .customer-record-row {
+        flex-direction: column;
+    }
+
+    .customer-record-meta {
+        align-items: flex-start;
+        min-width: 0;
+    }
+}
+
+/* ── Mobile: customer workspace header stays horizontal ── */
+@media (max-width: 640px) {
+    /* Override the global column-stack rule for customer pages */
+    .customer-workspace-body .site-header-inner {
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+        min-height: 52px;
+        padding: 8px 0;
+        gap: 6px;
+    }
+
+    .customer-workspace-body .site-nav {
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px 10px;
+        font-size: 0.8rem;
+    }
+
+    /* Shrink logout button on mobile so it fits inline */
+    .customer-workspace-body .site-nav .button-ghost {
+        padding: 6px 10px;
+        font-size: 0.8rem;
+    }
+
+    /* Reduce top padding — 72px is too much when header is 52px */
+    .customer-workspace-body .site-main {
+        padding-top: 28px;
+        padding-bottom: 64px;
+        width: calc(100% - 24px);
+    }
+
+    /* Survey card full width on small screens */
+    .customer-workspace-body .survey-shell {
+        width: 100%;
+    }
+
+    /* Compact survey page header text */
+    .customer-workspace-body .customer-page-head h1 {
+        font-size: 1.4rem;
+    }
+}
