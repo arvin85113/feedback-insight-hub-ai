@@ -257,15 +257,18 @@ class SurveyCreateView(DashboardBaseMixin, CreateView):
         return context
 
     def form_valid(self, form):
-        slug = slugify(form.cleaned_data["title"])
-        if Survey.objects.filter(slug=slug).exists():
-            counter = 2
-            while Survey.objects.filter(slug=f"{slug}-{counter}").exists():
-                counter += 1
-            slug = f"{slug}-{counter}"
-        form.instance.slug = slug
         form.instance.improvement_tracking_enabled = True
-        return super().form_valid(form)
+        response = super().form_valid(form)
+        base_slug = slugify(form.cleaned_data["title"]) or f"survey-{self.object.pk}"
+        slug = base_slug
+        counter = 2
+        while Survey.objects.filter(slug=slug).exclude(pk=self.object.pk).exists():
+            slug = f"{base_slug}-{counter}"
+            counter += 1
+        if self.object.slug != slug:
+            self.object.slug = slug
+            self.object.save(update_fields=["slug"])
+        return response
 
     def get_success_url(self):
         return reverse("feedback:survey-builder", args=[self.object.slug])
