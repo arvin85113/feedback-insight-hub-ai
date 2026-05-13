@@ -23,7 +23,7 @@ class PlatformLoginView(LoginView):
         if next_url and url_has_allowed_host_and_scheme(
             url=next_url,
             allowed_hosts={self.request.get_host()},
-            require_https=False,   # allow http in dev; Render enforces HTTPS at proxy
+            require_https=False,
         ):
             return next_url
         if self.request.user.is_manager:
@@ -40,8 +40,6 @@ class CustomerSignUpView(CreateView):
     template_name = "accounts/signup.html"
 
     def get_success_url(self):
-        # Preserve ?next= so the login page knows where to go after login
-        # GET: initial page load; POST: hidden field submitted with form
         next_url = self.request.POST.get("next") or self.request.GET.get("next", "")
         base = str(reverse_lazy("accounts:login"))
         if next_url:
@@ -110,4 +108,37 @@ def customer_preferences_view(request):
             if row["survey"].category_id and str(row["survey"].category_id) == category_id
         ]
     if sort == "oldest":
-        survey_rows.sort(key=lambda row: row["latest_submission"].submitted_a
+        survey_rows.sort(key=lambda row: row["latest_submission"].submitted_at)
+    elif sort == "title":
+        survey_rows.sort(key=lambda row: row["survey"].title)
+    else:
+        survey_rows.sort(key=lambda row: row["latest_submission"].submitted_at, reverse=True)
+
+    return render(
+        request,
+        "accounts/preferences.html",
+        {
+            "form": form,
+            "survey_rows": survey_rows,
+            "categories": SurveyCategory.objects.all(),
+            "current_category": category_id,
+            "current_sort": sort,
+        },
+    )
+
+
+@login_required
+def customer_profile_view(request):
+    if request.user.is_manager:
+        return redirect("feedback:dashboard")
+
+    if request.method == "POST":
+        form = CustomerProfileForm(request.POST, instance=request.user)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "個人資料已儲存。")
+            return redirect("accounts:profile")
+    else:
+        form = CustomerProfileForm(instance=request.user)
+
+    return render(request, "accounts/profile.html", {"form": form})
