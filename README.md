@@ -6,13 +6,13 @@ Feedback Insight Hub 是一套以登入制問卷為核心的顧客回饋管理�
 
 ## Current Status
 
-- 問卷已改為 100% login-only，舊的 quick / hybrid access mode 已從 UI、schema 與 payload 中移除。
-- Django 是目前主要穩定服務：頁面、登入、ORM、問卷填答、統計、文字分析與改善追蹤都可透過 Django fallback 運作。
-- Flask service 仍存在於 `services/feedback_service/`，但 `/api/stats` 尚未完整同步 Django fallback 的 Pandas/SciPy 推論統計格式。
-- 生產資料庫使用 Supabase PostgreSQL；本地預設使用 SQLite。
-- Manager workspace 目前包含問卷管理、統計分析、文字洞察、改善追蹤、通知中心。
-- Customer portal 目前包含填答紀錄、通知摘要、個人資料設定與通知偏好設定。
-- Google OAuth / Google login placeholder 必須保留，這是另一位組員負責的整合項目。
+- 問卷填答採 **login-only** 制：顧客須登入後才能填答，無訪客或匿名入口。
+- **Django 為主要穩定服務**：頁面渲染、登入驗證、ORM、問卷填答、統計分析、文字洞察與改善追蹤均透過 Django 路徑完整運作。
+- Flask microservice（`services/feedback_service/`）保留微服務架構彈性，但統計推論 payload 尚未同步 Django fallback 的 Pandas/SciPy 推論合約；目前建議使用 Django-only fallback 部署。
+- 生產資料庫使用 **Supabase PostgreSQL**；本地開發預設使用 SQLite。
+- **Manager workspace** 涵蓋：問卷管理、Survey Builder、統計分析（資料地圖 / 描述統計 / 推論分析）、文字洞察、改善追蹤、通知中心。
+- **Customer portal** 涵蓋：填答紀錄（狀態篩選）、通知摘要與已讀管理、個人資料設定、通知偏好設定。
+- Google OAuth 登入保留 placeholder UI，為另一位組員負責的整合項目，尚未開放。
 
 ## Tech Stack
 
@@ -23,7 +23,7 @@ Feedback Insight Hub 是一套以登入制問卷為核心的顧客回饋管理�
 | Database | SQLite local / Supabase PostgreSQL production |
 | ORM | Django ORM + SQLAlchemy mirror models |
 | Statistics | pandas + scipy |
-| Text analysis | jieba + dictionary-based keyword / sentiment pipeline |
+| Text analysis | 字典驅動 keyword / sentiment pipeline（`feedback/text_pipeline.py`） |
 | Static files | Whitenoise |
 | Deployment | Render |
 | Frontend | Django templates + custom CSS only |
@@ -465,8 +465,6 @@ python manage.py collectstatic --noinput
 
 ## Current Caveats
 
-- Public homepage now uses a dedicated `public_base.html` shell and `public-*` CSS classes. Login, signup, and password pages intentionally keep the existing public/auth layout for now.
-- The homepage no longer lists active surveys publicly. This is intentional for the B2B login-only positioning; survey entry points live behind the customer portal.
-- Flask stats endpoint is behind the Django fallback stats contract.
-- `render.yaml` includes a Flask private service blueprint, but practical deployment may remain Django-only on Render free tier.
-- Some legacy documentation and source comments may still contain mojibake from earlier Windows terminal encoding issues; user-facing templates should be checked visually before demo.
+- 首頁不列出公開問卷，符合 B2B login-only 定位；問卷入口在顧客端 `/app/`。
+- Flask `/api/stats` 尚未同步 Django fallback 的 Pandas/SciPy 推論統計格式；建議部署時不設定 `FEEDBACK_SERVICE_URL`，以 Django-only 路徑運作。
+- `render.yaml` 包含 Flask private service blueprint，但若使用 Render 免費方案，建議只部署 Django 服務。

@@ -161,18 +161,20 @@ Shared DB:
 
 ---
 
-## Differences from Initial Design (2026-04-22)
+## Architecture Decision Notes
 
-| 初始設計 | 現況（2026-05-10） |
+以下說明現況架構的關鍵設計決策，以及背後的原因：
+
+| 決策 | 說明 |
 |---|---|
-| QR 掃描 → 直接填答或註冊 | QR 掃描 → 必須登入才能填答（login-only） |
-| 平鋪顯示所有題目 | 逐步式問卷（一題一頁） |
-| 計量 / 非計量分類法（Stevens）| analysis-purpose data type model（continuous / discrete / nominal / ordinal / text） |
-| 配對樣本 t 檢定列為支援方法 | 未實作（移除）；實作 Welch t-test / ANOVA / Chi-square / Mann-Whitney / Kruskal-Wallis / Pearson / Spearman |
-| jieba 關鍵字 | 字典驅動 pipeline（feedback/text_pipeline.py），非 jieba |
-| 管理者側邊欄列出多種 KPI 卡 | 已統一為各功能頁面的 survey-index-first 流程 |
-| 統計結果需手動選擇分析方法 | 系統自動根據資料型別匹配推論方法並說明跳過原因 |
+| Login-only 填答 | 所有問卷填答須先登入，無訪客或匿名入口。確保填答紀錄與顧客帳號綁定，支援改善通知回推。 |
+| 逐步式問卷（一題一頁） | 降低填答認知負擔，使用 `data-has-error` 屬性支援後端驗證錯誤的步驟導航。 |
+| Analysis-purpose data type model | 採 `continuous / discrete / nominal / ordinal / text` 分類，對應各統計方法的適用條件，而非純統計學的 Stevens 四等級。 |
+| 自動推論方法匹配 | 系統根據題目資料型別組合自動選擇檢定方法（Welch t-test、ANOVA、Chi-square、Mann-Whitney、Kruskal-Wallis、Pearson、Spearman），不符條件時回傳 `skipped_reason` 而非靜默略過。 |
+| 字典驅動文字分析 | 使用自訂詞典、同義詞正規化、情緒字典評分（`feedback/text_pipeline.py`），結果快取於 `Answer` 欄位，避免每次請求重算。 |
+| Survey-index-first 流程 | 統計分析、文字洞察、改善追蹤、通知中心均採「先選問卷 → 再進入工作台」的流程，減少頁面跳轉並讓各功能聚焦於單一問卷。 |
+| Django fallback 優先 | `service_client.py` 採 circuit-breaker 設計，Flask 不可用時自動使用 Django ORM 路徑；推論統計（Pandas/SciPy）目前只在 Django 路徑完整實作。 |
 
 ---
 
-*參考：`docs/architecture-initial.md` 保存 2026-04-22 原始設計文件。*
+*初始設計文件（2026-04-22 版）請見 `docs/architecture-initial.md`。*

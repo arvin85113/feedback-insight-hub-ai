@@ -6660,22 +6660,4 @@ input[type="checkbox"] {
         justify-content: flex-start;
     }
 
-    .customer-workspace-body .customer-toggle-row {
-        flex-direction: column;
-        align-items: flex-start;
-    }
-
-    .customer-kpi-grid,
-    .customer-kpi-grid-four {
-        grid-template-columns: 1fr;
-    }
-
-    .customer-record-row {
-        flex-direction: column;
-    }
-
-    .customer-record-meta {
-        align-items: flex-start;
-        min-width: 0;
-    }
-}
+    .customer-workspace-body .custo
