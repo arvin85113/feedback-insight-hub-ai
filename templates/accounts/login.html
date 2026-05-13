@@ -31,6 +31,9 @@
         </div>
         <form method="post" class="form-stack">
             {% csrf_token %}
+            {% if next %}
+                <input type="hidden" name="next" value="{{ next }}">
+            {% endif %}
             {% for field in form %}
                 <div class="field-block">
                     {{ field.label_tag }}
@@ -45,8 +48,4 @@
         </p>
         <p class="auth-link-row">
             還沒有帳號？
-            <a href="{% url 'accounts:signup' %}">建立顧客帳號</a>
-        </p>
-    </article>
-</main>
-{% endblock %}
+       

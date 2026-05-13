@@ -15,9 +15,13 @@ class PlatformLoginView(LoginView):
     template_name = "accounts/login.html"
 
     def get_success_url(self):
+        # Respect ?next= first (e.g. survey QR redirect), then fall back to role-based home
+        next_url = self.get_redirect_url()
+        if next_url:
+            return next_url
         if self.request.user.is_manager:
-            return reverse_lazy("feedback:dashboard")
-        return reverse_lazy("feedback:customer-home")
+            return str(reverse_lazy("feedback:dashboard"))
+        return str(reverse_lazy("feedback:customer-home"))
 
 
 class PlatformLogoutView(LogoutView):
@@ -27,7 +31,16 @@ class PlatformLogoutView(LogoutView):
 class CustomerSignUpView(CreateView):
     form_class = CustomerSignUpForm
     template_name = "accounts/signup.html"
-    success_url = reverse_lazy("accounts:login")
+
+    def get_success_url(self):
+        # Preserve ?next= so the login page knows where to go after login
+        # GET: initial page load; POST: hidden field submitted with form
+        next_url = self.request.POST.get("next") or self.request.GET.get("next", "")
+        base = str(reverse_lazy("accounts:login"))
+        if next_url:
+            from urllib.parse import urlencode
+            return f"{base}?{urlencode({'next': next_url})}"
+        return base
 
     def form_valid(self, form):
         messages.success(self.request, "顧客帳號已建立，請登入後查看填答紀錄與通知。")
@@ -103,24 +116,4 @@ def customer_preferences_view(request):
             "form": form,
             "survey_rows": survey_rows,
             "categories": SurveyCategory.objects.all(),
-            "current_category": category_id,
-            "current_sort": sort,
-        },
-    )
-
-
-@login_required
-def customer_profile_view(request):
-    if request.user.is_manager:
-        return redirect("feedback:dashboard")
-
-    if request.method == "POST":
-        form = CustomerProfileForm(request.POST, instance=request.user)
-        if form.is_valid():
-            form.save()
-            messages.success(request, "個人資料已儲存。")
-            return redirect("accounts:profile")
-    else:
-        form = CustomerProfileForm(instance=request.user)
-
-    return render(request, "accounts/profile.html", {"form": form})
+            "current_categor

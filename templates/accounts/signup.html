@@ -42,6 +42,9 @@
 
         <form method="post" class="form-stack">
             {% csrf_token %}
+            {% if request.GET.next %}
+                <input type="hidden" name="next" value="{{ request.GET.next }}">
+            {% endif %}
 
             <div class="field-block">
                 {{ form.email.label_tag }}
@@ -80,9 +83,4 @@
         </form>
 
         <p class="auth-link-row">
-            已經有帳號？
-            <a href="{% url 'accounts:login' %}">返回登入</a>
-        </p>
-    </article>
-</main>
-{% endblock %}
+        
