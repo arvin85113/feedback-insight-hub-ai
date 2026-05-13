@@ -121,6 +121,14 @@ Invalid or unsafe combinations return `skipped_reason` instead of silently produ
 
 Text analysis is dictionary-driven and cached on `Answer` rows.
 
+#### jieba（結巴）中文斷詞
+
+- 依賴套件：`requirements.txt` 內含 `jieba`。
+- 主要實作：`feedback/text_pipeline.py`；環境有安裝時會用 `jieba.cut()` 做中文斷詞，未安裝則退回較簡單的切詞邏輯，不會讓整站無法啟動。
+- 寫入與回填：`feedback/local_service.py` 在文字題填答寫入時，以及 `python manage.py rebuild_text_analysis` 回填歷史資料時，會透過 `build_analysis_text()` 產生 `Answer.analysis_text` 與 `sentiment_score`。
+- 字典與規則：停用詞、同義詞、情緒詞與分類規則在 `feedback/data/`，並搭配 `KeywordCategory`（DB）做關鍵字→大分類映射。
+- 與文字雲的差異：文字洞察頁的關鍵字頻率／文字雲目前主要走 `feedback/models.py` 的 `tokenize_feedback()`（正則切詞 + DB 規則），與 `text_pipeline.py` 的 jieba 路徑並非同一條；若兩邊結果不一致，請先確認是否已執行 `rebuild_text_analysis`，以及 DB 規則是否已 `sync_keyword_categories`。
+
 Important files:
 
 ```text
