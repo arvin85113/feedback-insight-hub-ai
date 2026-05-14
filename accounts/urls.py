@@ -7,6 +7,8 @@ from .views import (
     PlatformLogoutView,
     customer_preferences_view,
     customer_profile_view,
+    resend_verification_view,
+    verify_email_view,
 )
 
 app_name = "accounts"
@@ -58,4 +60,6 @@ urlpatterns = [
     ),
     path("preferences/", customer_preferences_view, name="preferences"),
     path("profile/", customer_profile_view, name="profile"),
+    path("verify-email/<str:token>/", verify_email_view, name="verify-email"),
+    path("resend-verification/", resend_verification_view, name="resend-verification"),
 ]

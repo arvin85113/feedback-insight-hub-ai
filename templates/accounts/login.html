@@ -43,6 +43,16 @@
             {% endfor %}
             <button type="submit" class="button button-primary button-wide">登入</button>
         </form>
+        {% if unverified_email %}
+        <div class="flash-message" style="margin-top:1rem;">
+            還沒收到驗證信？點擊下方按鈕重新寄送。
+            <form method="post" action="{% url 'accounts:resend-verification' %}" style="margin-top:0.5rem;">
+                {% csrf_token %}
+                <input type="hidden" name="email" value="{{ unverified_email }}">
+                <button type="submit" class="button button-wide">重新寄送驗證信</button>
+            </form>
+        </div>
+        {% endif %}
         <p class="auth-link-row">
             <a href="{% url 'accounts:password_reset' %}">忘記密碼？</a>
         </p>

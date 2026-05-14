@@ -10,6 +10,7 @@ class User(AbstractUser):
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.CUSTOMER)
     organization = models.CharField(max_length=255, blank=True)
     notification_opt_in = models.BooleanField(default=True)
+    is_email_verified = models.BooleanField(default=False)
 
     @property
     def is_manager(self):

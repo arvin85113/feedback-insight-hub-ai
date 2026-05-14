@@ -130,12 +130,14 @@ class Command(BaseCommand):
                     "email": spec["email"],
                     "notification_opt_in": spec["notification_opt_in"],
                     "role": User.Role.CUSTOMER,
+                    "is_email_verified": True,
                 },
             )
             if not user_created:
                 user.email = spec["email"]
                 user.notification_opt_in = spec["notification_opt_in"]
-                user.save(update_fields=["email", "notification_opt_in"])
+                user.is_email_verified = True
+                user.save(update_fields=["email", "notification_opt_in", "is_email_verified"])
             user.set_password("testpass1234")
             user.save(update_fields=["password"])
 

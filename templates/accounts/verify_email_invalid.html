@@ -1,0 +1,35 @@
+{% extends "public_base.html" %}
+
+{% block title %}驗證連結無效 | FeedBack IQ{% endblock %}
+{% block body_class %}public-body auth-public-body{% endblock %}
+
+{% block content %}
+<main class="auth-layout auth-layout-wide auth-page-public">
+    <article class="auth-copy">
+        <p class="section-kicker">Email Verification</p>
+        <h1>驗證連結已失效。</h1>
+        <p>
+            這個驗證連結已過期（有效期 72 小時）或格式無效。<br>
+            請輸入你的信箱重新取得驗證連結。
+        </p>
+    </article>
+
+    <article class="auth-card">
+        <div class="panel-head">
+            <h2>重新寄送驗證信</h2>
+            <span class="pill">Verify</span>
+        </div>
+        <form method="post" action="{% url 'accounts:resend-verification' %}" class="form-stack">
+            {% csrf_token %}
+            <div class="field-block">
+                <label for="resend-email">信箱地址</label>
+                <input type="email" id="resend-email" name="email" required placeholder="your@email.com">
+            </div>
+            <button type="submit" class="button button-primary button-wide">寄送驗證信</button>
+        </form>
+        <p class="auth-link-row">
+            <a href="{% url 'accounts:login' %}">返回登入</a>
+        </p>
+    </article>
+</main>
+{% endblock %}

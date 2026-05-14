@@ -1,23 +1,33 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView, LogoutView
-from django.shortcuts import redirect, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
 from django.views.generic import CreateView
 
 from feedback.models import FeedbackSubmission, SurveyCategory
 
+from .emails import send_verification_email
 from .forms import CustomerPreferenceForm, CustomerProfileForm, CustomerSignUpForm, LoginForm
+from .models import User
+from .tokens import verify_verification_token
 
 
 class PlatformLoginView(LoginView):
     authentication_form = LoginForm
     template_name = "accounts/login.html"
 
+    def get(self, request, *args, **kwargs):
+        # Pop the session key so it's shown only once and pre-fills the resend form
+        self._unverified_email = request.session.pop("unverified_email", None)
+        return super().get(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["unverified_email"] = getattr(self, "_unverified_email", None)
+        return ctx
+
     def get_success_url(self):
-        # Read ?next= directly from POST (hidden input) then GET param.
-        # Bypass get_redirect_url() which can silently drop the value in
-        # certain Django 6 + HTTPS configurations.
         from django.utils.http import url_has_allowed_host_and_scheme
         next_url = self.request.POST.get("next") or self.request.GET.get("next", "")
         if next_url and url_has_allowed_host_and_scheme(
@@ -29,6 +39,14 @@ class PlatformLoginView(LoginView):
         if self.request.user.is_manager:
             return str(reverse_lazy("feedback:dashboard"))
         return str(reverse_lazy("feedback:customer-home"))
+
+    def form_valid(self, form):
+        user = form.get_user()
+        if not user.is_manager and not user.is_superuser and not user.is_email_verified:
+            messages.warning(self.request, "請先驗證你的信箱。沒收到信？")
+            self.request.session["unverified_email"] = user.email
+            return redirect("accounts:login")
+        return super().form_valid(form)
 
 
 class PlatformLogoutView(LogoutView):
@@ -48,8 +66,34 @@ class CustomerSignUpView(CreateView):
         return base
 
     def form_valid(self, form):
-        messages.success(self.request, "顧客帳號已建立，請登入後查看填答紀錄與通知。")
-        return super().form_valid(form)
+        response = super().form_valid(form)
+        send_verification_email(self.object, self.request)
+        messages.success(self.request, "帳號已建立！請前往你的信箱點擊驗證連結後再登入。")
+        return response
+
+
+def verify_email_view(request, token):
+    pk = verify_verification_token(token)
+    if pk is None:
+        return render(request, "accounts/verify_email_invalid.html")
+    user = get_object_or_404(User, pk=pk)
+    if not user.is_email_verified:
+        user.is_email_verified = True
+        user.save(update_fields=["is_email_verified"])
+    messages.success(request, "信箱驗證成功，請登入。")
+    return redirect("accounts:login")
+
+
+def resend_verification_view(request):
+    if request.method == "POST":
+        email = request.POST.get("email", "").strip()
+        try:
+            user = User.objects.get(email=email, is_email_verified=False)
+            send_verification_email(user, request)
+        except User.DoesNotExist:
+            pass
+        messages.info(request, "若信箱存在且尚未驗證，驗證信已重新寄出。")
+    return redirect("accounts:login")
 
 
 @login_required

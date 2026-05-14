@@ -24,6 +24,7 @@ class Command(BaseCommand):
                 "role": User.Role.MANAGER,
                 "is_staff": True,
                 "is_superuser": True,
+                "is_email_verified": True,
             },
         )
 
@@ -31,6 +32,7 @@ class Command(BaseCommand):
         user.role = User.Role.MANAGER
         user.is_staff = True
         user.is_superuser = True
+        user.is_email_verified = True
         user.set_password(password)
         user.save()
 
