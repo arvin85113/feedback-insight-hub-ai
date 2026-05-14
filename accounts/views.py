@@ -18,20 +18,16 @@ from .tokens import verify_verification_token
 logger = logging.getLogger(__name__)
 
 
-# ── Safe password reset form — bypasses SMTP, uses Resend HTTP API ──
+# ── Safe password reset form — bypasses SMTP, uses SendGrid HTTP API ──
 class SafePasswordResetForm(PasswordResetForm):
     def send_mail(self, subject_template_name, email_template_name,
                   context, from_email, to_email, html_email_template_name=None):
-        request = context.get("request")
         uid = context.get("uid")
         token = context.get("token")
-        if request and uid and token:
-            from django.utils.http import urlsafe_base64_encode
-            from django.utils.encoding import force_bytes
-            from django.contrib.auth.tokens import default_token_generator
-            reset_url = request.build_absolute_uri(
-                f"/accounts/reset/{uid}/{token}/"
-            )
+        protocol = context.get("protocol", "https")
+        domain = context.get("domain", "")
+        if uid and token and domain:
+            reset_url = f"{protocol}://{domain}/accounts/reset/{uid}/{token}/"
             send_password_reset_email_via_resend(to_email, reset_url)
         else:
             logger.error("SafePasswordResetForm: missing context for %s", to_email)
