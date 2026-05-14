@@ -5646,17 +5646,31 @@ input[type="checkbox"] {
 }
 
 @media (max-width: 620px) {
-    .public-nav-inner,
-    .public-nav-actions,
-    .public-hero-actions {
-        align-items: flex-start;
+    /* Nav stays horizontal — brand + actions row */
+    .public-nav-inner {
+        flex-direction: row;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px 10px;
     }
 
-    .public-nav-inner,
-    .public-nav-actions,
+    .public-nav-actions {
+        flex-direction: row;
+        align-items: center;
+        gap: 6px;
+        flex-shrink: 0;
+    }
+
+    .public-nav-actions .public-btn {
+        padding: 6px 12px;
+        font-size: 0.82rem;
+    }
+
+    /* Hero / footer still stack */
     .public-hero-actions,
     .public-foot-inner {
         flex-direction: column;
+        align-items: flex-start;
     }
 
     .public-hero {
