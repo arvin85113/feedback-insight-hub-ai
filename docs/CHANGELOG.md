@@ -4,6 +4,43 @@
 
 ---
 
+## 2026-05-14 — Email 驗證系統 + SendGrid HTTP API
+
+### 嚴格 Email 驗證（新用戶必須驗證才能登入）
+
+- 新用戶完成 signup 後，系統自動寄送驗證信，未驗證前無法登入。
+- `PlatformLoginView.form_valid` 攔截未驗證的非 manager 帳號，顯示警告訊息並附上重新寄送驗證信的表單。
+- 新增 `verify_email_view`（`/accounts/verify-email/<token>/`）：驗證 token 並將 `is_email_verified` 設為 True。
+- 新增 `resend_verification_view`（`/accounts/resend-verification/`）：重新寄送驗證信給未驗證帳號。
+- 新增 `accounts/tokens.py`：使用 Django `TimestampSigner` 產生 / 驗證 72 小時有效的驗證 token。
+- `User` model 新增 `is_email_verified` 欄位（migration `accounts/0004_user_is_email_verified.py`）。
+- 新增 management command `verify_existing_users`：部署時一次性將已存在用戶標記為已驗證，避免鎖定現有帳號。
+- `build.sh` 加入 `python manage.py verify_existing_users`。
+
+**相關修改：** `accounts/models.py`、`accounts/views.py`、`accounts/urls.py`、`accounts/tokens.py`、`accounts/migrations/0004_user_is_email_verified.py`、`accounts/management/commands/verify_existing_users.py`、`templates/accounts/login.html`、`templates/accounts/verify_email_invalid.html`（新增）、`build.sh`
+
+### SendGrid HTTP API 取代 Gmail SMTP
+
+- 根本原因：Render 封鎖對外 SMTP port（587 / 465），所有 `sock.connect()` 呼叫均 timeout，Gunicorn worker 被 SIGKILL，回傳 500。
+- 改用 SendGrid HTTP API（HTTPS，不走 SMTP socket），不受 Render 封鎖影響。
+- `accounts/emails.py` 完整改寫：移除 Resend SDK，改用 `requests.post` 直接呼叫 SendGrid `/v3/mail/send`。
+- 寄信需設定 Render 環境變數 `SENDGRID_API_KEY`；`DEFAULT_FROM_EMAIL` 使用已在 SendGrid 完成 Single Sender Verification 的 Gmail 地址。
+- `SafePasswordResetForm.send_mail` 修正：不再依賴 `context.get("request")`（Django 不保證傳入），改用 context 內一定存在的 `protocol` 與 `domain` 組裝 reset URL。
+- `requirements.txt` 移除 `resend==2.10.0`（SendGrid 透過 `requests` 直接呼叫，不需額外 SDK）。
+- 信件因使用 Gmail 地址透過第三方寄送，可能被收件方 Gmail 歸入垃圾郵件；長期解法是在 SendGrid 完成自有網域的 Domain Authentication。
+
+**相關修改：** `accounts/emails.py`、`accounts/views.py`、`requirements.txt`
+
+### 公開頁面行動版頂部導覽修正
+
+- 登入 / 註冊頁（`public_base.html`）在 ≤620px 寬度下，「登入」與「建立帳號」按鈕原本垂直疊排，修正為水平並排。
+- 修正目標為 `.public-nav-inner` 與 `.public-nav-actions`（非 manager workspace 的 `.site-header-inner`）。
+- `static/css/app.css` 中存在兩個重複的 `@media (max-width: 620px)` 區塊，第二個覆蓋了第一個的修正；兩者均已修正。
+
+**相關修改：** `static/css/app.css`
+
+---
+
 ## 2026-05-10 — 分析二級頁與文字洞察 UI 精簡
 
 ### 統計分析 / 文字洞察 / 問卷編輯頂部一致化

@@ -7,6 +7,7 @@ Feedback Insight Hub 是一套以登入制問卷為核心的顧客回饋管理�
 ## Current Status
 
 - 問卷填答採 **login-only** 制：顧客須登入後才能填答，無訪客或匿名入口。
+- **新用戶 Email 驗證**：完成 signup 後須點擊驗證信才能登入；驗證信與密碼重設信透過 SendGrid HTTP API 寄送（不走 SMTP）。
 - **Django 為主要穩定服務**：頁面渲染、登入驗證、ORM、問卷填答、統計分析、文字洞察與改善追蹤均透過 Django 路徑完整運作。
 - Flask microservice（`services/feedback_service/`）保留微服務架構彈性，但統計推論 payload 尚未同步 Django fallback 的 Pandas/SciPy 推論合約；目前建議使用 Django-only fallback 部署。
 - 生產資料庫使用 **Supabase PostgreSQL**；本地開發預設使用 SQLite。
@@ -25,6 +26,7 @@ Feedback Insight Hub 是一套以登入制問卷為核心的顧客回饋管理�
 | Statistics | pandas + scipy |
 | Text analysis | 字典驅動 keyword / sentiment pipeline（`feedback/text_pipeline.py`） |
 | Static files | Whitenoise |
+| Email | SendGrid HTTP API（`accounts/emails.py`） |
 | Deployment | Render |
 | Frontend | Django templates + custom CSS only |
 
@@ -361,15 +363,12 @@ FEEDBACK_SERVICE_URL=http://127.0.0.1:5001
 | `FEEDBACK_SERVICE_CONNECT_TIMEOUT` | Flask connect timeout |
 | `FEEDBACK_SERVICE_READ_TIMEOUT` | Flask read timeout |
 | `FEEDBACK_SERVICE_FAILURE_COOLDOWN` | Circuit-breaker cooldown |
-| `EMAIL_HOST` | If set, enables SMTP backend |
-| `EMAIL_HOST_USER` | SMTP username |
-| `EMAIL_HOST_PASSWORD` | SMTP password / Gmail app password |
-| `DEFAULT_FROM_EMAIL` | Outgoing email sender |
+| `SENDGRID_API_KEY` | SendGrid API key for transactional email |
+| `DEFAULT_FROM_EMAIL` | Outgoing email sender address (must be verified in SendGrid Single Sender) |
 
-Email backend auto-detects:
+Email is sent via SendGrid HTTP API (`accounts/emails.py`). SMTP is not used. If `SENDGRID_API_KEY` is not set, emails are silently skipped and a warning is logged.
 
-- `EMAIL_HOST` set -> SMTP backend
-- `EMAIL_HOST` empty -> console backend
+Local development uses Django console backend (emails printed to terminal) when `SENDGRID_API_KEY` is absent.
 
 ## Deployment Notes
 
