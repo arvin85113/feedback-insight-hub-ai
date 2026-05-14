@@ -1,5 +1,8 @@
+import logging
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.forms import PasswordResetForm
 from django.contrib.auth.views import LoginView, LogoutView
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
@@ -7,10 +10,31 @@ from django.views.generic import CreateView
 
 from feedback.models import FeedbackSubmission, SurveyCategory
 
-from .emails import send_verification_email
+from .emails import send_password_reset_email_via_resend, send_verification_email
 from .forms import CustomerPreferenceForm, CustomerProfileForm, CustomerSignUpForm, LoginForm
 from .models import User
 from .tokens import verify_verification_token
+
+logger = logging.getLogger(__name__)
+
+
+# ── Safe password reset form — bypasses SMTP, uses Resend HTTP API ──
+class SafePasswordResetForm(PasswordResetForm):
+    def send_mail(self, subject_template_name, email_template_name,
+                  context, from_email, to_email, html_email_template_name=None):
+        request = context.get("request")
+        uid = context.get("uid")
+        token = context.get("token")
+        if request and uid and token:
+            from django.utils.http import urlsafe_base64_encode
+            from django.utils.encoding import force_bytes
+            from django.contrib.auth.tokens import default_token_generator
+            reset_url = request.build_absolute_uri(
+                f"/accounts/reset/{uid}/{token}/"
+            )
+            send_password_reset_email_via_resend(to_email, reset_url)
+        else:
+            logger.error("SafePasswordResetForm: missing context for %s", to_email)
 
 
 class PlatformLoginView(LoginView):
@@ -18,7 +42,6 @@ class PlatformLoginView(LoginView):
     template_name = "accounts/login.html"
 
     def get(self, request, *args, **kwargs):
-        # Pop the session key so it's shown only once and pre-fills the resend form
         self._unverified_email = request.session.pop("unverified_email", None)
         return super().get(request, *args, **kwargs)
 
