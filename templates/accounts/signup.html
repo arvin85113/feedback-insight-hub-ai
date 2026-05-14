@@ -6,16 +6,27 @@
 {% block content %}
 <main class="auth-layout auth-layout-wide auth-page-public">
     <article class="auth-copy">
-        <p class="section-kicker">Customer Onboarding</p>
-        <h1>建立顧客帳號，追蹤每一次回饋後續。</h1>
-        <p>
-            建立帳號後，你可以填寫登入制問卷、查看自己的填答紀錄，並接收改善完成後的通知。
-            你的回饋會被保存成可追蹤的紀錄，而不是一次性的表單提交。
-        </p>
-        <ul class="feature-list auth-quiet-list">
-            <li>問卷填答會關聯到你的帳號，避免重複提交。</li>
-            <li>可在顧客端查看通知、偏好與改善追蹤狀態。</li>
-            <li>Email 保持正確，才能收到後續改善通知。</li>
+        {% if survey_context %}
+            <p class="section-kicker">一步完成，立即填答</p>
+            <h1>建立帳號後，即可填寫問卷。</h1>
+            <div class="auth-survey-banner">
+                <span class="auth-survey-label">你即將填寫</span>
+                <strong class="auth-survey-title">{{ survey_context.title }}</strong>
+            </div>
+            <p>登入制問卷確保你的回饋被正確記錄，資料準確才有意義。</p>
+        {% else %}
+            <p class="section-kicker">Customer Onboarding</p>
+            <h1>建立顧客帳號，追蹤每一次回饋後續。</h1>
+            <p>
+                建立帳號後，你可以填寫登入制問卷、查看自己的填答紀錄，並接收改善完成後的通知。
+                你的回饋會被保存成可追蹤的紀錄，而不是一次性的表單提交。
+            </p>
+        {% endif %}
+        <ul class="auth-value-list">
+            <li><span class="auth-value-check">✓</span> 回饋正確歸屬於你，避免重複或錯誤提交</li>
+            <li><span class="auth-value-check">✓</span> 改善完成後主動通知你，追蹤問題是否被處理</li>
+            <li><span class="auth-value-check">✓</span> 可隨時查看填答紀錄與後續改善進度</li>
+            <li><span class="auth-value-check">✓</span> 保護資料隱私，確保只有你能查看自己的回饋</li>
         </ul>
     </article>
 

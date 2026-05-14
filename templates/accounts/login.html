@@ -6,22 +6,37 @@
 {% block content %}
 <main class="auth-layout auth-layout-wide auth-page-public">
     <article class="auth-copy">
-        <p class="section-kicker">Secure Access</p>
-        <h1>回到你的回饋分析工作區。</h1>
-        <p>
-            登入後依照你的角色進入管理端或顧客端，繼續查看問卷、統計分析、文字洞察與改善通知。
-            FeedBack IQ 會把回饋收集到後續追蹤維持在同一條工作流裡。
-        </p>
-        <div class="summary-grid auth-quiet-grid">
-            <div class="summary-card">
-                <span class="info-label">Manager</span>
-                <strong>管理問卷、檢視統計、追蹤改善任務。</strong>
+        {% if survey_context %}
+            <p class="section-kicker">Survey Access</p>
+            <h1>登入後即可開始填答。</h1>
+            <div class="auth-survey-banner">
+                <span class="auth-survey-label">你即將填寫</span>
+                <strong class="auth-survey-title">{{ survey_context.title }}</strong>
             </div>
-            <div class="summary-card">
-                <span class="info-label">Customer</span>
-                <strong>查看填答紀錄、通知與回饋後續狀態。</strong>
+            <p>登入確保你的回饋被正確記錄，並在改善完成後收到專屬通知。</p>
+            <ul class="auth-value-list">
+                <li><span class="auth-value-check">✓</span> 回饋正確歸屬於你，避免重複或錯誤</li>
+                <li><span class="auth-value-check">✓</span> 改善完成後主動通知你</li>
+                <li><span class="auth-value-check">✓</span> 可隨時查看填答紀錄與追蹤狀態</li>
+            </ul>
+        {% else %}
+            <p class="section-kicker">Secure Access</p>
+            <h1>回到你的回饋分析工作區。</h1>
+            <p>
+                登入後依照你的角色進入管理端或顧客端，繼續查看問卷、統計分析、文字洞察與改善通知。
+                FeedBack IQ 會把回饋收集到後續追蹤維持在同一條工作流裡。
+            </p>
+            <div class="summary-grid auth-quiet-grid">
+                <div class="summary-card">
+                    <span class="info-label">Manager</span>
+                    <strong>管理問卷、檢視統計、追蹤改善任務。</strong>
+                </div>
+                <div class="summary-card">
+                    <span class="info-label">Customer</span>
+                    <strong>查看填答紀錄、通知與回饋後續狀態。</strong>
+                </div>
             </div>
-        </div>
+        {% endif %}
     </article>
 
     <article class="auth-card">

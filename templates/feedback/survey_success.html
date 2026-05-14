@@ -10,9 +10,33 @@
         <p class="section-kicker">Submitted</p>
         <h1>感謝你的回饋</h1>
         <p>
-            你的意見已成功送出，系統將納入分析與改善追蹤流程。<br>
-            若你已開啟通知偏好，後續有改善進度時會主動通知你。
+            你的意見已成功送出，系統將納入分析與改善追蹤流程。
         </p>
+
+        <div class="survey-success-next-steps">
+            <div class="survey-success-step">
+                <span class="survey-success-step-icon">📊</span>
+                <div>
+                    <strong>資料已收錄</strong>
+                    <p>你的回饋已歸屬到你的帳號，不會與他人混淆。</p>
+                </div>
+            </div>
+            <div class="survey-success-step">
+                <span class="survey-success-step-icon">🔔</span>
+                <div>
+                    <strong>後續改善通知</strong>
+                    <p>當管理團隊根據你的回饋做出改善，你將收到專屬通知。</p>
+                </div>
+            </div>
+            <div class="survey-success-step">
+                <span class="survey-success-step-icon">📋</span>
+                <div>
+                    <strong>追蹤填答紀錄</strong>
+                    <p>可在顧客中心查看所有填答紀錄與改善進度。</p>
+                </div>
+            </div>
+        </div>
+
         <div class="survey-success-actions">
             <a class="button button-primary" href="{% url 'feedback:home' %}">回首頁</a>
             {% if user.is_authenticated and not user.is_manager %}

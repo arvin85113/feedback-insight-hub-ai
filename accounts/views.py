@@ -1,4 +1,5 @@
 import logging
+import re
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -8,7 +9,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
 from django.views.generic import CreateView
 
-from feedback.models import FeedbackSubmission, SurveyCategory
+from feedback.models import FeedbackSubmission, Survey, SurveyCategory
 
 from .emails import send_password_reset_email_via_resend, send_verification_email
 from .forms import CustomerPreferenceForm, CustomerProfileForm, CustomerSignUpForm, LoginForm
@@ -44,6 +45,9 @@ class PlatformLoginView(LoginView):
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         ctx["unverified_email"] = getattr(self, "_unverified_email", None)
+        next_url = self.request.GET.get("next", "") or self.request.POST.get("next", "")
+        m = re.match(r"^/survey/([^/]+)/", next_url)
+        ctx["survey_context"] = Survey.objects.filter(slug=m.group(1)).only("title").first() if m else None
         return ctx
 
     def get_success_url(self):
@@ -83,6 +87,13 @@ class CustomerSignUpView(CreateView):
             from urllib.parse import urlencode
             return f"{base}?{urlencode({'next': next_url})}"
         return base
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        next_url = self.request.GET.get("next", "") or self.request.POST.get("next", "")
+        m = re.match(r"^/survey/([^/]+)/", next_url)
+        ctx["survey_context"] = Survey.objects.filter(slug=m.group(1)).only("title").first() if m else None
+        return ctx
 
     def form_valid(self, form):
         response = super().form_valid(form)
