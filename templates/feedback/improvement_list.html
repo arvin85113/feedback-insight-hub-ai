@@ -6,7 +6,7 @@
 <section class="manager-header manager-header-inline analytics-hero">
     <div>
         <p class="section-kicker">Improvement Workflow</p>
-        <p>依問卷集中查看改善項目，並針對同一份問卷建立改善通知。</p>
+        <p>依問卷集中查看、編輯改善項目，通知內容與寄送則由管理者另外建立。</p>
     </div>
     {% if selected_survey %}
         <a class="button button-ghost" href="{% url 'feedback:improvement-list' %}">返回問卷列表</a>
@@ -24,7 +24,7 @@
             <strong>{{ selected_improvements|length }}</strong>
         </article>
         <article class="kpi-chip">
-            <span>改善通知</span>
+            <span>追蹤功能</span>
             <strong>{% if selected_survey.improvement_tracking_enabled %}已啟用{% else %}未啟用{% endif %}</strong>
         </article>
         <article class="kpi-chip">
@@ -47,9 +47,9 @@
                     <span class="toggle-title">改善追蹤開關</span>
                     <span class="toggle-desc">
                         {% if selected_survey.improvement_tracking_enabled %}
-                            已啟用，可建立改善通知並回推給符合條件的填答者。
+                            已啟用，可建立並追蹤改善項目；對外通知需另外確認。
                         {% else %}
-                            已停用，僅保留既有改善項目檢視，暫停新增通知。
+                            已停用，僅保留既有改善項目檢視，暫停新增項目。
                         {% endif %}
                     </span>
                 </span>
@@ -69,24 +69,31 @@
                 {% for item in selected_improvements %}
                     <div class="record-row record-row-stack" id="improvement-{{ item.pk }}">
                         <div>
-                            <strong>{{ item.title }}</strong>
+                            <a class="record-title-link" href="{% url 'feedback:improvement-detail' item.pk %}">
+                                <strong>{{ item.title }}</strong>
+                            </a>
                             <p>{{ item.summary|truncatechars:180 }}</p>
                             {% if item.related_category %}
                                 <p>對應分類：{{ item.related_category }}</p>
                             {% endif %}
                         </div>
                         <div class="record-meta">
-                            <span class="pill {% if item.emailed_at %}pill-active{% endif %}">
-                                {% if item.emailed_at %}已通知{% else %}尚未通知{% endif %}
-                            </span>
+                            <span class="pill {% if item.status == 'in_progress' or item.status == 'completed' %}pill-active{% endif %}">{{ item.get_status_display }}</span>
+                            <span class="pill">{{ item.get_priority_display }}</span>
                             <p class="muted-text">{{ item.created_at|date:"Y/m/d" }}</p>
+                            <div class="record-actions">
+                                <a class="button button-ghost button-small" href="{% url 'feedback:improvement-detail' item.pk %}">查看</a>
+                                {% if item.status != 'archived' %}
+                                    <a class="button button-ghost button-small" href="{% url 'feedback:improvement-update' item.pk %}">編輯</a>
+                                {% endif %}
+                            </div>
                         </div>
                     </div>
                 {% empty %}
                     <div class="empty-card">
                         <div>
                             <h3>這份問卷目前沒有改善項目</h3>
-                            <p>可在右側建立第一則改善通知，讓顧客知道團隊已採取行動。</p>
+                            <p>可在右側建立第一個改善項目，再從詳細頁另外準備通知。</p>
                         </div>
                     </div>
                 {% endfor %}
@@ -97,7 +104,7 @@
             <div class="panel-head">
                 <div>
                     <p class="section-kicker">Create Update</p>
-                    <h2>新增改善通知</h2>
+                    <h2>新增改善項目</h2>
                 </div>
             </div>
             {% if selected_survey.improvement_tracking_enabled %}
@@ -114,21 +121,15 @@
                     <div class="field-block">
                         <label for="id_related_category_{{ selected_survey.id }}">對應分類（選填）</label>
                         <input type="text" name="related_category" id="id_related_category_{{ selected_survey.id }}" maxlength="100">
-                        <p class="muted-text">可填入文字洞察或選項分類，系統會優先通知相關回覆者。</p>
+                        <p class="muted-text">可填入文字洞察或選項分類，方便後續追蹤與通知草稿保留主題脈絡。</p>
                     </div>
-                    <div class="field-block field-block-checkbox">
-                        <label>
-                            <input type="checkbox" name="send_global_notice" checked>
-                            寄送給符合條件的填答者
-                        </label>
-                    </div>
-                    <button type="submit" class="button button-primary">建立改善通知</button>
+                    <button type="submit" class="button button-primary">建立改善項目</button>
                 </form>
             {% else %}
                 <div class="empty-card">
                     <div>
                         <h3>改善追蹤已停用</h3>
-                        <p>啟用上方開關後，才可以建立新的改善通知。</p>
+                        <p>啟用上方開關後，才可以建立新的改善項目。</p>
                     </div>
                 </div>
             {% endif %}
@@ -207,7 +208,7 @@
         <div class="empty-card">
             <div>
                 <h3>改善追蹤會做什麼？</h3>
-                <p>進入單一問卷後，可查看既有改善項目，並建立改善通知回推給符合條件的填答者。</p>
+                <p>進入單一問卷後，可查看、編輯與追蹤改善項目；通知會在管理者另外確認後才寄送。</p>
             </div>
         </div>
     </section>

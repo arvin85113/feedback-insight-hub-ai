@@ -1,20 +1,20 @@
 {% extends "feedback/dashboard_base.html" %}
 
-{% block title %}建立改善通知 | FeedBack IQ{% endblock %}
+{% block title %}建立改善項目 | FeedBack IQ{% endblock %}
 
 {% block dashboard_content %}
 <section class="manager-header">
     <div>
-        <p class="section-kicker">Improvement Update</p>
-        <h1>{{ survey.title }} 改善通知</h1>
-        <p>把回饋轉成正式更新內容，對外說明已處理的問題、改善方向與通知對象。</p>
+        <p class="section-kicker">Improvement Work Item</p>
+        <h1>{{ survey.title }} 改善項目</h1>
+        <p>把回饋轉成可追蹤的內部改善工作；儲存項目不會建立通知或寄送郵件。</p>
     </div>
 </section>
 
 <section class="manager-dual-grid">
     <article class="manager-panel">
         <div class="panel-head">
-            <h2>通知內容</h2>
+            <h2>項目內容</h2>
         </div>
         {% if source_keyword %}
             <div class="info-callout">
@@ -22,7 +22,7 @@
                 <div>
                     <div class="info-callout-title">來自文字洞察</div>
                     <div class="info-callout-desc">
-                        此改善通知由關鍵字「{{ source_keyword }}」（分類：{{ source_category }}）觸發建立，系統已自動填入相關預設內容，你可以直接修改後送出。
+                        此改善項目由關鍵字「{{ source_keyword }}」（分類：{{ source_category }}）帶入，系統已填入建議內容，你可以修改後保存。
                     </div>
                 </div>
             </div>
@@ -79,18 +79,19 @@
                     {{ field.errors }}
                 </div>
             {% endfor %}
-            <button type="submit" class="button button-primary">建立改善通知</button>
+            <button type="submit" class="button button-primary">建立改善項目</button>
         </form>
     </article>
 
     <article class="manager-panel muted-card">
         <div class="panel-head">
-            <h2>發送提醒</h2>
+            <h2>撰寫提醒</h2>
         </div>
         <ul class="feature-list compact-list">
             <li>標題請直接描述「做了什麼改善」，不要只寫內部代號。</li>
             <li>摘要建議交代處理內容、影響範圍與顧客可感知的變化。</li>
-            <li>若指定分類，系統會優先通知與該主題相關的填答者。</li>
+            <li>若指定分類，後續建立通知草稿時可保留清楚的主題脈絡。</li>
+            <li>需要對外溝通時，請在項目詳細頁另外建立、預覽並確認通知。</li>
         </ul>
     </article>
 </section>

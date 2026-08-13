@@ -1,6 +1,7 @@
 from collections import Counter
 import re
 from statistics import mean
+import uuid
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -148,6 +149,18 @@ class KeywordCategory(models.Model):
 
 
 class ImprovementUpdate(models.Model):
+    class Status(models.TextChoices):
+        DRAFT = "draft", "草稿"
+        PLANNED = "planned", "已規劃"
+        IN_PROGRESS = "in_progress", "進行中"
+        COMPLETED = "completed", "已完成"
+        ARCHIVED = "archived", "已封存"
+
+    class Priority(models.TextChoices):
+        HIGH = "high", "高優先"
+        MEDIUM = "medium", "中優先"
+        LOW = "low", "低優先"
+
     survey = models.ForeignKey(
         Survey,
         on_delete=models.SET_NULL,
@@ -158,7 +171,11 @@ class ImprovementUpdate(models.Model):
     title = models.CharField(max_length=255)
     summary = models.TextField()
     related_category = models.CharField(max_length=100, blank=True)
-    send_global_notice = models.BooleanField(default=True)
+    send_global_notice = models.BooleanField(default=False)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT)
+    priority = models.CharField(max_length=12, choices=Priority.choices, default=Priority.MEDIUM)
+    due_date = models.DateField(null=True, blank=True)
+    internal_note = models.TextField(blank=True)
     source_ai_analysis_stage = models.ForeignKey(
         "SurveyAIAnalysisStage",
         on_delete=models.SET_NULL,
@@ -169,7 +186,24 @@ class ImprovementUpdate(models.Model):
     source_ai_draft_id = models.CharField(max_length=64, null=True, blank=True)
     source_evidence_refs = models.JSONField(null=True, blank=True)
     source_ai_metadata = models.JSONField(null=True, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_improvements",
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="updated_improvements",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    archived_at = models.DateTimeField(null=True, blank=True)
     emailed_at = models.DateTimeField(blank=True, null=True)
 
     class Meta:
@@ -180,9 +214,43 @@ class ImprovementUpdate(models.Model):
                 name="uniq_improvement_ai_draft",
             )
         ]
+        indexes = [
+            models.Index(fields=("survey", "status", "-updated_at"), name="fb_imp_survey_status_idx"),
+            models.Index(fields=("status", "due_date"), name="fb_imp_status_due_idx"),
+        ]
 
     def __str__(self):
         return self.title
+
+
+class ImprovementStatusHistory(models.Model):
+    improvement = models.ForeignKey(
+        ImprovementUpdate,
+        on_delete=models.CASCADE,
+        related_name="status_history",
+    )
+    from_status = models.CharField(max_length=20, blank=True)
+    to_status = models.CharField(max_length=20, choices=ImprovementUpdate.Status.choices)
+    changed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="improvement_status_changes",
+    )
+    changed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-changed_at", "-id"]
+        indexes = [
+            models.Index(fields=("improvement", "-changed_at"), name="fb_imp_history_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.improvement} / {self.from_status or '-'} -> {self.to_status}"
+
+    def get_from_status_display(self):
+        return dict(ImprovementUpdate.Status.choices).get(self.from_status, self.from_status)
 
 
 class SurveyAIReportSnapshot(models.Model):
@@ -317,15 +385,122 @@ class SurveyAIAnalysisStage(models.Model):
         return super().save(*args, **kwargs)
 
 
+class ImprovementNotice(models.Model):
+    class AudienceType(models.TextChoices):
+        GLOBAL = "global", "所有符合通知條件的顧客"
+        SURVEY_RESPONDENTS = "survey_respondents", "這份問卷的符合條件填答者"
+
+    class Status(models.TextChoices):
+        DRAFT = "draft", "草稿"
+        SENDING = "sending", "寄送中"
+        SENT = "sent", "已寄送"
+        PARTIALLY_SENT = "partially_sent", "部分成功"
+        FAILED = "failed", "寄送失敗"
+
+    improvement = models.ForeignKey(
+        ImprovementUpdate,
+        on_delete=models.PROTECT,
+        related_name="notices",
+    )
+    subject = models.CharField(max_length=255)
+    body = models.TextField()
+    audience_type = models.CharField(max_length=24, choices=AudienceType.choices)
+    status = models.CharField(max_length=24, choices=Status.choices, default=Status.DRAFT)
+    recipient_count = models.PositiveIntegerField(default=0)
+    sent_count = models.PositiveIntegerField(default=0)
+    failed_count = models.PositiveIntegerField(default=0)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_improvement_notices",
+    )
+    confirmed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="confirmed_improvement_notices",
+    )
+    confirmation_token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    content_version = models.PositiveIntegerField(default=1)
+    last_error_code = models.CharField(max_length=64, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=("improvement", "status", "-created_at"), name="fb_notice_imp_status_idx"),
+            models.Index(fields=("status", "-updated_at"), name="fb_notice_status_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.improvement} / {self.subject} / {self.status}"
+
+
 class ImprovementDispatch(models.Model):
+    class DeliveryStatus(models.TextChoices):
+        PENDING = "pending", "等待寄送"
+        SENDING = "sending", "寄送中"
+        SENT = "sent", "已寄送"
+        FAILED = "failed", "寄送失敗"
+
     improvement = models.ForeignKey(ImprovementUpdate, on_delete=models.CASCADE, related_name="dispatches")
-    submission = models.ForeignKey(FeedbackSubmission, on_delete=models.CASCADE, related_name="dispatches")
+    notice = models.ForeignKey(
+        ImprovementNotice,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="dispatches",
+    )
+    submission = models.ForeignKey(
+        FeedbackSubmission,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="dispatches",
+    )
+    recipient_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="improvement_dispatches",
+    )
+    recipient_key = models.CharField(max_length=64, blank=True)
     personalized_note = models.TextField(blank=True)
-    sent_at = models.DateTimeField(default=timezone.now)
+    delivery_status = models.CharField(
+        max_length=16,
+        choices=DeliveryStatus.choices,
+        default=DeliveryStatus.PENDING,
+    )
+    attempt_count = models.PositiveIntegerField(default=0)
+    last_attempt_at = models.DateTimeField(null=True, blank=True)
+    error_code = models.CharField(max_length=64, blank=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
     is_read = models.BooleanField(default=False)
 
     class Meta:
-        unique_together = ("improvement", "submission")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("notice", "recipient_key"),
+                condition=models.Q(notice__isnull=False),
+                name="uniq_notice_recipient",
+            ),
+            models.UniqueConstraint(
+                fields=("improvement", "submission"),
+                condition=models.Q(notice__isnull=True, submission__isnull=False),
+                name="uniq_legacy_imp_submission",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=("notice", "delivery_status"), name="fb_dispatch_notice_idx"),
+            models.Index(fields=("recipient_user", "is_read", "-sent_at"), name="fb_dispatch_user_idx"),
+        ]
 
 
 def tokenize_feedback(text):

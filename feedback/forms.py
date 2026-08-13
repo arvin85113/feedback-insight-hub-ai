@@ -1,6 +1,6 @@
 from django import forms
 
-from .models import ImprovementUpdate, Question, Survey, SurveyCategory
+from .models import ImprovementNotice, ImprovementUpdate, Question, Survey, SurveyCategory
 
 
 class SurveyFormBuilder(forms.Form):
@@ -55,13 +55,85 @@ class RespondentMetaForm(forms.Form):
 class ImprovementUpdateForm(forms.ModelForm):
     class Meta:
         model = ImprovementUpdate
-        fields = ("title", "summary", "related_category", "send_global_notice")
+        fields = ("title", "summary", "related_category")
         labels = {
             "title": "改善主題",
             "summary": "改善摘要",
             "related_category": "對應分類",
-            "send_global_notice": "寄送給符合條件的填答者",
         }
+
+
+class ImprovementEditForm(forms.ModelForm):
+    class Meta:
+        model = ImprovementUpdate
+        fields = (
+            "title",
+            "summary",
+            "related_category",
+            "priority",
+            "due_date",
+            "internal_note",
+        )
+        labels = {
+            "title": "改善主題",
+            "summary": "改善摘要",
+            "related_category": "對應分類",
+            "priority": "優先程度",
+            "due_date": "預計完成日",
+            "internal_note": "內部備註",
+        }
+        widgets = {
+            "summary": forms.Textarea(attrs={"rows": 7}),
+            "due_date": forms.DateInput(attrs={"type": "date"}),
+            "internal_note": forms.Textarea(attrs={"rows": 5}),
+        }
+
+
+class ImprovementStatusTransitionForm(forms.Form):
+    status = forms.ChoiceField(label="下一狀態")
+
+    def __init__(self, *args, improvement, choices, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.improvement = improvement
+        self.fields["status"].choices = choices
+
+
+class ImprovementNoticeForm(forms.ModelForm):
+    def __init__(self, *args, improvement, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.improvement = improvement
+        if improvement.survey_id is None:
+            self.fields["audience_type"].choices = [
+                choice
+                for choice in ImprovementNotice.AudienceType.choices
+                if choice[0] == ImprovementNotice.AudienceType.GLOBAL
+            ]
+
+    def clean_audience_type(self):
+        audience_type = self.cleaned_data["audience_type"]
+        if (
+            audience_type == ImprovementNotice.AudienceType.SURVEY_RESPONDENTS
+            and self.improvement.survey_id is None
+        ):
+            raise forms.ValidationError("來源問卷已移除，無法選擇問卷填答者。")
+        return audience_type
+
+    class Meta:
+        model = ImprovementNotice
+        fields = ("subject", "body", "audience_type")
+        labels = {
+            "subject": "通知主旨",
+            "body": "通知內容",
+            "audience_type": "通知對象",
+        }
+        widgets = {
+            "body": forms.Textarea(attrs={"rows": 9}),
+        }
+
+
+class ImprovementNoticeConfirmationForm(forms.Form):
+    confirmation_token = forms.UUIDField(widget=forms.HiddenInput)
+    content_version = forms.IntegerField(min_value=1, widget=forms.HiddenInput)
 
 
 class SurveyCreateForm(forms.ModelForm):

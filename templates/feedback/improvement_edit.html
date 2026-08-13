@@ -1,0 +1,42 @@
+{% extends "feedback/dashboard_base.html" %}
+
+{% block title %}編輯 {{ improvement.title }} | FeedBack IQ{% endblock %}
+
+{% block dashboard_content %}
+<section class="manager-header manager-header-inline">
+    <div>
+        <p class="section-kicker">Edit Improvement</p>
+        <h1>編輯改善項目</h1>
+        <p>只更新工作內容與內部追蹤資訊，不會建立通知或寄送郵件。</p>
+    </div>
+    <a class="button button-ghost" href="{% url 'feedback:improvement-detail' improvement.pk %}">取消編輯</a>
+</section>
+
+<section class="manager-dual-grid improvement-edit-grid">
+    <article class="manager-panel">
+        <div class="panel-head"><h2>項目內容</h2></div>
+        <form method="post" class="form-stack">
+            {% csrf_token %}
+            {% for field in form %}
+                <div class="field-block">
+                    {{ field.label_tag }}
+                    {{ field }}
+                    {{ field.errors }}
+                </div>
+            {% endfor %}
+            <button type="submit" class="button button-primary">儲存變更</button>
+        </form>
+    </article>
+
+    <aside class="manager-panel muted-card">
+        <div class="panel-head"><h2>不可變更的來源資料</h2></div>
+        <dl class="detail-list improvement-detail-list">
+            <div><dt>來源問卷</dt><dd>{% if improvement.survey %}{{ improvement.survey.title }}{% else %}來源問卷已移除{% endif %}</dd></div>
+            <div><dt>目前狀態</dt><dd>{{ improvement.get_status_display }}</dd></div>
+            <div><dt>AI 來源</dt><dd>{% if improvement.source_ai_analysis_stage %}{{ improvement.source_ai_analysis_stage.get_stage_type_display }} r{{ improvement.source_ai_analysis_stage.revision }}{% else %}手動建立{% endif %}</dd></div>
+            {% if improvement.source_ai_draft_id %}<div><dt>AI 草稿識別碼</dt><dd>{{ improvement.source_ai_draft_id }}</dd></div>{% endif %}
+        </dl>
+        <p class="muted-text">問卷、AI 階段、草稿識別碼、證據引用與來源 metadata 均為唯讀稽核資料。</p>
+    </aside>
+</section>
+{% endblock %}

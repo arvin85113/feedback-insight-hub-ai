@@ -46,7 +46,7 @@
             <div class="customer-record-row customer-record-clickable {% if not notice.is_read %}customer-record-unread{% endif %}"
                  data-pk="{{ notice.id }}"
                  data-is-read="{{ notice.is_read|yesno:'true,false' }}"
-                 data-survey-url="{% url 'feedback:survey-detail' notice.submission.survey.slug %}">
+                 data-survey-url="{% if notice.submission.survey %}{% url 'feedback:survey-detail' notice.submission.survey.slug %}{% endif %}">
                 <div>
                     <div class="customer-row-title">
                         <strong>{{ notice.improvement.title }}</strong>
@@ -54,7 +54,7 @@
                             {% if notice.is_read %}已讀{% else %}未讀{% endif %}
                         </span>
                     </div>
-                    <p>{{ notice.submission.survey.title }}，{{ notice.sent_at|date:"Y/m/d H:i" }}</p>
+                    <p>{% if notice.submission.survey %}{{ notice.submission.survey.title }}，{% endif %}{{ notice.sent_at|date:"Y/m/d H:i" }}</p>
                     <p>{{ notice.improvement.summary }}</p>
                     {% if notice.personalized_note %}
                         <p class="customer-note">{{ notice.personalized_note }}</p>

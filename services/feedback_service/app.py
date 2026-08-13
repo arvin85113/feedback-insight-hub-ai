@@ -2,7 +2,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 
 from flask import Flask, jsonify, request
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import joinedload
 
 from feedback.text_pipeline import ANALYSIS_VERSION, build_analysis_text, estimate_sentiment_score, tokenize_feedback
@@ -84,22 +84,26 @@ def serialize_submission(submission: FeedbackSubmission, answer_count: int | Non
 
 
 def serialize_notice(dispatch: ImprovementDispatch) -> dict:
+    survey = dispatch.submission.survey if dispatch.submission else dispatch.improvement.survey
+    title = dispatch.notice.subject if dispatch.notice else dispatch.improvement.title
+    summary = dispatch.notice.body if dispatch.notice else dispatch.improvement.summary
     return {
         "id": dispatch.id,
-        "sent_at": dispatch.sent_at.isoformat(),
+        "sent_at": dispatch.sent_at.isoformat() if dispatch.sent_at else None,
         "personalized_note": dispatch.personalized_note,
+        "is_read": dispatch.is_read,
         "submission": {
-            "id": dispatch.submission.id,
-            "survey": {
-                "id": dispatch.submission.survey.id,
-                "title": dispatch.submission.survey.title,
-                "slug": dispatch.submission.survey.slug,
-            },
+            "id": dispatch.submission.id if dispatch.submission else None,
+            "survey": (
+                {"id": survey.id, "title": survey.title, "slug": survey.slug}
+                if survey
+                else None
+            ),
         },
         "improvement": {
             "id": dispatch.improvement.id,
-            "title": dispatch.improvement.title,
-            "summary": dispatch.improvement.summary,
+            "title": title,
+            "summary": summary,
         },
     }
 
@@ -171,11 +175,18 @@ def customer_home(user_id: int):
         notices = session.scalars(
             select(ImprovementDispatch)
             .options(
-                joinedload(ImprovementDispatch.improvement),
+                joinedload(ImprovementDispatch.notice),
+                joinedload(ImprovementDispatch.improvement).joinedload(ImprovementUpdate.survey),
                 joinedload(ImprovementDispatch.submission).joinedload(FeedbackSubmission.survey),
             )
-            .join(FeedbackSubmission, ImprovementDispatch.submission_id == FeedbackSubmission.id)
-            .where(FeedbackSubmission.user_id == user_id)
+            .outerjoin(FeedbackSubmission, ImprovementDispatch.submission_id == FeedbackSubmission.id)
+            .where(
+                ImprovementDispatch.delivery_status == "sent",
+                or_(
+                    ImprovementDispatch.recipient_user_id == user_id,
+                    FeedbackSubmission.user_id == user_id,
+                ),
+            )
             .order_by(ImprovementDispatch.sent_at.desc())
         ).unique().all()
 
@@ -211,17 +222,25 @@ def customer_notifications(user_id: int):
         notices = session.scalars(
             select(ImprovementDispatch)
             .options(
-                joinedload(ImprovementDispatch.improvement),
+                joinedload(ImprovementDispatch.notice),
+                joinedload(ImprovementDispatch.improvement).joinedload(ImprovementUpdate.survey),
                 joinedload(ImprovementDispatch.submission).joinedload(FeedbackSubmission.survey),
             )
-            .join(FeedbackSubmission, ImprovementDispatch.submission_id == FeedbackSubmission.id)
-            .where(FeedbackSubmission.user_id == user_id)
+            .outerjoin(FeedbackSubmission, ImprovementDispatch.submission_id == FeedbackSubmission.id)
+            .where(
+                ImprovementDispatch.delivery_status == "sent",
+                or_(
+                    ImprovementDispatch.recipient_user_id == user_id,
+                    FeedbackSubmission.user_id == user_id,
+                ),
+            )
             .order_by(ImprovementDispatch.sent_at.desc())
         ).unique().all()
         return jsonify(
             {
                 "notices": [serialize_notice(item) for item in notices],
                 "notice_count": len(notices),
+                "unread_count": sum(1 for item in notices if not item.is_read),
                 "latest_notice": serialize_notice(notices[0]) if notices else None,
             }
         )

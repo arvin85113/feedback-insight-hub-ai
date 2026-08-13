@@ -1,0 +1,44 @@
+{% extends "feedback/dashboard_base.html" %}
+
+{% block title %}預覽 {{ notice.subject }} | FeedBack IQ{% endblock %}
+
+{% block dashboard_content %}
+<section class="manager-header manager-header-inline">
+    <div>
+        <p class="section-kicker">Notice Preview</p>
+        <h1>確認通知內容</h1>
+        <p>這是寄送前預覽；目前仍是草稿，尚未寄送。</p>
+    </div>
+    <a class="button button-ghost" href="{% url 'feedback:notice-batch-update' notice.pk %}">返回編輯</a>
+</section>
+
+<section class="manager-dual-grid">
+    <article class="manager-panel notice-preview-content">
+        <div class="panel-head">
+            <div><p class="section-kicker">Message</p><h2>{{ notice.subject }}</h2></div>
+            <span class="pill">{{ notice.get_status_display }}</span>
+        </div>
+        <p class="preserve-lines">{{ notice.body }}</p>
+    </article>
+
+    <aside class="manager-panel">
+        <div class="panel-head"><h2>收件範圍</h2></div>
+        <dl class="detail-list improvement-detail-list">
+            <div><dt>改善項目</dt><dd>{{ notice.improvement.title }}</dd></div>
+            <div><dt>通知對象</dt><dd>{{ notice.get_audience_type_display }}</dd></div>
+            <div><dt>符合條件</dt><dd>{{ recipient_count }} 人</dd></div>
+            <div><dt>內容版本</dt><dd>v{{ notice.content_version }}</dd></div>
+        </dl>
+        {% if recipient_count %}
+            <form method="post" action="{% url 'feedback:notice-batch-send' notice.pk %}" class="form-stack">
+                {% csrf_token %}
+                {{ confirmation_form }}
+                <button type="submit" class="button button-primary">確認並寄送</button>
+                <p class="muted-text">送出後會凍結目前內容，並只寄給後端重新核對後仍符合條件的收件者。</p>
+            </form>
+        {% else %}
+            <div class="empty-card"><div><h3>目前沒有符合條件的收件者</h3><p>請確認通知範圍與顧客通知偏好。</p></div></div>
+        {% endif %}
+    </aside>
+</section>
+{% endblock %}

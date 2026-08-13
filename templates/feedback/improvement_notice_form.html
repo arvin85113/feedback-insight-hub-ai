@@ -1,0 +1,41 @@
+{% extends "feedback/dashboard_base.html" %}
+
+{% block title %}{% if form_mode == 'update' %}編輯通知草稿{% else %}建立通知草稿{% endif %} | FeedBack IQ{% endblock %}
+
+{% block dashboard_content %}
+<section class="manager-header manager-header-inline">
+    <div>
+        <p class="section-kicker">Notice Draft</p>
+        <h1>{% if form_mode == 'update' %}編輯通知草稿{% else %}建立通知草稿{% endif %}</h1>
+        <p>{{ improvement.title }} ｜ 儲存草稿不會寄送郵件。</p>
+    </div>
+    <a class="button button-ghost" href="{% url 'feedback:improvement-detail' improvement.pk %}">返回改善項目</a>
+</section>
+
+<section class="manager-dual-grid improvement-edit-grid">
+    <article class="manager-panel">
+        <div class="panel-head"><h2>對外通知內容</h2></div>
+        <form method="post" class="form-stack">
+            {% csrf_token %}
+            {% for field in form %}
+                <div class="field-block">
+                    {{ field.label_tag }}
+                    {{ field }}
+                    {{ field.errors }}
+                </div>
+            {% endfor %}
+            <button type="submit" class="button button-primary">儲存並預覽</button>
+        </form>
+    </article>
+
+    <aside class="manager-panel muted-card">
+        <div class="panel-head"><h2>寄送規則</h2></div>
+        <ul class="compact-list">
+            <li>收件人由後端依通知對象重新計算，頁面不能提交 email 或使用者 ID。</li>
+            <li>空白、格式無效、未驗證或已退出通知的 email 不會列入。</li>
+            <li>預覽後仍需再次明確確認；AI 來源項目也不會自動寄送。</li>
+            <li>確認寄送後，主旨、內容與對象範圍會凍結。</li>
+        </ul>
+    </aside>
+</section>
+{% endblock %}

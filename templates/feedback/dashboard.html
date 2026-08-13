@@ -645,6 +645,19 @@
         updateButton.textContent = data.report ? '更新 AI 報告' : '產生第一份報告';
     }
 
+    function hasCurrentSuccessfulPipeline(data) {
+        const requiredStages = ['statistics', 'text', 'synthesis'];
+        return Boolean(
+            data?.report
+            && data?.freshness?.is_current
+            && data.freshness.latest_ai_status === 'succeeded'
+            && requiredStages.every((stageType) => {
+                const stage = data.stages?.[stageType];
+                return stage?.status === 'succeeded' && stage.is_current;
+            })
+        );
+    }
+
     async function selectSurvey(button) {
         if (state.busy) return;
         state.selected = button;
@@ -690,13 +703,19 @@
                 renderStatus(reportData);
             }
         } catch (error) {
+            let recovered = false;
             try {
                 const current = await requestJSON(state.selected.dataset.statusUrl);
                 renderStatus(current);
+                recovered = hasCurrentSuccessfulPipeline(current);
             } catch (_) {
                 // Keep the currently rendered successful report if status refresh also fails.
             }
-            showError(`${error.message} 最新資料尚未完成 AI 分析，可手動重試。`);
+            if (recovered) {
+                clearError();
+            } else {
+                showError(`${error.message} 最新資料尚未完成 AI 分析，可手動重試。`);
+            }
         } finally {
             setBusy(false);
         }

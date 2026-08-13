@@ -14,7 +14,7 @@ from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.utils.text import slugify
-from django.views.generic import CreateView, DeleteView, DetailView, TemplateView, View
+from django.views.generic import CreateView, DeleteView, DetailView, TemplateView, UpdateView, View
 
 from .ai_report_service import AIReportError, generate_report
 from .ai_snapshot_service import (
@@ -33,6 +33,10 @@ from .ai_stage_service import (
     latest_stage_status,
 )
 from .forms import (
+    ImprovementEditForm,
+    ImprovementNoticeConfirmationForm,
+    ImprovementNoticeForm,
+    ImprovementStatusTransitionForm,
     ImprovementUpdateForm,
     QuestionCreateForm,
     RespondentMetaForm,
@@ -40,9 +44,16 @@ from .forms import (
     SurveyEditForm,
     SurveyFormBuilder,
 )
+from .improvement_workflow import (
+    ImprovementTransitionError,
+    record_initial_status,
+    status_targets,
+    transition_improvement,
+)
 from .models import (
     FeedbackSubmission,
     ImprovementDispatch,
+    ImprovementNotice,
     ImprovementUpdate,
     KeywordCategory,
     Question,
@@ -50,6 +61,13 @@ from .models import (
     SurveyAIAnalysisStage,
     SurveyAIReportSnapshot,
     SurveyCategory,
+)
+from .notice_service import (
+    NoticeConfirmationError,
+    begin_notice_retry,
+    prepare_notice_dispatches,
+    resolve_notice_recipients,
+    send_notice_batch,
 )
 from .service_client import service_client
 
@@ -173,8 +191,9 @@ class MarkNoticeReadView(CustomerRequiredMixin, View):
     def post(self, request, pk):
         dispatch = get_object_or_404(
             ImprovementDispatch,
+            Q(recipient_user=request.user) | Q(submission__user=request.user),
             pk=pk,
-            submission__user=request.user,
+            delivery_status=ImprovementDispatch.DeliveryStatus.SENT,
         )
         dispatch.is_read = True
         dispatch.save(update_fields=["is_read"])
@@ -784,7 +803,14 @@ class NoticeCenterView(DashboardBaseMixin, TemplateView):
             Survey.objects.filter(is_active=True)
             .select_related("category")
             .annotate(
-                notice_count=Count("improvements", distinct=True),
+                notice_count=(
+                    Count("improvements__notices", distinct=True)
+                    + Count(
+                        "improvements__dispatches",
+                        filter=Q(improvements__dispatches__notice__isnull=True),
+                        distinct=True,
+                    )
+                ),
                 response_count=Count("submissions", distinct=True),
                 latest_submission_at=Max("submissions__submitted_at"),
             )
@@ -799,15 +825,22 @@ class NoticeCenterView(DashboardBaseMixin, TemplateView):
             notice_surveys = notice_surveys.order_by("-created_at")
 
         notices = (
-            selected_survey.improvements.order_by("-created_at")
+            ImprovementNotice.objects.filter(improvement__survey=selected_survey)
+            .select_related("improvement")
+            .order_by("-created_at")
+            if selected_survey else ImprovementNotice.objects.none()
+        )
+        legacy_notices = (
+            selected_survey.improvements.filter(
+                dispatches__isnull=False,
+                dispatches__notice__isnull=True,
+            ).distinct().order_by("-created_at")
             if selected_survey else ImprovementUpdate.objects.none()
         )
         context["selected_survey"] = selected_survey
         context["notice_survey_rows"] = notice_surveys
         context["notices"] = notices
-        context["create_url"] = (
-            reverse("feedback:improvement-create", args=[selected_survey.slug]) if selected_survey else ""
-        )
+        context["legacy_notices"] = legacy_notices
         context["categories"] = SurveyCategory.objects.all()
         context["current_sort"] = sort
         context["current_category"] = category_id
@@ -943,84 +976,321 @@ class ImprovementCreateView(ManagerRequiredMixin, CreateView):
 
     def form_valid(self, form):
         form.instance.survey = self.survey
+        form.instance.created_by = self.request.user
+        form.instance.updated_by = self.request.user
         response = super().form_valid(form)
-        self._complete_improvement_creation(form.instance)
+        record_initial_status(form.instance, self.request.user)
+        messages.success(self.request, "改善項目已建立；通知需從項目詳細頁另外建立與確認。")
         return response
-
-    def _complete_improvement_creation(self, improvement):
-        if not improvement.send_global_notice:
-            messages.success(self.request, "改善項目已建立，尚未寄送通知。")
-            return
-
-        all_recipients = (
-            self.survey.submissions.select_related("user")
-            .filter(Q(consent_follow_up=True) | Q(user__notification_opt_in=True))
-            .exclude(respondent_email="")
-        )
-
-        related_recipients_ids = set()
-        if improvement.related_category:
-            related_qs = all_recipients.filter(
-                answers__question__survey=self.survey,
-                answers__value__icontains=improvement.related_category,
-            ).distinct()
-            related_recipients_ids = set(related_qs.values_list("id", flat=True))
-
-        sent_count = 0
-        for submission in all_recipients.distinct():
-            if submission.user and not submission.user.notification_opt_in:
-                continue
-            if not submission.consent_follow_up and not (submission.user and submission.user.notification_opt_in):
-                continue
-
-            is_related = submission.id in related_recipients_ids
-
-            dispatch, created = ImprovementDispatch.objects.get_or_create(
-                improvement=improvement,
-                submission=submission,
-                defaults={
-                    "personalized_note": (
-                        f"你先前在 {improvement.related_category or self.survey.title} 提供的回饋，"
-                        "已被納入這次改善項目中，因此我們主動把最新進度同步給你。"
-                    ) if is_related else ""
-                },
-            )
-            if not created:
-                continue
-
-            send_mail(
-                subject=f"{self.survey.title} 改善進度通知",
-                message=f"{improvement.title}\n\n{improvement.summary}",
-                from_email=None,
-                recipient_list=[submission.respondent_email],
-                fail_silently=True,
-            )
-
-            if is_related:
-                send_mail(
-                    subject=f"感謝你的回饋！{self.survey.title}",
-                    message=(
-                        f"親愛的 {submission.display_name}，\n\n"
-                        f"感謝你先前填寫「{self.survey.title}」並提供寶貴意見。\n"
-                        f"你的回饋直接促成了我們這次的改善：\n\n"
-                        f"【{improvement.title}】\n"
-                        f"{improvement.summary}\n\n"
-                        f"感謝你讓我們變得更好！"
-                    ),
-                    from_email=None,
-                    recipient_list=[submission.respondent_email],
-                    fail_silently=True,
-                )
-            sent_count += 1
-
-        if sent_count:
-            improvement.emailed_at = timezone.now()
-            improvement.save(update_fields=["emailed_at"])
-
-        messages.success(self.request, f"改善通知已建立，並成功寄送給 {sent_count} 位填答者。")
 
     def get_success_url(self):
         return f"{reverse('feedback:improvement-list')}?survey={self.survey.slug}"
+
+
+class ImprovementDetailView(DashboardBaseMixin, DetailView):
+    template_name = "feedback/improvement_detail.html"
+    model = ImprovementUpdate
+    context_object_name = "improvement"
+    active_section = "feedback:improvement-list"
+
+    def get_queryset(self):
+        return super().get_queryset().select_related(
+            "survey",
+            "created_by",
+            "updated_by",
+            "source_ai_analysis_stage__snapshot",
+        )
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update(self.get_dashboard_base_context())
+        stage = self.object.source_ai_analysis_stage
+        refs = self.object.source_evidence_refs or []
+        registry = (stage.output_json or {}).get("_evidence_registry", {}) if stage else {}
+        context["source_ai_evidence"] = [
+            serialize_evidence_for_display(registry[ref], stage.snapshot.source_snapshot)
+            for ref in refs
+            if ref in registry
+        ]
+        context["status_targets"] = status_targets(self.object)
+        context["status_history"] = self.object.status_history.select_related("changed_by")
+        return context
+
+
+class ImprovementUpdateView(DashboardBaseMixin, UpdateView):
+    template_name = "feedback/improvement_edit.html"
+    model = ImprovementUpdate
+    form_class = ImprovementEditForm
+    context_object_name = "improvement"
+    active_section = "feedback:improvement-list"
+
+    def dispatch(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        if self.object.status == ImprovementUpdate.Status.ARCHIVED:
+            messages.warning(request, "封存項目需先恢復才能編輯。")
+            return redirect("feedback:improvement-detail", pk=self.object.pk)
+        return super().dispatch(request, *args, **kwargs)
+
+    def form_valid(self, form):
+        with transaction.atomic():
+            locked = ImprovementUpdate.objects.select_for_update().get(pk=self.object.pk)
+            if locked.status == ImprovementUpdate.Status.ARCHIVED:
+                messages.warning(self.request, "項目已被封存，本次內容未更新。")
+                return redirect("feedback:improvement-detail", pk=locked.pk)
+            for field_name in ImprovementEditForm.Meta.fields:
+                setattr(locked, field_name, form.cleaned_data[field_name])
+            locked.updated_by = self.request.user
+            locked.save(update_fields=[*ImprovementEditForm.Meta.fields, "updated_by", "updated_at"])
+            self.object = locked
+        messages.success(self.request, "改善項目已更新；未建立或寄送任何通知。")
+        return HttpResponseRedirect(self.get_success_url())
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update(self.get_dashboard_base_context())
+        return context
+
+    def get_success_url(self):
+        return reverse("feedback:improvement-detail", args=[self.object.pk])
+
+
+class ImprovementStatusTransitionView(ManagerRequiredMixin, View):
+    def post(self, request, pk):
+        improvement = get_object_or_404(ImprovementUpdate, pk=pk)
+        form = ImprovementStatusTransitionForm(
+            request.POST,
+            improvement=improvement,
+            choices=status_targets(improvement),
+        )
+        if not form.is_valid():
+            messages.error(request, "請選擇可用的下一狀態。")
+            return redirect("feedback:improvement-detail", pk=pk)
+        try:
+            updated = transition_improvement(pk, form.cleaned_data["status"], request.user)
+        except ImprovementTransitionError as exc:
+            messages.error(request, str(exc))
+        else:
+            messages.success(request, f"狀態已更新為「{updated.get_status_display()}」。")
+        return redirect("feedback:improvement-detail", pk=pk)
+
+
+class ImprovementNoticeCreateView(DashboardBaseMixin, CreateView):
+    template_name = "feedback/improvement_notice_form.html"
+    model = ImprovementNotice
+    form_class = ImprovementNoticeForm
+    active_section = "feedback:notice-center"
+
+    def dispatch(self, request, *args, **kwargs):
+        self.improvement = get_object_or_404(
+            ImprovementUpdate.objects.select_related("survey"),
+            pk=kwargs["pk"],
+        )
+        if self.improvement.status == ImprovementUpdate.Status.ARCHIVED:
+            messages.warning(request, "封存項目無法建立新通知；請先恢復項目。")
+            return redirect("feedback:improvement-detail", pk=self.improvement.pk)
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["improvement"] = self.improvement
+        return kwargs
+
+    def get_initial(self):
+        initial = super().get_initial()
+        initial.update(
+            {
+                "subject": f"{self.improvement.title}｜改善進度通知",
+                "body": self.improvement.summary,
+                "audience_type": ImprovementNotice.AudienceType.SURVEY_RESPONDENTS,
+            }
+        )
+        if self.improvement.survey_id is None:
+            initial["audience_type"] = ImprovementNotice.AudienceType.GLOBAL
+        return initial
+
+    def form_valid(self, form):
+        with transaction.atomic():
+            improvement = ImprovementUpdate.objects.select_for_update().get(pk=self.improvement.pk)
+            if improvement.status == ImprovementUpdate.Status.ARCHIVED:
+                messages.warning(self.request, "項目已被封存，未建立通知草稿。")
+                return redirect("feedback:improvement-detail", pk=improvement.pk)
+            form.instance.improvement = improvement
+            form.instance.created_by = self.request.user
+            self.object = form.save()
+        messages.success(self.request, "通知草稿已保存，尚未寄送。請先預覽收件範圍。")
+        return HttpResponseRedirect(self.get_success_url())
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update(self.get_dashboard_base_context())
+        context["improvement"] = self.improvement
+        context["form_mode"] = "create"
+        return context
+
+    def get_success_url(self):
+        return reverse("feedback:notice-batch-preview", args=[self.object.pk])
+
+
+class ImprovementNoticeUpdateView(DashboardBaseMixin, UpdateView):
+    template_name = "feedback/improvement_notice_form.html"
+    model = ImprovementNotice
+    form_class = ImprovementNoticeForm
+    context_object_name = "notice"
+    active_section = "feedback:notice-center"
+
+    def get_queryset(self):
+        return super().get_queryset().select_related("improvement", "improvement__survey")
+
+    def dispatch(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        if self.object.status != ImprovementNotice.Status.DRAFT:
+            messages.warning(request, "已確認寄送的通知內容不可修改。")
+            return redirect("feedback:notice-batch-detail", pk=self.object.pk)
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["improvement"] = self.object.improvement
+        return kwargs
+
+    def form_valid(self, form):
+        with transaction.atomic():
+            locked = ImprovementNotice.objects.select_for_update().get(pk=self.object.pk)
+            if locked.status != ImprovementNotice.Status.DRAFT:
+                messages.warning(self.request, "通知已進入寄送流程，內容未被修改。")
+                return redirect("feedback:notice-batch-detail", pk=locked.pk)
+            locked.subject = form.cleaned_data["subject"]
+            locked.body = form.cleaned_data["body"]
+            locked.audience_type = form.cleaned_data["audience_type"]
+            locked.content_version += 1
+            locked.confirmation_token = uuid.uuid4()
+            locked.save(
+                update_fields=[
+                    "subject",
+                    "body",
+                    "audience_type",
+                    "content_version",
+                    "confirmation_token",
+                    "updated_at",
+                ]
+            )
+            self.object = locked
+        messages.success(self.request, "通知草稿已更新；舊預覽確認資料已失效。")
+        return HttpResponseRedirect(self.get_success_url())
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update(self.get_dashboard_base_context())
+        context["improvement"] = self.object.improvement
+        context["form_mode"] = "update"
+        return context
+
+    def get_success_url(self):
+        return reverse("feedback:notice-batch-preview", args=[self.object.pk])
+
+
+class ImprovementNoticePreviewView(DashboardBaseMixin, DetailView):
+    template_name = "feedback/improvement_notice_preview.html"
+    model = ImprovementNotice
+    context_object_name = "notice"
+    active_section = "feedback:notice-center"
+
+    def get_queryset(self):
+        return super().get_queryset().select_related("improvement", "improvement__survey")
+
+    def dispatch(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        if self.object.status != ImprovementNotice.Status.DRAFT:
+            return redirect("feedback:notice-batch-detail", pk=self.object.pk)
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update(self.get_dashboard_base_context())
+        recipients = resolve_notice_recipients(self.object)
+        context["recipient_count"] = len(recipients)
+        context["confirmation_form"] = ImprovementNoticeConfirmationForm(
+            initial={
+                "confirmation_token": self.object.confirmation_token,
+                "content_version": self.object.content_version,
+            }
+        )
+        return context
+
+
+class ImprovementNoticeDetailView(DashboardBaseMixin, DetailView):
+    template_name = "feedback/improvement_notice_detail.html"
+    model = ImprovementNotice
+    context_object_name = "notice"
+    active_section = "feedback:notice-center"
+
+    def get_queryset(self):
+        return super().get_queryset().select_related(
+            "improvement",
+            "improvement__survey",
+            "created_by",
+            "confirmed_by",
+        )
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update(self.get_dashboard_base_context())
+        context["dispatches"] = self.object.dispatches.select_related(
+            "recipient_user",
+            "submission",
+        ).order_by("id")
+        return context
+
+
+class ImprovementNoticeSendView(ManagerRequiredMixin, View):
+    def post(self, request, pk):
+        notice = get_object_or_404(ImprovementNotice, pk=pk)
+        form = ImprovementNoticeConfirmationForm(request.POST)
+        if not form.is_valid():
+            messages.error(request, "確認資料無效，請重新預覽通知。")
+            return redirect("feedback:notice-batch-preview", pk=pk)
+        try:
+            notice, prepared = prepare_notice_dispatches(
+                pk,
+                confirmation_token=form.cleaned_data["confirmation_token"],
+                content_version=form.cleaned_data["content_version"],
+                actor=request.user,
+            )
+        except NoticeConfirmationError as exc:
+            messages.error(request, str(exc))
+            return redirect("feedback:notice-batch-preview", pk=pk)
+        if not prepared:
+            messages.info(request, "這份通知已確認，不會重複寄送。")
+            return redirect("feedback:notice-batch-detail", pk=pk)
+
+        notice = send_notice_batch(notice.pk)
+        if notice.status == ImprovementNotice.Status.SENT:
+            messages.success(request, f"通知已寄送給 {notice.sent_count} 位收件者。")
+        elif notice.status == ImprovementNotice.Status.PARTIALLY_SENT:
+            messages.warning(
+                request,
+                f"通知部分完成：成功 {notice.sent_count} 人，失敗 {notice.failed_count} 人。",
+            )
+        else:
+            messages.error(request, "通知未能寄出，可在批次詳細頁手動重試失敗項目。")
+        return redirect("feedback:notice-batch-detail", pk=pk)
+
+
+class ImprovementNoticeRetryView(ManagerRequiredMixin, View):
+    def post(self, request, pk):
+        get_object_or_404(ImprovementNotice, pk=pk)
+        notice, started = begin_notice_retry(pk)
+        if not started:
+            messages.info(request, "目前沒有可重試的失敗寄送。")
+            return redirect("feedback:notice-batch-detail", pk=pk)
+        notice = send_notice_batch(notice.pk, retry_failed=True)
+        if notice.status == ImprovementNotice.Status.SENT:
+            messages.success(request, "失敗項目重試完成，通知已全部寄送。")
+        elif notice.status == ImprovementNotice.Status.PARTIALLY_SENT:
+            messages.warning(request, "部分項目重試後仍失敗，可再次手動重試。")
+        else:
+            messages.error(request, "重試仍未成功，請檢查郵件服務設定後再試。")
+        return redirect("feedback:notice-batch-detail", pk=pk)
 
 
 class AIImprovementDraftCreateView(ImprovementCreateView):
@@ -1052,8 +1322,13 @@ class AIImprovementDraftCreateView(ImprovementCreateView):
             "title": self.ai_draft["title"],
             "summary": self.ai_draft["summary"],
             "related_category": self.ai_draft["related_category"],
-            "send_global_notice": False,
         }
+
+    def form_valid(self, form):
+        priority = self.ai_draft.get("priority")
+        if priority in ImprovementUpdate.Priority.values:
+            form.instance.priority = priority
+        return super().form_valid(form)
 
     def get_context_data(self, **kwargs):
         context = CreateView.get_context_data(self, **kwargs)
@@ -1152,7 +1427,6 @@ class AIStageImprovementDraftCreateView(ImprovementCreateView):
             "title": self.ai_draft["title"],
             "summary": "\n\n".join(summary_parts),
             "related_category": self.ai_draft["related_category"],
-            "send_global_notice": False,
         }
 
     def get_context_data(self, **kwargs):
@@ -1194,6 +1468,9 @@ class AIStageImprovementDraftCreateView(ImprovementCreateView):
                 ).first()
                 if existing is None:
                     form.instance.survey = self.survey
+                    form.instance.created_by = self.request.user
+                    form.instance.updated_by = self.request.user
+                    form.instance.priority = self.ai_draft["priority"]
                     form.instance.source_ai_analysis_stage = self.source_stage
                     form.instance.source_ai_draft_id = draft_id
                     form.instance.source_evidence_refs = list(self.ai_draft["evidence_refs"])
@@ -1205,6 +1482,7 @@ class AIStageImprovementDraftCreateView(ImprovementCreateView):
                         "prompt_version": self.source_stage.prompt_version,
                     }
                     self.object = form.save()
+                    record_initial_status(self.object, self.request.user)
         except IntegrityError:
             existing = ImprovementUpdate.objects.filter(
                 source_ai_analysis_stage_id=self.kwargs["stage_id"],
@@ -1215,5 +1493,5 @@ class AIStageImprovementDraftCreateView(ImprovementCreateView):
         if existing:
             messages.info(self.request, "這份 AI 草稿已加入改善追蹤。")
             return redirect(self._existing_url(existing))
-        self._complete_improvement_creation(self.object)
+        messages.success(self.request, "AI 改善草稿已加入追蹤；尚未建立或寄送通知。")
         return redirect(self._existing_url(self.object))

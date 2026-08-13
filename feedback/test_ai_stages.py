@@ -149,7 +149,7 @@ class AIStageModelAndNotificationTests(AIReportTestCase):
         send_mail.assert_not_called()
 
     @patch("feedback.views.send_mail")
-    def test_send_global_notice_true_keeps_manual_notification_flow(self, send_mail):
+    def test_legacy_send_global_notice_post_cannot_trigger_notification(self, send_mail):
         self.add_notification_recipient()
         self.client.force_login(self.manager)
         response = self.client.post(
@@ -163,9 +163,12 @@ class AIStageModelAndNotificationTests(AIReportTestCase):
         )
         self.assertEqual(response.status_code, 302)
         improvement = ImprovementUpdate.objects.get()
-        self.assertTrue(improvement.send_global_notice)
-        self.assertEqual(ImprovementDispatch.objects.count(), 1)
-        send_mail.assert_called_once()
+        self.assertFalse(improvement.send_global_notice)
+        self.assertEqual(improvement.status, ImprovementUpdate.Status.DRAFT)
+        self.assertEqual(improvement.created_by, self.manager)
+        self.assertEqual(improvement.updated_by, self.manager)
+        self.assertEqual(ImprovementDispatch.objects.count(), 0)
+        send_mail.assert_not_called()
 
 
 def finding_payload(evidence_ref="stats.wait.mean"):
@@ -583,6 +586,7 @@ class AIStageDraftImportTests(AIReportTestCase):
         self.assertEqual(improvement.source_evidence_refs, ["stats.wait.mean"])
         self.assertEqual(improvement.source_ai_metadata["priority"], "high")
         self.assertEqual(improvement.source_ai_metadata["acceptance_criteria"], ["建立尖峰流程檢核方式"])
+        self.assertEqual(improvement.priority, ImprovementUpdate.Priority.HIGH)
         self.assertFalse(improvement.send_global_notice)
         self.assertEqual(ImprovementDispatch.objects.count(), 0)
         send_mail.assert_not_called()
@@ -680,6 +684,9 @@ class AIStageDashboardTests(AIReportTestCase):
         self.assertContains(response, "const status = freshness.is_current")
         self.assertNotContains(response, "const status = report.is_current")
         self.assertContains(response, "else {\n            clearError();")
+        self.assertContains(response, "function hasCurrentSuccessfulPipeline(data)")
+        self.assertContains(response, "recovered = hasCurrentSuccessfulPipeline(current)")
+        self.assertContains(response, "if (recovered) {\n                clearError();")
         self.assertContains(response, 'class="ai-report-spinner"')
         self.assertContains(response, "progressText.textContent = message")
         self.assertContains(response, "function evidenceAnalysisKey(row)")

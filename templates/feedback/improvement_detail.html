@@ -1,0 +1,146 @@
+{% extends "feedback/dashboard_base.html" %}
+
+{% block title %}{{ improvement.title }} | 改善追蹤 | FeedBack IQ{% endblock %}
+
+{% block dashboard_content %}
+<section class="manager-header manager-header-inline">
+    <div>
+        <p class="section-kicker">Improvement Detail</p>
+        <h1>{{ improvement.title }}</h1>
+        <p>{% if improvement.survey %}{{ improvement.survey.title }}{% else %}來源問卷已移除{% endif %} ｜ 更新於 {{ improvement.updated_at|date:"Y/m/d H:i" }}</p>
+    </div>
+    <div class="header-actions">
+        {% if improvement.survey %}
+            <a class="button button-ghost" href="{% url 'feedback:improvement-list' %}?survey={{ improvement.survey.slug }}#improvement-{{ improvement.pk }}">返回改善列表</a>
+        {% else %}
+            <a class="button button-ghost" href="{% url 'feedback:improvement-list' %}">返回改善列表</a>
+        {% endif %}
+        {% if improvement.status != 'archived' %}
+            <a class="button button-primary" href="{% url 'feedback:improvement-update' improvement.pk %}">編輯項目</a>
+        {% endif %}
+    </div>
+</section>
+
+<section class="improvement-detail-grid">
+    <article class="manager-panel improvement-detail-main">
+        <div class="panel-head">
+            <div>
+                <p class="section-kicker">Work Item</p>
+                <h2>改善內容</h2>
+            </div>
+            <div class="improvement-badges">
+                <span class="pill {% if improvement.status == 'in_progress' or improvement.status == 'completed' %}pill-active{% endif %}">{{ improvement.get_status_display }}</span>
+                <span class="pill">{{ improvement.get_priority_display }}</span>
+            </div>
+        </div>
+        <dl class="detail-list improvement-detail-list">
+            <div><dt>改善摘要</dt><dd class="preserve-lines">{{ improvement.summary }}</dd></div>
+            <div><dt>對應分類</dt><dd>{{ improvement.related_category|default:"未指定" }}</dd></div>
+            <div><dt>預計完成日</dt><dd>{{ improvement.due_date|date:"Y/m/d"|default:"未設定" }}</dd></div>
+            <div><dt>建立者</dt><dd>{% if improvement.created_by %}{{ improvement.created_by.get_full_name|default:improvement.created_by.username }}{% else %}系統或舊資料{% endif %}</dd></div>
+            <div><dt>最後更新者</dt><dd>{% if improvement.updated_by %}{{ improvement.updated_by.get_full_name|default:improvement.updated_by.username }}{% else %}未記錄{% endif %}</dd></div>
+            {% if improvement.completed_at %}<div><dt>完成時間</dt><dd>{{ improvement.completed_at|date:"Y/m/d H:i" }}</dd></div>{% endif %}
+            {% if improvement.archived_at %}<div><dt>封存時間</dt><dd>{{ improvement.archived_at|date:"Y/m/d H:i" }}</dd></div>{% endif %}
+        </dl>
+        {% if improvement.internal_note %}
+            <section class="improvement-internal-note">
+                <h3>內部備註</h3>
+                <p class="preserve-lines">{{ improvement.internal_note }}</p>
+            </section>
+        {% endif %}
+    </article>
+
+    <aside class="improvement-detail-side">
+        <section class="manager-panel">
+            <div class="panel-head"><h2>更新狀態</h2></div>
+            {% if status_targets %}
+                <form method="post" action="{% url 'feedback:improvement-status' improvement.pk %}" class="form-stack compact-form-stack">
+                    {% csrf_token %}
+                    <div class="field-block">
+                        <label for="id_status">下一狀態</label>
+                        <select name="status" id="id_status" required>
+                            {% for value, label in status_targets %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <button type="submit" class="button button-primary">確認變更</button>
+                </form>
+            {% else %}
+                <p class="muted-text">目前沒有可用的狀態轉移。</p>
+            {% endif %}
+        </section>
+
+        <section class="manager-panel">
+            <div class="panel-head"><h2>通知</h2></div>
+            <p>改善內容不會自動通知顧客。請另外建立草稿、預覽對象並確認寄送。</p>
+            {% if improvement.status != 'archived' %}
+                <a class="button button-primary" href="{% url 'feedback:notice-batch-create' improvement.pk %}">建立通知草稿</a>
+            {% endif %}
+            {% if improvement.notices.exists %}
+                <div class="record-list compact-record-list">
+                    {% for notice in improvement.notices.all %}
+                        <div class="record-row record-row-stack">
+                            <div>
+                                <a class="record-title-link" href="{% url 'feedback:notice-batch-detail' notice.pk %}"><strong>{{ notice.subject }}</strong></a>
+                                <p>{{ notice.get_audience_type_display }}</p>
+                            </div>
+                            <span class="pill {% if notice.status == 'sent' %}pill-active{% endif %}">{{ notice.get_status_display }}</span>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        </section>
+    </aside>
+</section>
+
+{% if improvement.source_ai_analysis_stage %}
+<section class="manager-panel improvement-ai-source">
+    <div class="panel-head">
+        <div>
+            <p class="section-kicker">AI Provenance</p>
+            <h2>AI 分析依據</h2>
+        </div>
+        <span class="pill">唯讀</span>
+    </div>
+    <dl class="detail-list improvement-detail-list">
+        <div><dt>來源階段</dt><dd>{{ improvement.source_ai_analysis_stage.get_stage_type_display }} r{{ improvement.source_ai_analysis_stage.revision }}</dd></div>
+        <div><dt>草稿識別碼</dt><dd>{{ improvement.source_ai_draft_id }}</dd></div>
+        <div><dt>模型</dt><dd>{{ improvement.source_ai_analysis_stage.model_name }}</dd></div>
+        <div><dt>產生時間</dt><dd>{{ improvement.source_ai_analysis_stage.generated_at|date:"Y/m/d H:i"|default:"未記錄" }}</dd></div>
+    </dl>
+    {% if improvement.source_ai_metadata %}
+        <div class="improvement-ai-metadata">
+            {% if improvement.source_ai_metadata.rationale %}<p><strong>分析理由：</strong>{{ improvement.source_ai_metadata.rationale }}</p>{% endif %}
+            {% if improvement.source_ai_metadata.acceptance_criteria %}
+                <h3>驗收方向</h3>
+                <ul class="compact-list">{% for item in improvement.source_ai_metadata.acceptance_criteria %}<li>{{ item }}</li>{% endfor %}</ul>
+            {% endif %}
+        </div>
+    {% endif %}
+    {% if source_ai_evidence %}
+        <h3>後端驗證證據</h3>
+        <ul class="compact-list improvement-evidence-list">
+            {% for evidence in source_ai_evidence %}<li>{{ evidence.display_text|default:evidence.label }}</li>{% endfor %}
+        </ul>
+    {% else %}
+        <p class="muted-text">舊資料未保存可顯示的證據 metadata；系統不會補造內容。</p>
+    {% endif %}
+</section>
+{% endif %}
+
+<section class="manager-panel">
+    <div class="panel-head"><h2>狀態歷程</h2></div>
+    <div class="record-list">
+        {% for history in status_history %}
+            <div class="record-row record-row-stack">
+                <div>
+                    <strong>{% if history.from_status %}{{ history.get_from_status_display }} → {% endif %}{{ history.get_to_status_display }}</strong>
+                    <p>{% if history.changed_by %}{{ history.changed_by.get_full_name|default:history.changed_by.username }}{% else %}系統或舊資料{% endif %}</p>
+                </div>
+                <p class="muted-text">{{ history.changed_at|date:"Y/m/d H:i" }}</p>
+            </div>
+        {% empty %}
+            <p class="muted-text">舊資料尚無狀態歷程。</p>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}

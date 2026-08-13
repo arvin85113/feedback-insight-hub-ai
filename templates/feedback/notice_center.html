@@ -6,7 +6,7 @@
 <section class="manager-header manager-header-inline analytics-hero">
     <div>
         <p class="section-kicker">Notice Center</p>
-        <p>依問卷檢視已發布的改善通知，確認哪些改善已同步給顧客。</p>
+        <p>依問卷檢視通知草稿、寄送進度與歷史結果。</p>
     </div>
     {% if selected_survey %}
         <a class="button button-ghost" href="{% url 'feedback:notice-center' %}">返回問卷列表</a>
@@ -36,44 +36,45 @@
     <section class="manager-panel">
         <div class="panel-head">
             <div>
-                <p class="section-kicker">Published Notices</p>
-                <h2>已建立的改善通知</h2>
+                <p class="section-kicker">Notice Batches</p>
+                <h2>通知批次</h2>
             </div>
-            {% if selected_survey.improvement_tracking_enabled %}
-                <a class="button button-primary button-small" href="{{ create_url }}">建立新通知</a>
-            {% else %}
-                <span class="pill">追蹤已停用</span>
-            {% endif %}
+            <a class="button button-primary button-small" href="{% url 'feedback:improvement-list' %}?survey={{ selected_survey.slug }}">前往改善項目</a>
         </div>
         <div class="record-list">
             {% for notice in notices %}
                 <div class="record-row record-row-stack">
                     <div>
-                        <strong>{{ notice.title }}</strong>
-                        <p>{{ notice.summary|truncatechars:180 }}</p>
-                        {% if notice.related_category %}
-                            <p>對應分類：{{ notice.related_category }}</p>
-                        {% endif %}
+                        <a class="record-title-link" href="{% url 'feedback:notice-batch-detail' notice.pk %}"><strong>{{ notice.subject }}</strong></a>
+                        <p>{{ notice.body|truncatechars:180 }}</p>
+                        <p>{{ notice.improvement.title }} ｜ {{ notice.get_audience_type_display }}</p>
                     </div>
                     <div class="record-meta">
-                        <span class="pill {% if notice.emailed_at %}pill-active{% endif %}">
-                            {% if notice.emailed_at %}已寄送{% else %}已建立{% endif %}
-                        </span>
+                        <span class="pill {% if notice.status == 'sent' %}pill-active{% endif %}">{{ notice.get_status_display }}</span>
                         <p class="muted-text">{{ notice.created_at|date:"Y/m/d H:i" }}</p>
-                        {% if selected_survey.improvement_tracking_enabled %}
-                            <a class="button button-ghost button-small" href="{{ create_url }}">再新增</a>
-                        {% endif %}
+                        <a class="button button-ghost button-small" href="{% url 'feedback:notice-batch-detail' notice.pk %}">查看批次</a>
                     </div>
                 </div>
             {% empty %}
                 <div class="empty-card">
                     <div>
                         <h3>這份問卷尚無改善通知</h3>
-                        <p>可先到改善追蹤建立改善項目，或直接在此建立第一則通知。</p>
+                        <p>請先到改善項目詳細頁建立通知草稿，再預覽並確認寄送。</p>
                     </div>
                 </div>
             {% endfor %}
         </div>
+        {% if legacy_notices %}
+            <div class="panel-head legacy-notice-head"><h2>舊版通知紀錄</h2><span class="pill">相容資料</span></div>
+            <div class="record-list">
+                {% for improvement in legacy_notices %}
+                    <div class="record-row record-row-stack">
+                        <div><strong>{{ improvement.title }}</strong><p>{{ improvement.summary|truncatechars:140 }}</p></div>
+                        <div class="record-meta"><a class="button button-ghost button-small" href="{% url 'feedback:notice-detail' improvement.pk %}">查看舊紀錄</a></div>
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
     </section>
 {% else %}
     <section class="manager-toolbar stats-list-toolbar">

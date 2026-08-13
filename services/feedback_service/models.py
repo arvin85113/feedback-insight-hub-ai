@@ -1,4 +1,6 @@
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+import uuid
+
+from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, Uuid
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -16,6 +18,8 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(254))
     organization: Mapped[str | None] = mapped_column(String(255))
     notification_opt_in: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_email_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     role: Mapped[str] = mapped_column(String(20))
     is_staff: Mapped[bool] = mapped_column(Boolean, default=False)
 
@@ -161,7 +165,11 @@ class ImprovementUpdate(Base):
     title: Mapped[str] = mapped_column(String(255))
     summary: Mapped[str] = mapped_column(Text)
     related_category: Mapped[str] = mapped_column(String(100))
-    send_global_notice: Mapped[bool] = mapped_column(Boolean, default=True)
+    send_global_notice: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[str] = mapped_column(String(20), default="draft")
+    priority: Mapped[str] = mapped_column(String(12), default="medium")
+    due_date: Mapped[Date | None] = mapped_column(Date, nullable=True)
+    internal_note: Mapped[str] = mapped_column(Text, default="")
     source_ai_analysis_stage_id: Mapped[int | None] = mapped_column(
         ForeignKey("feedback_survey_ai_analysis_stages.id", ondelete="SET NULL"),
         nullable=True,
@@ -169,10 +177,26 @@ class ImprovementUpdate(Base):
     source_ai_draft_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     source_evidence_refs: Mapped[list | None] = mapped_column(JSON, nullable=True)
     source_ai_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("accounts_user.id"), nullable=True)
+    updated_by_id: Mapped[int | None] = mapped_column(ForeignKey("accounts_user.id"), nullable=True)
     created_at: Mapped[DateTime] = mapped_column(DateTime)
+    updated_at: Mapped[DateTime] = mapped_column(DateTime)
+    completed_at: Mapped[DateTime | None] = mapped_column(DateTime, nullable=True)
+    archived_at: Mapped[DateTime | None] = mapped_column(DateTime, nullable=True)
     emailed_at: Mapped[DateTime | None] = mapped_column(DateTime, nullable=True)
 
     survey: Mapped[Survey | None] = relationship(back_populates="improvements")
+
+
+class ImprovementStatusHistory(Base):
+    __tablename__ = "feedback_improvementstatushistory"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    improvement_id: Mapped[int] = mapped_column(ForeignKey("feedback_improvementupdate.id"))
+    from_status: Mapped[str] = mapped_column(String(20), default="")
+    to_status: Mapped[str] = mapped_column(String(20))
+    changed_by_id: Mapped[int | None] = mapped_column(ForeignKey("accounts_user.id"), nullable=True)
+    changed_at: Mapped[DateTime] = mapped_column(DateTime)
 
 
 class KeywordCategory(Base):
@@ -185,14 +209,49 @@ class KeywordCategory(Base):
     threshold: Mapped[int] = mapped_column(Integer, default=2)
 
 
+class ImprovementNotice(Base):
+    __tablename__ = "feedback_improvementnotice"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    improvement_id: Mapped[int] = mapped_column(ForeignKey("feedback_improvementupdate.id"))
+    subject: Mapped[str] = mapped_column(String(255))
+    body: Mapped[str] = mapped_column(Text)
+    audience_type: Mapped[str] = mapped_column(String(24))
+    status: Mapped[str] = mapped_column(String(24), default="draft")
+    recipient_count: Mapped[int] = mapped_column(Integer, default=0)
+    sent_count: Mapped[int] = mapped_column(Integer, default=0)
+    failed_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("accounts_user.id"), nullable=True)
+    confirmed_by_id: Mapped[int | None] = mapped_column(ForeignKey("accounts_user.id"), nullable=True)
+    confirmation_token: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True))
+    content_version: Mapped[int] = mapped_column(Integer, default=1)
+    last_error_code: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[DateTime] = mapped_column(DateTime)
+    updated_at: Mapped[DateTime] = mapped_column(DateTime)
+    confirmed_at: Mapped[DateTime | None] = mapped_column(DateTime, nullable=True)
+    sent_at: Mapped[DateTime | None] = mapped_column(DateTime, nullable=True)
+
+    improvement: Mapped["ImprovementUpdate"] = relationship()
+
+
 class ImprovementDispatch(Base):
     __tablename__ = "feedback_improvementdispatch"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     improvement_id: Mapped[int] = mapped_column(ForeignKey("feedback_improvementupdate.id"))
-    submission_id: Mapped[int] = mapped_column(ForeignKey("feedback_feedbacksubmission.id"))
+    notice_id: Mapped[int | None] = mapped_column(ForeignKey("feedback_improvementnotice.id"), nullable=True)
+    submission_id: Mapped[int | None] = mapped_column(ForeignKey("feedback_feedbacksubmission.id"), nullable=True)
+    recipient_user_id: Mapped[int | None] = mapped_column(ForeignKey("accounts_user.id"), nullable=True)
+    recipient_key: Mapped[str] = mapped_column(String(64), default="")
     personalized_note: Mapped[str] = mapped_column(Text)
-    sent_at: Mapped[DateTime] = mapped_column(DateTime)
+    delivery_status: Mapped[str] = mapped_column(String(16), default="pending")
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_attempt_at: Mapped[DateTime | None] = mapped_column(DateTime, nullable=True)
+    error_code: Mapped[str] = mapped_column(String(64), default="")
+    sent_at: Mapped[DateTime | None] = mapped_column(DateTime, nullable=True)
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False)
 
     improvement: Mapped["ImprovementUpdate"] = relationship()
-    submission: Mapped["FeedbackSubmission"] = relationship()
+    notice: Mapped["ImprovementNotice | None"] = relationship()
+    submission: Mapped["FeedbackSubmission | None"] = relationship()
+    recipient_user: Mapped["User | None"] = relationship()

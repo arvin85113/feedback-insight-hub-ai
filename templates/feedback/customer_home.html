@@ -44,7 +44,7 @@
                 <div class="customer-record-row customer-compact-row">
                     <div>
                         <strong>{{ notice.improvement.title }}</strong>
-                        <p>{{ notice.submission.survey.title }}</p>
+                        {% if notice.submission.survey %}<p>{{ notice.submission.survey.title }}</p>{% endif %}
                     </div>
                     <span>{{ notice.sent_at|date:"Y/m/d" }}</span>
                 </div>

@@ -767,3 +767,4 @@ class EndpointSecurityAndDraftTests(AIReportTestCase):
         self.assertEqual(response.status_code, 302)
         improvement = ImprovementUpdate.objects.get()
         self.assertEqual(improvement.survey, self.survey)
+        self.assertEqual(improvement.priority, ImprovementUpdate.Priority.HIGH)

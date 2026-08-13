@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from django.db.models import Count, Max
+from django.db.models import Count, Max, Q
 from django.db.models.functions import TruncDate
 from django.utils import timezone
 
@@ -67,23 +67,26 @@ def serialize_submission(submission, answer_count=None):
 
 
 def serialize_notice(notice):
+    survey = notice.submission.survey if notice.submission_id else notice.improvement.survey
+    title = notice.notice.subject if notice.notice_id else notice.improvement.title
+    summary = notice.notice.body if notice.notice_id else notice.improvement.summary
     return {
         "id": notice.id,
-        "sent_at": notice.sent_at.isoformat(),
+        "sent_at": notice.sent_at.isoformat() if notice.sent_at else None,
         "personalized_note": notice.personalized_note,
         "is_read": notice.is_read,
         "submission": {
-            "id": notice.submission.id,
-            "survey": {
-                "id": notice.submission.survey.id,
-                "title": notice.submission.survey.title,
-                "slug": notice.submission.survey.slug,
-            },
+            "id": notice.submission_id,
+            "survey": (
+                {"id": survey.id, "title": survey.title, "slug": survey.slug}
+                if survey
+                else None
+            ),
         },
         "improvement": {
             "id": notice.improvement.id,
-            "title": notice.improvement.title,
-            "summary": notice.improvement.summary,
+            "title": title,
+            "summary": summary,
         },
     }
 
@@ -126,8 +129,11 @@ def get_customer_home_payload(user):
         .order_by("-submitted_at")
     )
     notices = list(
-        ImprovementDispatch.objects.filter(submission__user=user)
-        .select_related("improvement", "submission", "submission__survey")
+        ImprovementDispatch.objects.filter(
+            Q(recipient_user=user) | Q(submission__user=user),
+            delivery_status=ImprovementDispatch.DeliveryStatus.SENT,
+        )
+        .select_related("notice", "improvement", "improvement__survey", "submission", "submission__survey")
         .order_by("-sent_at")
     )
     notices_by_submission = {}
@@ -160,8 +166,11 @@ def get_customer_home_payload(user):
 
 def get_customer_notifications_payload(user):
     notices = (
-        ImprovementDispatch.objects.filter(submission__user=user)
-        .select_related("improvement", "submission", "submission__survey")
+        ImprovementDispatch.objects.filter(
+            Q(recipient_user=user) | Q(submission__user=user),
+            delivery_status=ImprovementDispatch.DeliveryStatus.SENT,
+        )
+        .select_related("notice", "improvement", "improvement__survey", "submission", "submission__survey")
         .order_by("-sent_at")
     )
     return {

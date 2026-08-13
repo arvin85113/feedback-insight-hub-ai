@@ -1,0 +1,62 @@
+{% extends "feedback/dashboard_base.html" %}
+
+{% block title %}{{ notice.subject }} | 通知中心 | FeedBack IQ{% endblock %}
+
+{% block dashboard_content %}
+<section class="manager-header manager-header-inline">
+    <div>
+        <p class="section-kicker">Notice Batch</p>
+        <h1>{{ notice.subject }}</h1>
+        <p>{{ notice.improvement.title }} ｜ 建立於 {{ notice.created_at|date:"Y/m/d H:i" }}</p>
+    </div>
+    <div class="header-actions">
+        <a class="button button-ghost" href="{% url 'feedback:improvement-detail' notice.improvement.pk %}">返回改善項目</a>
+        {% if notice.status == 'draft' %}
+            <a class="button button-ghost" href="{% url 'feedback:notice-batch-update' notice.pk %}">編輯草稿</a>
+            <a class="button button-primary" href="{% url 'feedback:notice-batch-preview' notice.pk %}">預覽寄送</a>
+        {% endif %}
+        {% if notice.status == 'failed' or notice.status == 'partially_sent' %}
+            <form method="post" action="{% url 'feedback:notice-batch-retry' notice.pk %}">
+                {% csrf_token %}
+                <button type="submit" class="button button-primary">重試失敗項目</button>
+            </form>
+        {% endif %}
+    </div>
+</section>
+
+<section class="manager-panel notice-preview-content">
+    <div class="panel-head">
+        <div><p class="section-kicker">Message Snapshot</p><h2>通知內容</h2></div>
+        <span class="pill {% if notice.status == 'sent' %}pill-active{% endif %}">{{ notice.get_status_display }}</span>
+    </div>
+    <h3>{{ notice.subject }}</h3>
+    <p class="preserve-lines">{{ notice.body }}</p>
+    <dl class="detail-list improvement-detail-list">
+        <div><dt>通知對象</dt><dd>{{ notice.get_audience_type_display }}</dd></div>
+        <div><dt>收件人</dt><dd>{{ notice.recipient_count }} 人</dd></div>
+        <div><dt>寄送成功</dt><dd>{{ notice.sent_count }} 人</dd></div>
+        <div><dt>寄送失敗</dt><dd>{{ notice.failed_count }} 人</dd></div>
+        <div><dt>確認時間</dt><dd>{{ notice.confirmed_at|date:"Y/m/d H:i"|default:"尚未確認" }}</dd></div>
+        <div><dt>完成時間</dt><dd>{{ notice.sent_at|date:"Y/m/d H:i"|default:"尚未完成" }}</dd></div>
+    </dl>
+    {% if notice.status == 'sending' %}
+        <p class="warning-text">批次仍有寄送中的項目。為避免重複寄送，系統不會自動重試狀態不明的項目。</p>
+    {% elif notice.last_error_code %}
+        <p class="warning-text">最近錯誤類型：{{ notice.last_error_code }}</p>
+    {% endif %}
+</section>
+
+{% if dispatches %}
+<section class="manager-panel">
+    <div class="panel-head"><h2>寄送結果</h2></div>
+    <div class="record-list">
+        {% for dispatch in dispatches %}
+            <div class="record-row record-row-stack">
+                <div><strong>收件者 #{{ forloop.counter }}</strong><p>嘗試 {{ dispatch.attempt_count }} 次</p></div>
+                <div class="record-meta"><span class="pill {% if dispatch.delivery_status == 'sent' %}pill-active{% endif %}">{{ dispatch.get_delivery_status_display }}</span></div>
+            </div>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+{% endblock %}
