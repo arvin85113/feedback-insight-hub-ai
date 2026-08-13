@@ -11,9 +11,6 @@
             哪些改善案應該優先推進，以及是否有顧客需要更新通知。
         </p>
     </div>
-    <div class="manager-header-actions">
-        <a class="button button-primary" href="{% url 'feedback:survey-create' %}">建立新問卷</a>
-    </div>
 </section>
 
 <section class="manager-metric-grid">
@@ -26,7 +23,59 @@
     {% endfor %}
 </section>
 
-<section class="manager-content-grid">
+<section class="manager-panel ai-operations-panel" data-ai-operations>
+    <div class="panel-head ai-operations-head">
+        <div>
+            <p class="section-kicker">Gemini Operations</p>
+            <h2>AI 營運分析</h2>
+        </div>
+        <div class="ai-report-actions">
+            <button type="button" class="button button-primary" data-ai-update hidden>產生第一份報告</button>
+        </div>
+    </div>
+
+    <form hidden>{% csrf_token %}</form>
+    <div class="ai-survey-selector" role="group" aria-label="選擇 AI 分析問卷">
+        {% for survey in ai_report_surveys %}
+            <button
+                type="button"
+                class="ai-survey-button"
+                data-ai-survey
+                data-survey-slug="{{ survey.slug }}"
+                data-status-url="{% url 'feedback:ai-stage-status' survey.slug %}"
+                data-snapshot-url="{% url 'feedback:ai-report-snapshot' survey.slug %}"
+                aria-pressed="false"
+            >
+                <span>{{ survey.title }}</span>
+                <small>
+                    {% if survey.valid_response_count >= 3 %}
+                        {{ survey.valid_response_count }} 份有效回覆
+                    {% else %}
+                        資料不足
+                    {% endif %}
+                </small>
+            </button>
+        {% empty %}
+            <p class="muted-text">目前沒有啟用中的問卷。</p>
+        {% endfor %}
+    </div>
+
+    <div class="ai-stage-status-list" data-ai-stage-list hidden></div>
+    <div class="ai-report-progress" data-ai-progress hidden aria-live="polite">
+        <span class="ai-report-spinner" aria-hidden="true"></span>
+        <span data-ai-progress-text></span>
+    </div>
+    <div class="ai-report-error" data-ai-error hidden role="alert"></div>
+    <div class="ai-report-workspace" data-ai-workspace>
+        <div class="ai-report-empty" data-ai-empty>
+            <h3>選擇一份問卷</h3>
+            <p>系統會先讀取該問卷已保存的 AI 報告，不會混合其他問卷資料。</p>
+        </div>
+        <div data-ai-report hidden></div>
+    </div>
+</section>
+
+<section class="manager-content-grid dashboard-support-grid">
     <article class="manager-panel">
         <div class="panel-head">
             <h2>近七日回饋量趨勢</h2>
@@ -129,7 +178,7 @@
                 <div class="record-row">
                     <div>
                         <strong>{{ item.title }}</strong>
-                        <p>{{ item.survey.title }}</p>
+                        <p>{% if item.survey %}{{ item.survey.title }}{% else %}未歸屬問卷{% endif %}</p>
                     </div>
                     <div class="record-meta">
                         <span class="pill {% if item.emailed_at %}pill-active{% endif %}">
@@ -174,4 +223,493 @@
         </div>
     </article>
 </section>
+
+<script>
+(() => {
+    const root = document.querySelector('[data-ai-operations]');
+    if (!root) return;
+
+    const surveyButtons = Array.from(root.querySelectorAll('[data-ai-survey]'));
+    const updateButton = root.querySelector('[data-ai-update]');
+    const progress = root.querySelector('[data-ai-progress]');
+    const progressText = root.querySelector('[data-ai-progress-text]');
+    const stageList = root.querySelector('[data-ai-stage-list]');
+    const errorBox = root.querySelector('[data-ai-error]');
+    const empty = root.querySelector('[data-ai-empty]');
+    const reportRoot = root.querySelector('[data-ai-report]');
+    const csrf = root.querySelector('[name="csrfmiddlewaretoken"]')?.value || '';
+    const state = {selected: null, busy: false, requestId: 0};
+
+    function element(tag, className, text) {
+        const node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text !== undefined && text !== null) node.textContent = String(text);
+        return node;
+    }
+
+    function setBusy(busy, message = '') {
+        state.busy = busy;
+        surveyButtons.forEach((button) => { button.disabled = busy; });
+        updateButton.disabled = busy;
+        progress.hidden = !message;
+        progressText.textContent = message;
+        root.setAttribute('aria-busy', busy ? 'true' : 'false');
+    }
+
+    function clearError() {
+        errorBox.hidden = true;
+        errorBox.textContent = '';
+    }
+
+    function showError(message) {
+        errorBox.textContent = message || '操作失敗，既有報告不受影響。';
+        errorBox.hidden = false;
+    }
+
+    async function requestJSON(url, options = {}) {
+        const response = await fetch(url, {
+            credentials: 'same-origin',
+            ...options,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                ...(options.method === 'POST' ? {'X-CSRFToken': csrf} : {}),
+                ...(options.headers || {}),
+            },
+        });
+        let data = {};
+        try { data = await response.json(); } catch (_) { data = {}; }
+        if (!response.ok || data.ok === false) {
+            const failure = new Error(data.message || '伺服器暫時無法處理請求。');
+            failure.code = data.error_code;
+            throw failure;
+        }
+        return data;
+    }
+
+    function formatDate(value) {
+        if (!value) return '無資料';
+        return new Intl.DateTimeFormat('zh-TW', {
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit',
+        }).format(new Date(value));
+    }
+
+    function compactNumber(value) {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) return String(value ?? '無資料');
+        return numeric.toFixed(3).replace(/\.?0+$/, '');
+    }
+
+    function pValueText(value) {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) return 'p 無資料';
+        return numeric < 0.001 ? 'p < 0.001' : `p = ${compactNumber(numeric)}`;
+    }
+
+    function evidenceMetric(row) {
+        if (row.metric_type) return row.metric_type;
+        const match = String(row.id || '').match(/\.(p_value|effect_size|statistic)$/);
+        return match ? match[1] : '';
+    }
+
+    function evidenceAnalysisKey(row) {
+        if (row.test_ref) return `test:${row.test_ref}`;
+        const ref = String(row.id || '').match(/^test\.(test-\d+)\./);
+        if (ref) return `test:${ref[1]}`;
+        if (
+            Array.isArray(row.variables)
+            && row.variables.length === 2
+            && row.variables.every((value) => String(value || '').trim())
+        ) {
+            return `variables:${JSON.stringify(row.variables)}:${row.method_key || row.test_name || ''}`;
+        }
+        return '';
+    }
+
+    function variableTitle(row) {
+        return Array.isArray(row.variables) && row.variables.length === 2
+            ? row.variables.join(' × ')
+            : '';
+    }
+
+    function sampleText(rows) {
+        const row = rows.find((item) => Number(item.sample_size) > 0);
+        return row ? `樣本 ${row.sample_size}` : '';
+    }
+
+    function mergedStatisticalEntry(rows) {
+        const statistic = rows.find((row) => evidenceMetric(row) === 'statistic');
+        const pValue = rows.find((row) => evidenceMetric(row) === 'p_value');
+        if (!statistic || !pValue) return null;
+        const source = statistic || pValue;
+        const method = source.method_key || pValue.method_key || '';
+        const title = variableTitle(source) || variableTitle(pValue) || source.test_name || '統計分析';
+        const details = [];
+        if (method === 'spearman') {
+            details.push(`Spearman ρ = ${compactNumber(statistic.value)}`);
+        } else if (method === 'pearson') {
+            details.push(`Pearson r = ${compactNumber(statistic.value)}`);
+        } else if (method === 'one_way_anova') {
+            details.push('單因子變異數分析');
+        } else if (method === 'kruskal_wallis') {
+            details.push(`Kruskal-Wallis H = ${compactNumber(statistic.value)}`);
+        } else if (method === 'welch_t_test') {
+            details.push(`Welch t = ${compactNumber(statistic.value)}`);
+        } else if (method === 'mann_whitney_u') {
+            details.push(`Mann-Whitney U = ${compactNumber(statistic.value)}`);
+        } else if (method === 'chi_square') {
+            details.push(`卡方 χ² = ${compactNumber(statistic.value)}`);
+        } else {
+            details.push(`${source.test_name || '統計量'} = ${compactNumber(statistic.value)}`);
+        }
+        details.push(pValueText(pValue.value));
+        const sample = sampleText(rows);
+        if (sample) details.push(sample);
+        return {title, detail: details.join('，')};
+    }
+
+    function sentimentEntry(row) {
+        const sentiment = String(row.id || '').match(/\.(positive|negative|neutral)$/)?.[1];
+        if (!sentiment) return null;
+        const labels = {positive: '正面回饋', negative: '負面回饋', neutral: '中性回饋'};
+        const category = row.category || String(row.label || '').replace(/\s+(positive|negative|neutral)$/, '');
+        const total = Number(row.sample_size) > 0 ? `／共分析 ${row.sample_size} 份` : '';
+        return {title: category, detail: `${labels[sentiment]} ${row.value} 份${total}`};
+    }
+
+    function keywordEntry(row) {
+        const match = String(row.label || '').match(/關鍵字「([^」]+)」/);
+        const title = match ? `「${match[1]}」` : String(row.label || '關鍵字');
+        const count = row.occurrence_count ?? row.value;
+        const responses = Number(row.response_count) > 0 ? `／涵蓋 ${row.response_count} 份文字回覆` : '';
+        return {title, detail: `共提及 ${count} 次${responses}`};
+    }
+
+    function evidenceEntry(row) {
+        if (row.kind === 'keyword_frequency') return keywordEntry(row);
+        if (row.kind === 'category_sentiment') return sentimentEntry(row);
+        if (row.kind === 'statistical_test') {
+            const metric = evidenceMetric(row);
+            const title = variableTitle(row) || row.test_name || row.label || '統計分析';
+            const sample = Number(row.sample_size) > 0 ? `，樣本 ${row.sample_size}` : '';
+            if (metric === 'p_value') return {title, detail: `${pValueText(row.value)}${sample}`};
+            if (metric === 'statistic') {
+                const labels = {
+                    pearson: 'Pearson r',
+                    spearman: 'Spearman ρ',
+                    one_way_anova: 'F',
+                    kruskal_wallis: 'Kruskal-Wallis H',
+                    welch_t_test: 'Welch t',
+                    mann_whitney_u: 'Mann-Whitney U',
+                    chi_square: '卡方 χ²',
+                };
+                return {title, detail: `${labels[row.method_key] || row.metric_label || '統計量'} = ${compactNumber(row.value)}${sample}`};
+            }
+        }
+        if (row.display_text) {
+            const parts = String(row.display_text).split('｜');
+            if (parts.length > 1) return {title: parts.shift(), detail: parts.join('，')};
+            return {title: '', detail: row.display_text};
+        }
+        const units = {responses: '份', occurrences: '次', percent: '%'};
+        const unit = units[row.unit] || (row.unit ? ` ${row.unit}` : '');
+        const sample = Number(row.sample_size) > 0 ? `，樣本 ${row.sample_size}` : '';
+        return {title: row.label || '', detail: `${row.value}${unit}${sample}`};
+    }
+
+    function evidenceEntries(rows) {
+        const sourceRows = rows || [];
+        const grouped = new Map();
+        sourceRows.forEach((row) => {
+            if (row.kind !== 'statistical_test' || !['statistic', 'p_value'].includes(evidenceMetric(row))) return;
+            const key = evidenceAnalysisKey(row);
+            if (!key) return;
+            if (!grouped.has(key)) grouped.set(key, []);
+            grouped.get(key).push(row);
+        });
+        const consumed = new Set();
+        const entries = [];
+        sourceRows.forEach((row) => {
+            if (consumed.has(row)) return;
+            const key = evidenceAnalysisKey(row);
+            const group = key ? grouped.get(key) || [] : [];
+            const merged = group.includes(row) && group.length > 1 ? mergedStatisticalEntry(group) : null;
+            if (merged) {
+                group.forEach((item) => consumed.add(item));
+                entries.push(merged);
+                return;
+            }
+            consumed.add(row);
+            const entry = evidenceEntry(row);
+            if (entry) entries.push(entry);
+        });
+        return entries;
+    }
+
+    function evidenceBlock(rows) {
+        const entries = evidenceEntries(rows);
+        if (!entries.length) return null;
+        const block = element('section', 'ai-card-evidence');
+        block.append(element('span', 'ai-card-section-label', '分析依據'));
+        const list = element('ul', 'ai-evidence-list');
+        entries.forEach((entry) => {
+            const item = element('li', 'ai-evidence-item');
+            if (entry.title) item.append(element('strong', 'ai-evidence-title', entry.title));
+            item.append(element('span', 'ai-evidence-detail', entry.detail));
+            list.append(item);
+        });
+        block.append(list);
+        return block;
+    }
+
+    function limitationBlock(rows) {
+        if (!rows || !rows.length) return null;
+        const block = element('section', 'ai-card-limitations');
+        block.append(element('span', 'ai-card-section-label', '資料限制'));
+        const list = element('ul', 'ai-limitation-list');
+        rows.forEach((row) => list.append(element('li', '', row)));
+        block.append(list);
+        return block;
+    }
+
+    function priorityLabel(value) {
+        return {high: '高優先', medium: '中優先', low: '低優先'}[value] || value;
+    }
+
+    function findingBlock(item) {
+        const block = element('article', 'ai-finding');
+        const heading = element('div', 'ai-finding-head');
+        heading.append(element('h4', '', item.finding_title || item.title));
+        heading.append(element('span', `ai-priority ai-priority-${item.priority}`, priorityLabel(item.priority)));
+        block.append(heading, element('p', 'ai-card-conclusion', item.rationale));
+        const evidence = evidenceBlock(item.evidence);
+        const limitations = limitationBlock(item.data_limitations);
+        if (evidence) block.append(evidence);
+        if (limitations) block.append(limitations);
+        return block;
+    }
+
+    function appendFindingSection(container, title, rows) {
+        if (!rows || !rows.length) return;
+        const section = element('section', 'ai-report-section');
+        section.append(element('h3', '', title));
+        const grid = element('div', 'ai-finding-grid');
+        rows.forEach((item) => grid.append(findingBlock(item)));
+        section.append(grid);
+        container.append(section);
+    }
+
+    function renderReport(report, freshness) {
+        reportRoot.replaceChildren();
+        const meta = element('div', 'ai-report-meta');
+        const status = freshness.is_current ? '目前為最新資料' : '最新資料尚未完成分析';
+        [
+            ['問卷', report.survey_title],
+            ['資料時間', formatDate(report.source_latest_at)],
+            ['涵蓋回覆', `${report.response_count} 份`],
+            ['分析覆蓋率', `${Math.round((report.analysis_coverage || 0) * 100)}%`],
+            ['模型', report.model],
+            ['分析模式', report.report_source === 'staged' ? '三階段分析' : report.generation_profile === 'compact' ? '精簡分析模式' : '標準分析模式'],
+            ['狀態', status],
+            ['生成時間', formatDate(report.generated_at)],
+        ].forEach(([label, value]) => {
+            const item = element('div', 'ai-report-meta-item');
+            item.append(element('span', '', label), element('strong', '', value));
+            meta.append(item);
+        });
+        reportRoot.append(meta);
+
+        const coverage = report.evidence_coverage || {};
+        if (coverage.total !== null && coverage.total !== undefined) {
+            reportRoot.append(element(
+                'div',
+                'ai-freshness-notice',
+                coverage.message || (
+                    coverage.selected === coverage.total
+                        ? `AI 本次分析已涵蓋全部 ${coverage.total} 筆聚合證據。`
+                        : `AI 本次分析涵蓋 ${coverage.selected} / ${coverage.total} 筆聚合證據；其餘證據仍保存在完整快照中。`
+                )
+            ));
+        }
+
+        if (report.generation_profile === 'compact') {
+            reportRoot.append(element('div', 'ai-freshness-notice', '本報告以精簡分析模式完成，未宣稱涵蓋完整快照中的所有證據。'));
+        }
+
+        if (report.report_source === 'legacy') {
+            reportRoot.append(element('div', 'ai-freshness-notice', '三階段分析尚未完成，目前顯示舊版成功報告作為備援。'));
+        }
+
+        if (freshness.latest_analysis_incomplete) {
+            reportRoot.append(element('div', 'ai-freshness-notice', '最新資料尚未完成 AI 分析；以下仍顯示上一份成功報告。'));
+        }
+
+        const content = report.content || {};
+        const summary = element('section', 'ai-report-summary');
+        summary.append(element('h3', '', '營運摘要'), element('p', '', content.executive_summary || ''));
+        reportRoot.append(summary);
+        appendFindingSection(reportRoot, '正面訊號', content.positive_signals);
+        appendFindingSection(reportRoot, '關鍵發現', content.critical_findings);
+        appendFindingSection(reportRoot, '統計發現', content.statistical_findings);
+        appendFindingSection(reportRoot, '文字洞察', content.text_insights);
+        appendFindingSection(reportRoot, '綜合營運發現', content.combined_findings);
+
+        if ((content.improvement_drafts || []).length) {
+            const section = element('section', 'ai-report-section');
+            section.append(element('h3', '', '改善追蹤草稿'));
+            const grid = element('div', 'ai-draft-grid');
+            content.improvement_drafts.forEach((draft) => {
+                const card = element('article', 'ai-draft');
+                const head = element('div', 'ai-finding-head');
+                head.append(element('h4', '', draft.title));
+                head.append(element('span', `ai-priority ai-priority-${draft.priority}`, priorityLabel(draft.priority)));
+                card.append(head, element('p', 'ai-card-conclusion', draft.summary));
+                const evidence = evidenceBlock(draft.evidence);
+                const limitations = limitationBlock(draft.data_limitations);
+                if (evidence) card.append(evidence);
+                if (limitations) card.append(limitations);
+                const state = (report.draft_states || {})[draft.draft_id] || {};
+                const url = state.url || (report.draft_urls || {})[draft.draft_id];
+                if (url) {
+                    const link = element(
+                        'a',
+                        'button button-ghost button-small ai-card-action',
+                        state.imported ? '已加入改善追蹤' : '帶入改善追蹤'
+                    );
+                    link.href = url;
+                    card.append(link);
+                } else if (report.report_source === 'staged') {
+                    card.append(element('span', 'muted-text ai-card-action', '報告已過期，請重新產生後再帶入。'));
+                }
+                grid.append(card);
+            });
+            section.append(grid);
+            reportRoot.append(section);
+        }
+
+        if ((content.data_caveats || []).length) {
+            const caveats = element('section', 'ai-report-section ai-caveats');
+            caveats.append(element('h3', '', '資料限制'));
+            const list = element('ul');
+            content.data_caveats.forEach((item) => list.append(element('li', '', item)));
+            caveats.append(list);
+            reportRoot.append(caveats);
+        }
+        empty.hidden = true;
+        reportRoot.hidden = false;
+    }
+
+    function renderStages(stages) {
+        const labels = {statistics: '統計分析', text: '文字洞察', synthesis: '綜合營運決策'};
+        const statusLabels = {
+            not_started: '尚未開始', generating: '產生中', succeeded: '已完成', failed: '失敗'
+        };
+        stageList.replaceChildren();
+        Object.entries(labels).forEach(([key, label]) => {
+            const stage = (stages || {})[key] || {status: 'not_started'};
+            const item = element('div', `ai-stage-status ai-stage-${stage.status}`);
+            item.append(
+                element('strong', '', label),
+                element('span', '', `${statusLabels[stage.status] || stage.status}${stage.cache_hit ? '（快取）' : ''}`)
+            );
+            stageList.append(item);
+        });
+        stageList.hidden = false;
+    }
+
+    function renderStatus(data) {
+        const freshness = data.freshness;
+        renderStages(data.stages);
+        if (data.report) {
+            renderReport(data.report, freshness);
+        } else {
+            reportRoot.hidden = true;
+            reportRoot.replaceChildren();
+            empty.replaceChildren(
+                element('h3', '', freshness.has_enough_data ? '尚無 AI 分析報告' : '資料不足'),
+                element(
+                    'p', '',
+                    freshness.has_enough_data
+                        ? '可以建立這份問卷的第一份匿名分析報告。'
+                        : `至少需要 ${freshness.minimum_responses} 份有效回覆，目前有 ${data.survey.valid_response_count} 份。`
+                )
+            );
+            empty.hidden = false;
+        }
+        if (freshness.latest_ai_status === 'failed' && freshness.latest_error_message) {
+            showError(`${freshness.latest_error_message} 最新資料尚未完成 AI 分析，可手動重試。`);
+        } else {
+            clearError();
+        }
+        updateButton.hidden = !freshness.has_enough_data || Boolean(data.report && freshness.is_current);
+        updateButton.textContent = data.report ? '更新 AI 報告' : '產生第一份報告';
+    }
+
+    async function selectSurvey(button) {
+        if (state.busy) return;
+        state.selected = button;
+        const requestId = ++state.requestId;
+        surveyButtons.forEach((item) => {
+            const active = item === button;
+            item.classList.toggle('ai-survey-button-active', active);
+            item.setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
+        updateButton.hidden = true;
+        clearError();
+        reportRoot.hidden = true;
+        empty.replaceChildren(element('h3', '', '讀取已保存報告'), element('p', '', '正在檢查目前資料版本。'));
+        empty.hidden = false;
+        setBusy(true, '正在讀取最新成功報告');
+        try {
+            const data = await requestJSON(button.dataset.statusUrl);
+            if (requestId === state.requestId) renderStatus(data);
+        } catch (error) {
+            if (requestId === state.requestId) showError(error.message);
+        } finally {
+            if (requestId === state.requestId) setBusy(false);
+        }
+    }
+
+    async function updateReport() {
+        if (!state.selected || state.busy) return;
+        clearError();
+        setBusy(true, '正在更新最新資料');
+        try {
+            const snapshotData = await requestJSON(state.selected.dataset.snapshotUrl, {method: 'POST'});
+            const stages = [
+                ['statistics', 'AI 正在分析統計資料'],
+                ['text', 'AI 正在整理文字洞察'],
+                ['synthesis', 'AI 正在產生營運摘要與改善草稿'],
+            ];
+            for (const [stageType, message] of stages) {
+                setBusy(true, message);
+                const reportData = await requestJSON(
+                    snapshotData.snapshot.stage_urls[stageType],
+                    {method: 'POST'}
+                );
+                renderStatus(reportData);
+            }
+        } catch (error) {
+            try {
+                const current = await requestJSON(state.selected.dataset.statusUrl);
+                renderStatus(current);
+            } catch (_) {
+                // Keep the currently rendered successful report if status refresh also fails.
+            }
+            showError(`${error.message} 最新資料尚未完成 AI 分析，可手動重試。`);
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    async function selectSurveyAfterBusy() {
+        const button = state.selected;
+        const data = await requestJSON(button.dataset.statusUrl);
+        renderStatus(data);
+    }
+
+    surveyButtons.forEach((button) => button.addEventListener('click', () => selectSurvey(button)));
+    updateButton.addEventListener('click', updateReport);
+})();
+</script>
 {% endblock %}

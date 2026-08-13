@@ -5,6 +5,7 @@ db.sqlite3
 staticfiles/
 *.log
 supabase密碼.txt
+GeminiAPI.txt
 dist/
 build/
 .pytest_cache/

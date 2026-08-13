@@ -445,7 +445,7 @@ Rules:
 - Do not remove production text-analysis fields.
 - Do not reintroduce quick / hybrid access mode.
 - Do not fake migrations in `build.sh` to bypass schema conflicts.
-- Keep `CLAUDE.md` / `.claude/` updates separate from feature changes unless explicitly requested.
+- Keep `AGENTS.md` / `scripts/` updates separate from feature changes unless explicitly requested.
 
 ## Useful Commands
 

@@ -3,6 +3,7 @@ import re
 from statistics import mean
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Count
 from django.urls import reverse
@@ -147,19 +148,173 @@ class KeywordCategory(models.Model):
 
 
 class ImprovementUpdate(models.Model):
-    survey = models.ForeignKey(Survey, on_delete=models.CASCADE, related_name="improvements")
+    survey = models.ForeignKey(
+        Survey,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="improvements",
+    )
     title = models.CharField(max_length=255)
     summary = models.TextField()
     related_category = models.CharField(max_length=100, blank=True)
     send_global_notice = models.BooleanField(default=True)
+    source_ai_analysis_stage = models.ForeignKey(
+        "SurveyAIAnalysisStage",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_improvements",
+    )
+    source_ai_draft_id = models.CharField(max_length=64, null=True, blank=True)
+    source_evidence_refs = models.JSONField(null=True, blank=True)
+    source_ai_metadata = models.JSONField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     emailed_at = models.DateTimeField(blank=True, null=True)
 
     class Meta:
         ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("source_ai_analysis_stage", "source_ai_draft_id"),
+                name="uniq_improvement_ai_draft",
+            )
+        ]
 
     def __str__(self):
         return self.title
+
+
+class SurveyAIReportSnapshot(models.Model):
+    class Status(models.TextChoices):
+        BUILDING = "building", "建立快照中"
+        SNAPSHOT_READY = "snapshot_ready", "快照完成"
+        GENERATING = "generating", "AI 產生中"
+        SUCCEEDED = "succeeded", "成功"
+        FAILED = "failed", "失敗"
+
+    survey = models.ForeignKey(
+        Survey,
+        on_delete=models.CASCADE,
+        related_name="ai_report_snapshots",
+    )
+    data_fingerprint = models.CharField(max_length=64)
+    snapshot_schema_version = models.CharField(max_length=32)
+    prompt_version = models.CharField(max_length=32)
+    model_name = models.CharField(max_length=100)
+    source_snapshot = models.JSONField(default=dict)
+    ai_report = models.JSONField(null=True, blank=True)
+    status = models.CharField(max_length=24, choices=Status.choices)
+    response_count = models.PositiveIntegerField(default=0)
+    analysis_coverage = models.DecimalField(max_digits=5, decimal_places=4, default=0)
+    source_latest_at = models.DateTimeField(null=True, blank=True)
+    generated_at = models.DateTimeField(null=True, blank=True)
+    snapshot_ms = models.PositiveIntegerField(null=True, blank=True)
+    generation_ms = models.PositiveIntegerField(null=True, blank=True)
+    fingerprint_ms = models.PositiveIntegerField(null=True, blank=True)
+    attempt_count = models.PositiveIntegerField(default=0)
+    error_code = models.CharField(max_length=64, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "feedback_survey_ai_report_snapshots"
+        constraints = [
+            models.UniqueConstraint(
+                fields=(
+                    "survey",
+                    "data_fingerprint",
+                    "snapshot_schema_version",
+                    "prompt_version",
+                    "model_name",
+                ),
+                name="uniq_survey_ai_report_version",
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=("survey", "status", "generated_at"),
+                name="fb_ai_survey_status_gen_idx",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.survey} / {self.status} / {self.data_fingerprint[:12]}"
+
+
+class SurveyAIAnalysisStage(models.Model):
+    class StageType(models.TextChoices):
+        STATISTICS = "statistics", "統計分析"
+        TEXT = "text", "文字洞察"
+        SYNTHESIS = "synthesis", "綜合營運決策"
+
+    class Status(models.TextChoices):
+        GENERATING = "generating", "產生中"
+        SUCCEEDED = "succeeded", "成功"
+        FAILED = "failed", "失敗"
+
+    snapshot = models.ForeignKey(
+        SurveyAIReportSnapshot,
+        on_delete=models.CASCADE,
+        related_name="analysis_stages",
+    )
+    stage_type = models.CharField(max_length=16, choices=StageType.choices)
+    status = models.CharField(max_length=16, choices=Status.choices)
+    input_hash = models.CharField(max_length=64)
+    schema_version = models.CharField(max_length=32)
+    prompt_version = models.CharField(max_length=32)
+    model_name = models.CharField(max_length=100)
+    revision = models.PositiveIntegerField(default=1)
+    input_manifest = models.JSONField(default=dict)
+    output_json = models.JSONField(null=True, blank=True)
+    error_code = models.CharField(max_length=64, blank=True)
+    generation_ms = models.PositiveIntegerField(null=True, blank=True)
+    token_metrics = models.JSONField(default=dict)
+    reused_from = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reuse_rows",
+    )
+    generated_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "feedback_survey_ai_analysis_stages"
+        constraints = [
+            models.UniqueConstraint(
+                fields=(
+                    "snapshot",
+                    "stage_type",
+                    "input_hash",
+                    "schema_version",
+                    "prompt_version",
+                    "model_name",
+                    "revision",
+                ),
+                name="uniq_ai_stage_revision",
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=("snapshot", "stage_type", "status", "created_at"),
+                name="fb_ai_stage_lookup_idx",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.snapshot.survey} / {self.stage_type} / r{self.revision} / {self.status}"
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            previous_status = type(self).objects.filter(pk=self.pk).values_list("status", flat=True).first()
+            if previous_status in {self.Status.SUCCEEDED, self.Status.FAILED}:
+                raise ValidationError("已完成的 AI 階段紀錄不可覆寫；重新執行必須建立新 revision。")
+            if self.status not in {self.Status.GENERATING, self.Status.SUCCEEDED, self.Status.FAILED}:
+                raise ValidationError("不支援的 AI 階段狀態轉換。")
+        return super().save(*args, **kwargs)
 
 
 class ImprovementDispatch(models.Model):
@@ -213,8 +368,6 @@ def keyword_summary(survey):
     counts = Counter()
     for analysis_text, value in answer_pairs:
         counts.update(tokenize_feedback(analysis_text or value))
-
-    all_rules = list(survey.keyword_categories.all())
 
     all_rules = list(survey.keyword_categories.all())
 

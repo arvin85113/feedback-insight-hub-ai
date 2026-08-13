@@ -67,7 +67,7 @@
             </div>
             <div class="record-list">
                 {% for item in selected_improvements %}
-                    <div class="record-row record-row-stack">
+                    <div class="record-row record-row-stack" id="improvement-{{ item.pk }}">
                         <div>
                             <strong>{{ item.title }}</strong>
                             <p>{{ item.summary|truncatechars:180 }}</p>

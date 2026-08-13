@@ -320,7 +320,11 @@ def dashboard():
                         "title": item.title,
                         "summary": item.summary,
                         "emailed_at": item.emailed_at.isoformat() if item.emailed_at else None,
-                        "survey": {"id": item.survey.id, "title": item.survey.title, "slug": item.survey.slug},
+                        "survey": (
+                            {"id": item.survey.id, "title": item.survey.title, "slug": item.survey.slug}
+                            if item.survey
+                            else None
+                        ),
                     }
                     for item in improvements[:5]
                 ],

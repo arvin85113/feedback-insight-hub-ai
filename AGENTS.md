@@ -1,8 +1,8 @@
 # AGENTS.md
 
-This file provides guidance to Codex when working with code in this repository.
+This file is the source of truth for coding-agent guidance in this repository.
 
-> **Sync note:** This file mirrors `CLAUDE.md` (for Claude) with tool-specific naming. When updating one, update the other. For the full change history see `docs/CHANGELOG.md`.
+> For the full change history see `docs/CHANGELOG.md`.
 
 ## Project Overview
 
@@ -19,7 +19,7 @@ This file provides guidance to Codex when working with code in this repository.
 - Google login on signup is an intentional disabled placeholder owned by another teammate. Do not remove it as stale UI.
 - Manager analysis-related pages now use a unified survey-index first flow: pick a survey from list cards, then drill into stats / text analysis / improvements / notices.
 - Customer portal has been split into account profile (`/accounts/profile/`) and notification preferences (`/accounts/preferences/`). The customer home page focuses on account summary, submission records, and notification summaries.
-- Uncommitted local collaboration files may exist (`AGENTS.md`, `CLAUDE.md`, `scripts/`). Do not mix them into unrelated feature commits unless requested.
+- Uncommitted local collaboration files may exist (`AGENTS.md`, `scripts/`). Do not mix them into unrelated feature commits unless requested.
 - Password reset / password change flows added via Django built-in auth views (`accounts/urls.py`). Templates live in `templates/accounts/`.
 - Notification AJAX mark-as-read added: `MarkNoticeReadView` at `/app/notifications/<pk>/read/`. `ImprovementDispatch.is_read` field added in migration `feedback/0007_add_is_read_to_improvementdispatch.py`.
 - Unread notification count injected via `feedback/context_processors.py` → `unread_notification_count`; registered in `TEMPLATES.context_processors`.
@@ -68,6 +68,8 @@ To verify whether a file is genuinely corrupted or only displayed with the wrong
 ```powershell
 python scripts\diagnose_text_encoding.py --preview AGENTS.md
 ```
+
+If the diagnostic script shows that the file content is valid, do not rewrite the file to fix terminal mojibake; read it again with explicit UTF-8 decoding.
 
 ### ⚠️ Schema fields that must NOT be reverted
 
@@ -435,7 +437,7 @@ python -m py_compile feedback/models.py feedback/views.py feedback/local_service
 2. Never remove `SurveyCategory`, `Survey.category`, `Answer.analysis_text/sentiment_score/analysis_version`, or `ImprovementDispatch.is_read`.
 3. Never add back `Survey.access_mode` or `FeedbackSubmission.source`.
 4. Feature branches must be rebased / merged from latest `main` before PR.
-5. Do not commit `AGENTS.md`, `CLAUDE.md`, or `scripts/` in feature PRs unless explicitly requested.
+5. Do not commit `AGENTS.md` or `scripts/` in feature PRs unless explicitly requested.
 
 ## Dependencies
 

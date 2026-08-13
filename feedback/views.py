@@ -4,17 +4,34 @@ from datetime import timedelta
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.core.mail import send_mail
+from django.db import IntegrityError, transaction
 from django.db.models import Count, Max, Q
 from django.db.models.functions import TruncDate
 import segno
 
-from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
+from django.http import Http404, HttpResponse, HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.utils.text import slugify
 from django.views.generic import CreateView, DeleteView, DetailView, TemplateView, View
 
+from .ai_report_service import AIReportError, generate_report
+from .ai_snapshot_service import (
+    SnapshotError,
+    build_or_reuse_snapshot,
+    get_report_status,
+    serialize_ai_report_content,
+    serialize_evidence_for_display,
+    serialize_report,
+)
+from .ai_stage_service import (
+    StageError,
+    generate_stage,
+    get_pipeline_status,
+    is_stage_current,
+    latest_stage_status,
+)
 from .forms import (
     ImprovementUpdateForm,
     QuestionCreateForm,
@@ -23,7 +40,17 @@ from .forms import (
     SurveyEditForm,
     SurveyFormBuilder,
 )
-from .models import FeedbackSubmission, ImprovementDispatch, ImprovementUpdate, KeywordCategory, Question, Survey, SurveyCategory
+from .models import (
+    FeedbackSubmission,
+    ImprovementDispatch,
+    ImprovementUpdate,
+    KeywordCategory,
+    Question,
+    Survey,
+    SurveyAIAnalysisStage,
+    SurveyAIReportSnapshot,
+    SurveyCategory,
+)
 from .service_client import service_client
 
 
@@ -164,7 +191,133 @@ class DashboardView(DashboardBaseMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         context.update(self.get_dashboard_base_context())
         context.update(service_client.get_dashboard())
+        context["ai_report_surveys"] = (
+            Survey.objects.filter(is_active=True)
+            .annotate(
+                response_count=Count("submissions", distinct=True),
+                valid_response_count=Count(
+                    "submissions",
+                    filter=Q(submissions__answers__value__gt=""),
+                    distinct=True,
+                ),
+            )
+            .order_by("title")
+        )
         return context
+
+
+class AIReportStatusView(ManagerRequiredMixin, View):
+    def get(self, request, slug):
+        survey = get_object_or_404(Survey, slug=slug, is_active=True)
+        return JsonResponse({"ok": True, **get_report_status(survey)})
+
+
+class AIStagePipelineStatusView(ManagerRequiredMixin, View):
+    def get(self, request, slug):
+        survey = get_object_or_404(Survey, slug=slug, is_active=True)
+        return JsonResponse({"ok": True, **get_pipeline_status(survey)})
+
+
+class AIReportSnapshotView(ManagerRequiredMixin, View):
+    def post(self, request, slug):
+        survey = get_object_or_404(Survey, slug=slug, is_active=True)
+        try:
+            result = build_or_reuse_snapshot(survey)
+        except SnapshotError as exc:
+            return JsonResponse(
+                {"ok": False, "error_code": exc.error_code, "message": exc.user_message},
+                status=exc.status_code,
+            )
+        snapshot = result.snapshot
+        payload = {
+            "ok": True,
+            "snapshot": {
+                "id": snapshot.pk,
+                "survey_slug": survey.slug,
+                "status": snapshot.status,
+                "source_latest_at": snapshot.source_latest_at.isoformat() if snapshot.source_latest_at else None,
+                "response_count": snapshot.response_count,
+                "analysis_coverage": float(snapshot.analysis_coverage),
+                "fingerprint_ms": snapshot.fingerprint_ms,
+                "snapshot_ms": snapshot.snapshot_ms,
+                "cache_hit": result.cache_hit,
+                "generate_url": reverse(
+                    "feedback:ai-report-generate",
+                    args=[survey.slug, snapshot.pk],
+                ),
+                "stage_urls": {
+                    stage_type: reverse(
+                        "feedback:ai-stage-generate",
+                        args=[survey.slug, snapshot.pk, stage_type],
+                    )
+                    for stage_type in (
+                        SurveyAIAnalysisStage.StageType.STATISTICS,
+                        SurveyAIAnalysisStage.StageType.TEXT,
+                        SurveyAIAnalysisStage.StageType.SYNTHESIS,
+                    )
+                },
+            },
+        }
+        if snapshot.status == SurveyAIReportSnapshot.Status.SUCCEEDED:
+            payload["report"] = serialize_report(snapshot, is_current=True, cache_hit=True)
+        return JsonResponse(payload)
+
+
+class AIReportGenerateView(ManagerRequiredMixin, View):
+    def post(self, request, slug, pk):
+        survey = get_object_or_404(Survey, slug=slug, is_active=True)
+        snapshot = get_object_or_404(
+            SurveyAIReportSnapshot.objects.select_related("survey"),
+            pk=pk,
+            survey=survey,
+        )
+        try:
+            generate_report(snapshot)
+        except AIReportError as exc:
+            return JsonResponse(
+                {"ok": False, "error_code": exc.error_code, "message": exc.user_message},
+                status=exc.status_code,
+            )
+        return JsonResponse({"ok": True, **get_report_status(survey)})
+
+
+class AIStageGenerateView(ManagerRequiredMixin, View):
+    def post(self, request, slug, pk, stage_type):
+        survey = get_object_or_404(Survey, slug=slug, is_active=True)
+        snapshot = get_object_or_404(
+            SurveyAIReportSnapshot.objects.select_related("survey"),
+            pk=pk,
+            survey=survey,
+        )
+        allowed = {item.value for item in SurveyAIAnalysisStage.StageType}
+        if stage_type not in allowed:
+            raise Http404("不支援的 AI 分析階段。")
+        if stage_type == SurveyAIAnalysisStage.StageType.TEXT:
+            statistics = latest_stage_status(snapshot)[SurveyAIAnalysisStage.StageType.STATISTICS]
+            if statistics["status"] != SurveyAIAnalysisStage.Status.SUCCEEDED or not statistics["is_current"]:
+                return JsonResponse(
+                    {"ok": False, "error_code": "upstream_incomplete", "message": "請先完成統計分析階段。"},
+                    status=409,
+                )
+        try:
+            stage = generate_stage(snapshot, stage_type)
+        except StageError as exc:
+            return JsonResponse(
+                {"ok": False, "error_code": exc.error_code, "message": exc.user_message},
+                status=exc.status_code,
+            )
+        return JsonResponse(
+            {
+                "ok": True,
+                "completed_stage": {
+                    "id": stage.pk,
+                    "stage_type": stage.stage_type,
+                    "status": stage.status,
+                    "cache_hit": bool(stage.reused_from_id),
+                },
+                **get_pipeline_status(survey),
+            }
+        )
 
 
 class SurveyManagerView(DashboardBaseMixin, TemplateView):
@@ -516,8 +669,8 @@ class TextAnalysisView(DashboardBaseMixin, TemplateView):
     active_section = "feedback:text-analysis"
 
     def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
         selected_slug = self.request.GET.get("survey")
+        context = super().get_context_data(**kwargs)
         sort = self.request.GET.get("sort", "newest")
         category_id = self.request.GET.get("category", "")
         survey = Survey.objects.filter(slug=selected_slug).first() if selected_slug else None
@@ -559,7 +712,6 @@ class TextAnalysisView(DashboardBaseMixin, TemplateView):
             if survey else []
         )
         return context
-
 
 class ImprovementListView(DashboardBaseMixin, TemplateView):
     template_name = "feedback/improvement_list.html"
@@ -792,6 +944,13 @@ class ImprovementCreateView(ManagerRequiredMixin, CreateView):
     def form_valid(self, form):
         form.instance.survey = self.survey
         response = super().form_valid(form)
+        self._complete_improvement_creation(form.instance)
+        return response
+
+    def _complete_improvement_creation(self, improvement):
+        if not improvement.send_global_notice:
+            messages.success(self.request, "改善項目已建立，尚未寄送通知。")
+            return
 
         all_recipients = (
             self.survey.submissions.select_related("user")
@@ -800,10 +959,10 @@ class ImprovementCreateView(ManagerRequiredMixin, CreateView):
         )
 
         related_recipients_ids = set()
-        if form.instance.related_category:
+        if improvement.related_category:
             related_qs = all_recipients.filter(
                 answers__question__survey=self.survey,
-                answers__value__icontains=form.instance.related_category,
+                answers__value__icontains=improvement.related_category,
             ).distinct()
             related_recipients_ids = set(related_qs.values_list("id", flat=True))
 
@@ -817,11 +976,11 @@ class ImprovementCreateView(ManagerRequiredMixin, CreateView):
             is_related = submission.id in related_recipients_ids
 
             dispatch, created = ImprovementDispatch.objects.get_or_create(
-                improvement=form.instance,
+                improvement=improvement,
                 submission=submission,
                 defaults={
                     "personalized_note": (
-                        f"你先前在 {form.instance.related_category or self.survey.title} 提供的回饋，"
+                        f"你先前在 {improvement.related_category or self.survey.title} 提供的回饋，"
                         "已被納入這次改善項目中，因此我們主動把最新進度同步給你。"
                     ) if is_related else ""
                 },
@@ -831,7 +990,7 @@ class ImprovementCreateView(ManagerRequiredMixin, CreateView):
 
             send_mail(
                 subject=f"{self.survey.title} 改善進度通知",
-                message=f"{form.instance.title}\n\n{form.instance.summary}",
+                message=f"{improvement.title}\n\n{improvement.summary}",
                 from_email=None,
                 recipient_list=[submission.respondent_email],
                 fail_silently=True,
@@ -844,8 +1003,8 @@ class ImprovementCreateView(ManagerRequiredMixin, CreateView):
                         f"親愛的 {submission.display_name}，\n\n"
                         f"感謝你先前填寫「{self.survey.title}」並提供寶貴意見。\n"
                         f"你的回饋直接促成了我們這次的改善：\n\n"
-                        f"【{form.instance.title}】\n"
-                        f"{form.instance.summary}\n\n"
+                        f"【{improvement.title}】\n"
+                        f"{improvement.summary}\n\n"
                         f"感謝你讓我們變得更好！"
                     ),
                     from_email=None,
@@ -855,11 +1014,206 @@ class ImprovementCreateView(ManagerRequiredMixin, CreateView):
             sent_count += 1
 
         if sent_count:
-            form.instance.emailed_at = timezone.now()
-            form.instance.save(update_fields=["emailed_at"])
+            improvement.emailed_at = timezone.now()
+            improvement.save(update_fields=["emailed_at"])
 
         messages.success(self.request, f"改善通知已建立，並成功寄送給 {sent_count} 位填答者。")
-        return response
 
     def get_success_url(self):
         return f"{reverse('feedback:improvement-list')}?survey={self.survey.slug}"
+
+
+class AIImprovementDraftCreateView(ImprovementCreateView):
+    def _load_ai_draft(self):
+        self.snapshot = get_object_or_404(
+            SurveyAIReportSnapshot,
+            pk=self.kwargs["snapshot_id"],
+            survey=self.survey,
+            status=SurveyAIReportSnapshot.Status.SUCCEEDED,
+        )
+        drafts = (self.snapshot.ai_report or {}).get("improvement_drafts", [])
+        self.ai_draft = next(
+            (draft for draft in drafts if draft.get("draft_id") == self.kwargs["draft_id"]),
+            None,
+        )
+        if self.ai_draft is None:
+            raise Http404("找不到指定的 AI 改善草稿。")
+
+    def get(self, request, *args, **kwargs):
+        self._load_ai_draft()
+        return super().get(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        self._load_ai_draft()
+        return super().post(request, *args, **kwargs)
+
+    def get_initial(self):
+        return {
+            "title": self.ai_draft["title"],
+            "summary": self.ai_draft["summary"],
+            "related_category": self.ai_draft["related_category"],
+            "send_global_notice": False,
+        }
+
+    def get_context_data(self, **kwargs):
+        context = CreateView.get_context_data(self, **kwargs)
+        serialized_draft = serialize_ai_report_content(
+            {"improvement_drafts": [self.ai_draft]},
+            self.snapshot.source_snapshot,
+        )["improvement_drafts"][0]
+        context.update(
+            {
+                "survey": self.survey,
+                "source_ai_draft": serialized_draft,
+                "source_ai_priority_label": {
+                    "high": "高優先",
+                    "medium": "中優先",
+                    "low": "低優先",
+                }.get(self.ai_draft.get("priority"), self.ai_draft.get("priority")),
+                "source_keyword": "",
+                "source_category": self.ai_draft["related_category"],
+            }
+        )
+        return context
+
+
+class AIStageImprovementDraftCreateView(ImprovementCreateView):
+    unavailable_message = "這份 AI 改善草稿已過期或無法使用，請重新產生綜合分析。"
+
+    def _load_stage_draft(self, *, lock=False):
+        queryset = SurveyAIAnalysisStage.objects.select_related("snapshot__survey")
+        if lock:
+            queryset = queryset.select_for_update()
+        self.source_stage = get_object_or_404(
+            queryset,
+            pk=self.kwargs["stage_id"],
+            snapshot__survey=self.survey,
+            stage_type=SurveyAIAnalysisStage.StageType.SYNTHESIS,
+            status=SurveyAIAnalysisStage.Status.SUCCEEDED,
+        )
+        if not is_stage_current(self.source_stage):
+            return False
+        drafts = (self.source_stage.output_json or {}).get("improvement_drafts", [])
+        draft_id = str(self.kwargs["draft_id"])
+        self.ai_draft = next((draft for draft in drafts if draft.get("draft_id") == draft_id), None)
+        if self.ai_draft is None:
+            raise Http404("找不到指定的 AI 改善草稿。")
+        registry = (self.source_stage.output_json or {}).get("_evidence_registry", {})
+        refs = self.ai_draft.get("evidence_refs")
+        if (
+            not isinstance(refs, list)
+            or not refs
+            or len(refs) != len(set(refs))
+            or any(ref not in registry for ref in refs)
+        ):
+            return False
+        self.ai_evidence = [
+            serialize_evidence_for_display(registry[ref], self.source_stage.snapshot.source_snapshot)
+            for ref in refs
+        ]
+        self.existing_improvement = ImprovementUpdate.objects.filter(
+            source_ai_analysis_stage=self.source_stage,
+            source_ai_draft_id=draft_id,
+        ).first()
+        return True
+
+    def _existing_url(self, improvement):
+        return f"{reverse('feedback:improvement-list')}?survey={self.survey.slug}#improvement-{improvement.pk}"
+
+    def get(self, request, *args, **kwargs):
+        if not self._load_stage_draft():
+            return HttpResponse(self.unavailable_message, status=409)
+        if self.existing_improvement:
+            messages.info(request, "這份 AI 草稿已加入改善追蹤。")
+            return redirect(self._existing_url(self.existing_improvement))
+        return CreateView.get(self, request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        if not self._load_stage_draft():
+            return HttpResponse(self.unavailable_message, status=409)
+        if self.existing_improvement:
+            messages.info(request, "這份 AI 草稿已加入改善追蹤。")
+            return redirect(self._existing_url(self.existing_improvement))
+        return CreateView.post(self, request, *args, **kwargs)
+
+    def get_initial(self):
+        acceptance = self.ai_draft.get("acceptance_criteria") or []
+        limitations = self.ai_draft.get("data_limitations") or []
+        summary_parts = [
+            f"問題與目標：\n{self.ai_draft['title']}",
+            f"建議行動：\n{self.ai_draft['summary']}",
+            f"分析依據：\n{self.ai_draft['rationale']}",
+        ]
+        if acceptance:
+            summary_parts.append("驗收方向：\n" + "\n".join(f"- {item}" for item in acceptance))
+        if limitations:
+            summary_parts.append("資料限制：\n" + "\n".join(f"- {item}" for item in limitations))
+        return {
+            "title": self.ai_draft["title"],
+            "summary": "\n\n".join(summary_parts),
+            "related_category": self.ai_draft["related_category"],
+            "send_global_notice": False,
+        }
+
+    def get_context_data(self, **kwargs):
+        context = CreateView.get_context_data(self, **kwargs)
+        upstream_ids = self.source_stage.input_manifest.get("upstream_stage_ids", {})
+        upstream = {
+            row.stage_type: row
+            for row in SurveyAIAnalysisStage.objects.filter(pk__in=upstream_ids.values())
+        }
+        context.update(
+            {
+                "survey": self.survey,
+                "source_ai_draft": self.ai_draft,
+                "source_ai_evidence": self.ai_evidence,
+                "source_ai_stage": self.source_stage,
+                "source_ai_priority_label": {
+                    "high": "高優先",
+                    "medium": "中優先",
+                    "low": "低優先",
+                }.get(self.ai_draft.get("priority"), self.ai_draft.get("priority")),
+                "source_statistics_stage": upstream.get(SurveyAIAnalysisStage.StageType.STATISTICS),
+                "source_text_stage": upstream.get(SurveyAIAnalysisStage.StageType.TEXT),
+                "source_keyword": "",
+                "source_category": self.ai_draft["related_category"],
+            }
+        )
+        return context
+
+    def form_valid(self, form):
+        draft_id = str(self.kwargs["draft_id"])
+        existing = None
+        try:
+            with transaction.atomic():
+                if not self._load_stage_draft(lock=True):
+                    return HttpResponse(self.unavailable_message, status=409)
+                existing = ImprovementUpdate.objects.filter(
+                    source_ai_analysis_stage=self.source_stage,
+                    source_ai_draft_id=draft_id,
+                ).first()
+                if existing is None:
+                    form.instance.survey = self.survey
+                    form.instance.source_ai_analysis_stage = self.source_stage
+                    form.instance.source_ai_draft_id = draft_id
+                    form.instance.source_evidence_refs = list(self.ai_draft["evidence_refs"])
+                    form.instance.source_ai_metadata = {
+                        "priority": self.ai_draft["priority"],
+                        "rationale": self.ai_draft["rationale"],
+                        "acceptance_criteria": list(self.ai_draft.get("acceptance_criteria") or []),
+                        "schema_version": self.source_stage.schema_version,
+                        "prompt_version": self.source_stage.prompt_version,
+                    }
+                    self.object = form.save()
+        except IntegrityError:
+            existing = ImprovementUpdate.objects.filter(
+                source_ai_analysis_stage_id=self.kwargs["stage_id"],
+                source_ai_draft_id=draft_id,
+            ).first()
+            if existing is None:
+                raise
+        if existing:
+            messages.info(self.request, "這份 AI 草稿已加入改善追蹤。")
+            return redirect(self._existing_url(existing))
+        self._complete_improvement_creation(self.object)
+        return redirect(self._existing_url(self.object))

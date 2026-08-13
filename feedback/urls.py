@@ -1,6 +1,13 @@
 from django.urls import path
 
 from .views import (
+    AIImprovementDraftCreateView,
+    AIStageImprovementDraftCreateView,
+    AIReportGenerateView,
+    AIReportSnapshotView,
+    AIReportStatusView,
+    AIStageGenerateView,
+    AIStagePipelineStatusView,
     CustomerHomeView,
     CustomerNotificationsView,
     DashboardView,
@@ -34,6 +41,27 @@ urlpatterns = [
     path("app/notifications/", CustomerNotificationsView.as_view(), name="customer-notifications"),
     path("app/notifications/<int:pk>/read/", MarkNoticeReadView.as_view(), name="notice-mark-read"),
     path("dashboard/", DashboardView.as_view(), name="dashboard"),
+    path("dashboard/ai-reports/<slug:slug>/", AIReportStatusView.as_view(), name="ai-report-status"),
+    path(
+        "dashboard/ai-reports/<slug:slug>/stages/",
+        AIStagePipelineStatusView.as_view(),
+        name="ai-stage-status",
+    ),
+    path(
+        "dashboard/ai-reports/<slug:slug>/snapshot/",
+        AIReportSnapshotView.as_view(),
+        name="ai-report-snapshot",
+    ),
+    path(
+        "dashboard/ai-reports/<slug:slug>/snapshots/<int:pk>/generate/",
+        AIReportGenerateView.as_view(),
+        name="ai-report-generate",
+    ),
+    path(
+        "dashboard/ai-reports/<slug:slug>/snapshots/<int:pk>/stages/<str:stage_type>/generate/",
+        AIStageGenerateView.as_view(),
+        name="ai-stage-generate",
+    ),
     path("dashboard/forms/", SurveyManagerView.as_view(), name="survey-manager"),
     path("dashboard/categories/create/", SurveyCategoryCreateView.as_view(), name="category-create"),
     path("dashboard/categories/<int:pk>/delete/", SurveyCategoryDeleteView.as_view(), name="category-delete"),
@@ -52,4 +80,14 @@ urlpatterns = [
     path("survey/<slug:slug>/", SurveyDetailView.as_view(), name="survey-detail"),
     path("survey/<slug:slug>/success/", SurveySubmitSuccessView.as_view(), name="survey-success"),
     path("survey/<slug:slug>/improvement/new/", ImprovementCreateView.as_view(), name="improvement-create"),
+    path(
+        "survey/<slug:slug>/improvement/ai/<int:snapshot_id>/<slug:draft_id>/",
+        AIImprovementDraftCreateView.as_view(),
+        name="ai-improvement-draft",
+    ),
+    path(
+        "dashboard/improvements/<slug:slug>/ai/<int:stage_id>/<uuid:draft_id>/new/",
+        AIStageImprovementDraftCreateView.as_view(),
+        name="ai-stage-improvement-draft",
+    ),
 ]

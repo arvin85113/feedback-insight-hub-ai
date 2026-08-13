@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -97,19 +97,82 @@ class Answer(Base):
     question: Mapped["Question"] = relationship()
 
 
+class SurveyAIReportSnapshot(Base):
+    __tablename__ = "feedback_survey_ai_report_snapshots"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    survey_id: Mapped[int] = mapped_column(ForeignKey("feedback_survey.id"))
+    data_fingerprint: Mapped[str] = mapped_column(String(64))
+    snapshot_schema_version: Mapped[str] = mapped_column(String(32))
+    prompt_version: Mapped[str] = mapped_column(String(32))
+    model_name: Mapped[str] = mapped_column(String(100))
+    source_snapshot: Mapped[dict] = mapped_column(JSON)
+    ai_report: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    status: Mapped[str] = mapped_column(String(24))
+    response_count: Mapped[int] = mapped_column(Integer, default=0)
+    analysis_coverage: Mapped[float] = mapped_column(Float, default=0)
+    source_latest_at: Mapped[DateTime | None] = mapped_column(DateTime, nullable=True)
+    generated_at: Mapped[DateTime | None] = mapped_column(DateTime, nullable=True)
+    snapshot_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    generation_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    fingerprint_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    error_code: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[DateTime] = mapped_column(DateTime)
+    updated_at: Mapped[DateTime] = mapped_column(DateTime)
+
+
+class SurveyAIAnalysisStage(Base):
+    __tablename__ = "feedback_survey_ai_analysis_stages"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    snapshot_id: Mapped[int] = mapped_column(
+        ForeignKey("feedback_survey_ai_report_snapshots.id", ondelete="CASCADE")
+    )
+    stage_type: Mapped[str] = mapped_column(String(16))
+    status: Mapped[str] = mapped_column(String(16))
+    input_hash: Mapped[str] = mapped_column(String(64))
+    schema_version: Mapped[str] = mapped_column(String(32))
+    prompt_version: Mapped[str] = mapped_column(String(32))
+    model_name: Mapped[str] = mapped_column(String(100))
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    input_manifest: Mapped[dict] = mapped_column(JSON)
+    output_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    error_code: Mapped[str] = mapped_column(String(64), default="")
+    generation_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    token_metrics: Mapped[dict] = mapped_column(JSON)
+    reused_from_id: Mapped[int | None] = mapped_column(
+        ForeignKey("feedback_survey_ai_analysis_stages.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    generated_at: Mapped[DateTime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[DateTime] = mapped_column(DateTime)
+    updated_at: Mapped[DateTime] = mapped_column(DateTime)
+
+
 class ImprovementUpdate(Base):
     __tablename__ = "feedback_improvementupdate"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    survey_id: Mapped[int] = mapped_column(ForeignKey("feedback_survey.id"))
+    survey_id: Mapped[int | None] = mapped_column(
+        ForeignKey("feedback_survey.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     title: Mapped[str] = mapped_column(String(255))
     summary: Mapped[str] = mapped_column(Text)
     related_category: Mapped[str] = mapped_column(String(100))
     send_global_notice: Mapped[bool] = mapped_column(Boolean, default=True)
+    source_ai_analysis_stage_id: Mapped[int | None] = mapped_column(
+        ForeignKey("feedback_survey_ai_analysis_stages.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    source_ai_draft_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_evidence_refs: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    source_ai_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[DateTime] = mapped_column(DateTime)
     emailed_at: Mapped[DateTime | None] = mapped_column(DateTime, nullable=True)
 
-    survey: Mapped["Survey"] = relationship(back_populates="improvements")
+    survey: Mapped[Survey | None] = relationship(back_populates="improvements")
 
 
 class KeywordCategory(Base):

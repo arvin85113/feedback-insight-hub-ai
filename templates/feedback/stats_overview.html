@@ -199,8 +199,23 @@
                                     {% else %}
                                         <dl class="analytics-metric-list">
                                             <div><dt>方法</dt><dd>{{ result.test_name }}</dd></div>
-                                            <div><dt>統計量</dt><dd>{{ result.statistic }}</dd></div>
-                                            <div><dt>p-value</dt><dd>{{ result.p_value }}</dd></div>
+                                            <div>
+                                                <dt>
+                                                    {% if result.method_key == "pearson" %}相關係數 r
+                                                    {% elif result.method_key == "spearman" %}等級相關係數 ρ
+                                                    {% elif result.method_key == "one_way_anova" %}F 統計量
+                                                    {% elif result.method_key == "kruskal_wallis" %}H 統計量
+                                                    {% elif result.method_key == "welch_t_test" %}t 統計量
+                                                    {% elif result.method_key == "mann_whitney_u" %}U 統計量
+                                                    {% elif result.method_key == "chi_square" %}卡方統計量 χ²
+                                                    {% else %}統計量{% endif %}
+                                                </dt>
+                                                <dd>{{ result.statistic }}</dd>
+                                            </div>
+                                            <div>
+                                                <dt>p-value</dt>
+                                                <dd>{% if result.p_value < 0.001 %}p &lt; 0.001{% else %}p = {{ result.p_value|floatformat:"-3" }}{% endif %}</dd>
+                                            </div>
                                             {% if result.effect_size is not None %}
                                                 <div><dt>{{ result.effect_label }}</dt><dd>{{ result.effect_size }}</dd></div>
                                             {% endif %}

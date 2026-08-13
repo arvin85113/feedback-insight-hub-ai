@@ -15,7 +15,8 @@
     <article class="manager-panel">
         <div class="panel-head">
             <h2>通知內容</h2>
-            {% if source_keyword %}
+        </div>
+        {% if source_keyword %}
             <div class="info-callout">
                 <span class="info-callout-icon">💡</span>
                 <div>
@@ -25,8 +26,47 @@
                     </div>
                 </div>
             </div>
-            {% endif %}
-        </div>
+        {% endif %}
+        {% if source_ai_draft %}
+            <div class="info-callout">
+                <div>
+                    <div class="info-callout-title">來自已保存的 AI 營運分析</div>
+                    <div class="info-callout-desc">
+                        優先程度：{{ source_ai_priority_label }}。以下內容只會預填表單，送出前仍可修改；管理者確認後才會建立改善項目。
+                    </div>
+                    {% if source_ai_stage %}
+                    <dl class="ai-source-meta">
+                        <div><dt>來源問卷</dt><dd>{{ survey.title }}</dd></div>
+                        <div><dt>報告產生時間</dt><dd>{{ source_ai_stage.generated_at|date:"Y/m/d H:i"|default:"已保存" }}</dd></div>
+                        <div><dt>資料截至時間</dt><dd>{{ source_ai_stage.snapshot.source_latest_at|date:"Y/m/d H:i"|default:"無資料" }}</dd></div>
+                        <div><dt>分析涵蓋率</dt><dd>{% widthratio source_ai_stage.snapshot.analysis_coverage 1 100 %}%</dd></div>
+                        <div><dt>狀態</dt><dd>目前最新，可帶入</dd></div>
+                    </dl>
+                    <p><strong>分析理由：</strong>{{ source_ai_draft.rationale }}</p>
+                    {% if source_ai_draft.acceptance_criteria %}
+                    <p><strong>驗收方向</strong></p>
+                    <ul class="compact-list">
+                        {% for item in source_ai_draft.acceptance_criteria %}<li>{{ item }}</li>{% endfor %}
+                    </ul>
+                    {% endif %}
+                    {% endif %}
+                    {% if source_ai_evidence or source_ai_draft.evidence %}
+                    <p><strong>後端驗證證據</strong></p>
+                    <ul class="compact-list">
+                        {% for evidence in source_ai_evidence|default:source_ai_draft.evidence %}
+                            <li>{% if evidence.display_text %}{{ evidence.display_text }}{% else %}{{ evidence.label }}：{{ evidence.value }}{% if evidence.unit == "responses" %} 份{% elif evidence.unit == "occurrences" %} 次{% endif %}{% endif %}</li>
+                        {% endfor %}
+                    </ul>
+                    {% endif %}
+                    {% if source_ai_draft.data_limitations %}
+                    <p><strong>資料限制</strong></p>
+                    <ul class="compact-list">
+                        {% for item in source_ai_draft.data_limitations %}<li>{{ item }}</li>{% endfor %}
+                    </ul>
+                    {% endif %}
+                </div>
+            </div>
+        {% endif %}
         <form method="post" class="form-stack">
             {% csrf_token %}
             {% for field in form %}

@@ -16,11 +16,13 @@ from .models import (
     recommend_analysis,
     category_sentiment_summary,
     text_analysis_summary,
+    tokenize_feedback,
 )
 from .text_pipeline import ANALYSIS_VERSION, build_analysis_text, estimate_sentiment_score
 
 _STATS_PAYLOAD_CACHE = {}
 _STATS_PAYLOAD_CACHE_MAX_SIZE = 16
+STATISTICS_VERSION = "v1"
 
 
 def format_payload_date(value):
@@ -273,7 +275,11 @@ def get_dashboard_payload():
                 "title": item.title,
                 "summary": item.summary,
                 "emailed_at": item.emailed_at.isoformat() if item.emailed_at else None,
-                "survey": {"id": item.survey.id, "title": item.survey.title, "slug": item.survey.slug},
+                "survey": (
+                    {"id": item.survey.id, "title": item.survey.title, "slug": item.survey.slug}
+                    if item.survey
+                    else None
+                ),
             }
             for item in latest_improvements
         ],
@@ -286,6 +292,10 @@ def _round_or_none(value, digits=2):
     if value != value:
         return None
     return round(float(value), digits)
+
+
+def _round_p_value(value):
+    return _round_or_none(value, 6)
 
 
 def get_survey_pandas_stats(survey):
@@ -522,7 +532,7 @@ def get_survey_pandas_stats(survey):
                             "method_key": method_key,
                             "test_name": test_name,
                             "statistic": _round_or_none(stat_value, 4),
-                            "p_value": _round_or_none(p_value, 4),
+                            "p_value": _round_p_value(p_value),
                             "effect_size": effect_size,
                             "effect_label": effect_label,
                             "is_significant": is_significant,
@@ -586,7 +596,7 @@ def get_survey_pandas_stats(survey):
                         "method_key": method_key,
                         "test_name": test_name,
                         "statistic": _round_or_none(stat_value, 4),
-                        "p_value": _round_or_none(p_value, 4),
+                        "p_value": _round_p_value(p_value),
                         "is_significant": is_significant,
                         "groups": [
                             {
@@ -641,7 +651,7 @@ def get_survey_pandas_stats(survey):
                     {
                         "test_name": "卡方獨立性檢定",
                         "statistic": _round_or_none(chi2, 4),
-                        "p_value": _round_or_none(p_value, 4),
+                        "p_value": _round_p_value(p_value),
                         "effect_size": cramers_v,
                         "effect_label": "Cramer's V",
                         "degrees_of_freedom": int(dof),
@@ -692,7 +702,7 @@ def get_survey_pandas_stats(survey):
                         {
                             "test_name": test_name,
                             "statistic": _round_or_none(stat_value, 4),
-                            "p_value": _round_or_none(p_value, 4),
+                            "p_value": _round_p_value(p_value),
                             "is_significant": is_significant,
                             "insight": (
                                 f"「{question_by_col[left_col].title}」與「{question_by_col[right_col].title}」"
@@ -706,6 +716,26 @@ def get_survey_pandas_stats(survey):
                 inferential_analysis.append(base_result)
 
     return {"charts": charts, "inferential_analysis": inferential_analysis}
+
+
+def build_stats_payload(survey):
+    pandas_stats = get_survey_pandas_stats(survey)
+    available_tests_count = sum(1 for item in pandas_stats["inferential_analysis"] if not item.get("skipped_reason"))
+    skipped_tests_count = sum(1 for item in pandas_stats["inferential_analysis"] if item.get("skipped_reason"))
+    return {
+        "charts": pandas_stats["charts"] or chart_summary(survey),
+        "question_analysis": [
+            {
+                "title": question.title,
+                "data_type": question.get_data_type_display(),
+                "analysis": recommend_analysis(question),
+            }
+            for question in survey.questions.all()
+        ],
+        "inferential_analysis": pandas_stats["inferential_analysis"],
+        "available_tests_count": available_tests_count,
+        "skipped_tests_count": skipped_tests_count,
+    }
 
 
 def get_stats_payload(slug):
@@ -730,38 +760,40 @@ def get_stats_payload(slug):
     if cached_payload is not None:
         return cached_payload
 
-    pandas_stats = get_survey_pandas_stats(survey)
-    available_tests_count = sum(1 for item in pandas_stats["inferential_analysis"] if not item.get("skipped_reason"))
-    skipped_tests_count = sum(1 for item in pandas_stats["inferential_analysis"] if item.get("skipped_reason"))
-    payload = {
-        "charts": pandas_stats["charts"] or chart_summary(survey),
-        "question_analysis": [
-            {
-                "title": question.title,
-                "data_type": question.get_data_type_display(),
-                "analysis": recommend_analysis(question),
-            }
-            for question in survey.questions.all()
-        ],
-        "inferential_analysis": pandas_stats["inferential_analysis"],
-        "available_tests_count": available_tests_count,
-        "skipped_tests_count": skipped_tests_count,
-    }
+    payload = build_stats_payload(survey)
     if len(_STATS_PAYLOAD_CACHE) >= _STATS_PAYLOAD_CACHE_MAX_SIZE:
         _STATS_PAYLOAD_CACHE.clear()
     _STATS_PAYLOAD_CACHE[cache_key] = payload
     return payload
 
 
+def build_text_analysis_payload(survey):
+    keywords = keyword_summary(survey)
+    response_counts = {}
+    tracked_keywords = {row["keyword"] for row in keywords}
+    if tracked_keywords:
+        for analysis_text, value in Answer.objects.filter(
+            question__survey=survey,
+            question__enable_keyword_tracking=True,
+        ).values_list("analysis_text", "value"):
+            for keyword in set(tokenize_feedback(analysis_text or value)) & tracked_keywords:
+                response_counts[keyword] = response_counts.get(keyword, 0) + 1
+        keywords = [
+            {**row, "response_count": response_counts.get(row["keyword"], 0)}
+            for row in keywords
+        ]
+    return {
+        "keywords": keywords,
+        "summary": text_analysis_summary(survey),
+        "category_sentiments": category_sentiment_summary(survey),
+    }
+
+
 def get_text_analysis_payload(slug):
     survey = Survey.objects.filter(slug=slug).first() if slug else None
     if not survey:
         return {"keywords": [], "summary": {}, "category_sentiments": []}
-    return {
-        "keywords": keyword_summary(survey),
-        "summary": text_analysis_summary(survey),
-        "category_sentiments": category_sentiment_summary(survey),
-    }
+    return build_text_analysis_payload(survey)
 
 
 def submit_survey_payload(survey, *, user, respondent_name, respondent_email, consent_follow_up, answers):

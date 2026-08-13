@@ -8,6 +8,24 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "").strip()
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
+GEMINI_TIMEOUT_SECONDS = int(os.getenv("GEMINI_TIMEOUT_SECONDS", "45"))
+GEMINI_THINKING_BUDGET = int(os.getenv("GEMINI_THINKING_BUDGET", "512"))
+GEMINI_MAX_OUTPUT_TOKENS = int(os.getenv("GEMINI_MAX_OUTPUT_TOKENS", "4096"))
+GEMINI_COMPACT_THINKING_BUDGET = int(os.getenv("GEMINI_COMPACT_THINKING_BUDGET", "256"))
+GEMINI_COMPACT_MAX_OUTPUT_TOKENS = int(os.getenv("GEMINI_COMPACT_MAX_OUTPUT_TOKENS", "2048"))
+AI_REPORT_MIN_RESPONSES = 3
+AI_REPORT_FINGERPRINT_CHUNK_SIZE = 500
+AI_REPORT_MAX_EVIDENCE_ITEMS = int(os.getenv("AI_REPORT_MAX_EVIDENCE_ITEMS", "40"))
+AI_REPORT_MAX_ESTIMATED_INPUT_TOKENS = int(os.getenv("AI_REPORT_MAX_ESTIMATED_INPUT_TOKENS", "12000"))
+AI_REPORT_COMPACT_MAX_EVIDENCE_ITEMS = int(os.getenv("AI_REPORT_COMPACT_MAX_EVIDENCE_ITEMS", "24"))
+AI_REPORT_COMPACT_MAX_ESTIMATED_INPUT_TOKENS = int(
+    os.getenv("AI_REPORT_COMPACT_MAX_ESTIMATED_INPUT_TOKENS", "6000")
+)
+AI_REPORT_RATE_LIMIT_BACKOFF_SECONDS = float(os.getenv("AI_REPORT_RATE_LIMIT_BACKOFF_SECONDS", "6"))
+AI_REPORT_REQUEST_INTERVAL_SECONDS = float(os.getenv("AI_REPORT_REQUEST_INTERVAL_SECONDS", "6"))
+
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-secret-key-change-me")
 DEBUG = os.getenv("DEBUG", "True").lower() == "true"
 ALLOWED_HOSTS = [host for host in os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1,testserver,.onrender.com").split(",") if host]
