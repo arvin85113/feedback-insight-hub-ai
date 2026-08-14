@@ -95,7 +95,17 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [BASE_DIR / "static"]
-STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
+    },
+}
+# Render services created outside the Blueprint may omit collectstatic. This
+# keeps source static assets available while build.sh remains the preferred path.
+WHITENOISE_USE_FINDERS = DEBUG or not (STATIC_ROOT / "css" / "app.css").is_file()
 
 _email_host = os.getenv("EMAIL_HOST", "").strip()
 EMAIL_BACKEND = os.getenv(

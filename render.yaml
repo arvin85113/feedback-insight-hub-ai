@@ -2,7 +2,7 @@ services:
   - type: web
     name: feedback-insight-hub
     env: python
-    buildCommand: "./build.sh"
+    buildCommand: "bash build.sh"
     startCommand: "python -m gunicorn config.wsgi:application"
     plan: free
     envVars:
