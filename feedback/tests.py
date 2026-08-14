@@ -1,4 +1,6 @@
 import json
+from pathlib import Path
+import re
 from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -55,6 +57,83 @@ EMPTY_TEXT = {
     },
     "category_sentiments": [],
 }
+
+
+class PublicHomeTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.manager = user_model.objects.create_user(
+            username="home-manager",
+            password="pass",
+            role="manager",
+        )
+        self.customer = user_model.objects.create_user(
+            username="home-customer",
+            password="pass",
+            role="customer",
+        )
+        self.home_url = reverse("feedback:home")
+
+    @patch("feedback.views.service_client.get_home")
+    def test_homepage_presents_current_ai_product_without_legacy_copy(self, get_home):
+        response = self.client.get(self.home_url)
+
+        get_home.assert_not_called()
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "feedback/home.html")
+        self.assertContains(response, "回饋洞察 AI 平台｜Feedback Insight Hub AI")
+        self.assertContains(response, "把顧客回饋，")
+        self.assertContains(response, "Gemini 三階段營運分析")
+        self.assertContains(response, "Supabase 快取與改善追蹤")
+        self.assertContains(response, "管理者確認後才建立改善項目")
+        self.assertContains(response, "EVIDENCE-GROUNDED AI OPERATIONS")
+        self.assertContains(
+            response,
+            "整合問卷管理、統計分析、文字洞察、Gemini 三階段營運分析與改善追蹤的 AI 回饋管理平台。",
+        )
+        for legacy_copy in ("v0.4", "開發中", "三個核心模組", "四個階段，同一個資料模型"):
+            self.assertNotContains(response, legacy_copy)
+
+    def test_anonymous_homepage_uses_existing_login_signup_and_role_urls(self):
+        response = self.client.get(self.home_url)
+
+        self.assertContains(response, f'href="{reverse("accounts:login")}"')
+        self.assertContains(response, f'href="{reverse("accounts:signup")}"')
+        self.assertContains(response, f'{reverse("accounts:login")}?next=%2Fdashboard%2F')
+        self.assertContains(response, f'{reverse("accounts:login")}?next=%2Fapp%2F')
+
+    def test_authenticated_workspace_cta_follows_user_role(self):
+        self.client.force_login(self.manager)
+        manager_response = self.client.get(self.home_url)
+        self.assertEqual(manager_response.context["workspace_url"], reverse("feedback:dashboard"))
+        self.assertEqual(manager_response.context["manager_entry_url"], reverse("feedback:dashboard"))
+
+        self.client.force_login(self.customer)
+        customer_response = self.client.get(self.home_url)
+        self.assertEqual(customer_response.context["workspace_url"], reverse("feedback:customer-home"))
+        self.assertEqual(customer_response.context["customer_entry_url"], reverse("feedback:customer-home"))
+
+    def test_homepage_template_avoids_unsafe_rendering_and_sensitive_content(self):
+        project_root = Path(__file__).resolve().parents[1]
+        template = (project_root / "templates" / "feedback" / "home.html").read_text(encoding="utf-8")
+        rendered = self.client.get(self.home_url).content.decode("utf-8")
+
+        self.assertNotIn("|safe", template)
+        for forbidden in ("localhost", "127.0.0.1", "GeminiAPI.txt", "GOOGLE_API_KEY", "SUPABASE_URL"):
+            self.assertNotIn(forbidden, rendered)
+        self.assertIsNone(re.search(r"AIza[0-9A-Za-z_-]{20,}", rendered))
+
+    def test_homepage_css_is_scoped_away_from_manager_workspace(self):
+        project_root = Path(__file__).resolve().parents[1]
+        css = (project_root / "static" / "css" / "app.css").read_text(encoding="utf-8")
+        homepage_css = css.split("/* Public homepage: Feedback Insight Hub AI edition */", 1)[1]
+
+        self.assertIn(".public-home .public-hero-grid", homepage_css)
+        self.assertIn("@media (max-width: 1040px)", homepage_css)
+        self.assertIn("@media (max-width: 720px)", homepage_css)
+        self.assertIn("@media (prefers-reduced-motion: reduce)", homepage_css)
+        self.assertNotIn(".manager-shell", homepage_css)
+        self.assertNotIn(".manager-main", homepage_css)
 
 
 class EvidenceDisplaySemanticsTests(TestCase):

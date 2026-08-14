@@ -7383,3 +7383,1116 @@ input[type="checkbox"] {
         font-size: 0.82rem;
     }
 }
+
+/* Public homepage: Feedback Insight Hub AI edition */
+.public-home,
+.public-home *,
+.public-home *::before,
+.public-home *::after {
+    letter-spacing: 0;
+}
+
+.public-home {
+    color: #10271e;
+    background: #e7f2e7;
+}
+
+.public-home .public-nav-shell {
+    border-color: #b9cdbd;
+    background: #e7f2e7;
+    backdrop-filter: none;
+}
+
+.public-home .public-nav-inner,
+.public-home .public-hero,
+.public-home .public-section,
+.public-home .public-workflow-inner,
+.public-home .public-foot-inner {
+    width: min(1280px, calc(100% - 64px));
+}
+
+.public-home .public-nav-inner {
+    min-height: 72px;
+}
+
+.public-home .public-nav-brand,
+.public-home .public-nav-links,
+.public-home .public-nav-login,
+.public-home .public-foot-brand,
+.public-home .public-foot-links a {
+    color: #173b2b;
+}
+
+.public-home .public-nav-mark {
+    color: #edf7ee;
+    background: #285f45;
+}
+
+.public-home .public-nav-links a:hover,
+.public-home .public-nav-login:hover,
+.public-home .public-foot-links a:hover {
+    color: #0b2017;
+}
+
+.public-home .public-btn {
+    border-color: #285f45;
+    color: #f3faf4;
+    background: #285f45;
+}
+
+.public-home .public-btn:hover {
+    border-color: #1d4934;
+    color: #fff;
+    background: #1d4934;
+}
+
+.public-home a:focus-visible,
+.public-home button:focus-visible {
+    outline: 3px solid #b58b19;
+    outline-offset: 3px;
+}
+
+.public-home .public-hero {
+    padding: 72px 0 76px;
+}
+
+.public-home .public-hero-grid {
+    grid-template-columns: minmax(0, 1.04fr) minmax(480px, 0.96fr);
+    align-items: center;
+    gap: 72px;
+}
+
+.public-home .public-hero-copy {
+    min-width: 0;
+}
+
+.public-home .public-hero-tag {
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+    color: #527060;
+    font-family: "Consolas", monospace;
+    font-size: 12px;
+}
+
+.public-home .public-version {
+    border-color: #9fbba7;
+    border-radius: 999px;
+    background: #f1f8f1;
+}
+
+.public-home .public-product-name {
+    margin: 0 0 14px;
+    color: #285f45;
+    font-size: 18px;
+    font-weight: 760;
+}
+
+.public-home .public-hero h1 {
+    max-width: 11ch;
+    margin: 0 0 26px;
+    color: #0d241b;
+    font-size: 64px;
+    font-weight: 760;
+    line-height: 1.08;
+    overflow-wrap: normal;
+}
+
+.public-home .public-hero h1 span {
+    display: block;
+    white-space: nowrap;
+}
+
+.public-home .public-hero-lead {
+    max-width: 52ch;
+    margin-bottom: 28px;
+    color: #385448;
+    font-size: 16px;
+    line-height: 1.75;
+}
+
+.public-home .public-btn-link {
+    color: #173b2b;
+}
+
+.public-home .public-ai-preview {
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid #86aa91;
+    border-radius: 8px;
+    background: #f6fbf6;
+    box-shadow: 0 10px 28px rgba(28, 71, 49, 0.1);
+}
+
+.public-home .public-preview-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 24px;
+    padding: 22px 24px 18px;
+    border-bottom: 1px solid #c5d8c8;
+}
+
+.public-home .public-preview-overline,
+.public-home .public-preview-label {
+    display: block;
+    color: #587667;
+    font-family: "Consolas", monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+}
+
+.public-home .public-preview-head h2 {
+    margin: 5px 0 0;
+    color: #10271e;
+    font-size: 24px;
+    line-height: 1.25;
+}
+
+.public-home .public-preview-current {
+    flex: 0 0 auto;
+    padding: 5px 9px;
+    border: 1px solid #8bb69a;
+    border-radius: 999px;
+    color: #285f45;
+    background: #e3f1e5;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.public-home .public-preview-stages {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    border-bottom: 1px solid #c5d8c8;
+}
+
+.public-home .public-preview-stages div {
+    min-width: 0;
+    padding: 15px 14px;
+    border-right: 1px solid #c5d8c8;
+}
+
+.public-home .public-preview-stages div:last-child {
+    border-right: 0;
+}
+
+.public-home .public-preview-stages span,
+.public-home .public-preview-stages strong {
+    display: block;
+}
+
+.public-home .public-preview-stages span {
+    color: #456456;
+    font-size: 12px;
+}
+
+.public-home .public-preview-stages strong {
+    margin-top: 4px;
+    color: #285f45;
+    font-size: 13px;
+}
+
+.public-home .public-preview-meta {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin: 0;
+    padding: 18px 24px;
+    gap: 14px 24px;
+    border-bottom: 1px solid #c5d8c8;
+}
+
+.public-home .public-preview-meta div {
+    min-width: 0;
+}
+
+.public-home .public-preview-meta dt {
+    color: #587667;
+    font-size: 11px;
+}
+
+.public-home .public-preview-meta dd {
+    margin: 3px 0 0;
+    color: #10271e;
+    font-size: 14px;
+    font-weight: 720;
+    overflow-wrap: anywhere;
+}
+
+.public-home .public-preview-meta small {
+    color: #6b8276;
+    font-size: 10px;
+    font-weight: 500;
+}
+
+.public-home .public-preview-finding {
+    padding: 19px 24px 22px;
+}
+
+.public-home .public-preview-finding h3 {
+    margin: 7px 0 14px;
+    color: #10271e;
+    font-size: 17px;
+    line-height: 1.45;
+}
+
+.public-home .public-preview-evidence {
+    display: grid;
+    gap: 7px;
+    padding: 12px 14px;
+    border-left: 3px solid #b58b19;
+    color: #395549;
+    background: #edf4e9;
+    font-size: 12px;
+}
+
+.public-home .public-preview-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 13px 24px;
+    border-top: 1px solid #c5d8c8;
+    color: #587667;
+    background: #e8f2e8;
+    font-size: 11px;
+}
+
+.public-home .public-preview-foot strong {
+    color: #285f45;
+    text-align: right;
+}
+
+.public-home .public-section {
+    padding-top: 94px;
+}
+
+.public-home .public-section-head {
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr);
+    gap: 80px;
+    margin-bottom: 18px;
+    padding-bottom: 34px;
+    border-color: #b9cdbd;
+}
+
+.public-home .public-kicker {
+    color: #527060;
+    font-family: "Consolas", monospace;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.public-home .public-section-head h2 {
+    max-width: 19ch;
+    color: #0d241b;
+    font-size: 42px;
+    line-height: 1.18;
+}
+
+.public-home .public-section-head p {
+    color: #385448;
+    font-size: 15px;
+    line-height: 1.8;
+}
+
+.public-home .public-capability-list {
+    display: grid;
+}
+
+.public-home .public-cap-row {
+    grid-template-columns: 48px minmax(0, 0.88fr) minmax(420px, 1.12fr);
+    grid-template-areas: "num copy visual";
+    gap: 40px;
+    min-width: 0;
+    padding: 66px 0;
+    border-color: #bdd0c0;
+}
+
+.public-home .public-cap-row:nth-child(even) {
+    grid-template-columns: 48px minmax(420px, 1.12fr) minmax(0, 0.88fr);
+    grid-template-areas: "num visual copy";
+}
+
+.public-home .public-cap-num {
+    grid-area: num;
+    color: #527060;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.public-home .public-cap-text {
+    grid-area: copy;
+    min-width: 0;
+}
+
+.public-home .public-cap-text h3 {
+    color: #10271e;
+    font-size: 25px;
+}
+
+.public-home .public-cap-text p,
+.public-home .public-cap-text li {
+    color: #385448;
+    font-size: 14px;
+    line-height: 1.75;
+}
+
+.public-home .public-cap-text ul {
+    margin: 20px 0 0;
+    padding-left: 20px;
+}
+
+.public-home .public-cap-text li + li {
+    margin-top: 5px;
+}
+
+.public-home .public-cap-vis {
+    grid-area: visual;
+    min-width: 0;
+    min-height: 0;
+    padding: 22px;
+    border: 1px solid #9fbaa6;
+    border-radius: 8px;
+    background: #f3f9f3;
+    box-shadow: 0 5px 16px rgba(28, 71, 49, 0.07);
+}
+
+.public-home .public-mock-toolbar,
+.public-home .public-draft-head,
+.public-home .public-analysis-line,
+.public-home .public-sentiment-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+}
+
+.public-home .public-mock-toolbar {
+    padding-bottom: 15px;
+    border-bottom: 1px solid #cadaCC;
+}
+
+.public-home .public-mock-toolbar div,
+.public-home .public-draft-head div,
+.public-home .public-analysis-line div,
+.public-home .public-sentiment-row div:first-child {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+}
+
+.public-home .public-mock-toolbar span,
+.public-home .public-question-preview small,
+.public-home .public-analysis-line span,
+.public-home .public-sentiment-row span,
+.public-home .public-draft-head span,
+.public-home .public-draft-evidence span,
+.public-home .public-draft-evidence small {
+    color: #587667;
+    font-size: 11px;
+}
+
+.public-home .public-mock-toolbar strong,
+.public-home .public-question-preview strong {
+    color: #10271e;
+    font-size: 14px;
+}
+
+.public-home .public-mock-state,
+.public-home .public-analysis-badge,
+.public-home .public-priority {
+    flex: 0 0 auto;
+    padding: 4px 8px;
+    border-radius: 999px;
+    color: #285f45 !important;
+    background: #dfeee1;
+    font-size: 11px !important;
+    font-weight: 700;
+}
+
+.public-home .public-question-preview {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 17px 0 11px;
+}
+
+.public-home .public-question-preview div {
+    display: grid;
+    gap: 2px;
+}
+
+.public-home .public-question-number {
+    flex: 0 0 30px;
+    color: #527060;
+    font-family: "Consolas", monospace;
+    font-size: 11px;
+}
+
+.public-home .public-mock-scale,
+.public-home .public-mock-options {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 7px;
+}
+
+.public-home .public-mock-scale span,
+.public-home .public-mock-options span {
+    display: grid;
+    min-width: 0;
+    min-height: 36px;
+    place-items: center;
+    padding: 7px;
+    border: 1px solid #c2d5c5;
+    border-radius: 5px;
+    color: #385448;
+    background: #f9fcf8;
+    font-size: 12px;
+    text-align: center;
+}
+
+.public-home .public-mock-options {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.public-home .public-mock-scale .public-selected,
+.public-home .public-mock-options .public-selected {
+    border-color: #4c8161;
+    color: #173b2b;
+    background: #dcecdf;
+}
+
+.public-home .public-metric-strip {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    border: 1px solid #c2d5c5;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.public-home .public-metric-strip div {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+    padding: 13px;
+    border-right: 1px solid #c2d5c5;
+}
+
+.public-home .public-metric-strip div:last-child {
+    border-right: 0;
+}
+
+.public-home .public-metric-strip span,
+.public-home .public-metric-strip small {
+    color: #587667;
+    font-size: 10px;
+}
+
+.public-home .public-metric-strip strong {
+    color: #10271e;
+    font-size: 20px;
+}
+
+.public-home .public-analysis-line,
+.public-home .public-sentiment-row {
+    padding: 15px 0;
+    border-bottom: 1px solid #cadaCC;
+}
+
+.public-home .public-analysis-line strong,
+.public-home .public-sentiment-row strong {
+    color: #173b2b;
+    font-size: 13px;
+}
+
+.public-home .public-sentiment-row {
+    align-items: flex-end;
+}
+
+.public-home .public-sentiment-bar {
+    flex: 0 0 110px;
+    height: 7px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #d8e6da;
+}
+
+.public-home .public-sentiment-bar span {
+    display: block;
+    width: 41.4%;
+    height: 100%;
+    background: #9b5a3c;
+}
+
+.public-home .public-keywords {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    padding-top: 15px;
+}
+
+.public-home .public-keywords span {
+    padding: 5px 8px;
+    border: 1px solid #c2d5c5;
+    border-radius: 999px;
+    color: #385448;
+    background: #f9fcf8;
+    font-size: 11px;
+}
+
+.public-home .public-stage-list {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin-bottom: 14px;
+    border: 1px solid #c2d5c5;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.public-home .public-stage-list div {
+    display: grid;
+    gap: 3px;
+    padding: 12px;
+    border-right: 1px solid #c2d5c5;
+}
+
+.public-home .public-stage-list div:last-child {
+    border-right: 0;
+}
+
+.public-home .public-stage-list span,
+.public-home .public-stage-list small {
+    color: #587667;
+    font-family: "Consolas", monospace;
+    font-size: 10px;
+}
+
+.public-home .public-stage-list strong {
+    color: #173b2b;
+    font-size: 13px;
+    overflow-wrap: anywhere;
+}
+
+.public-home .public-grounded-finding {
+    display: grid;
+    gap: 5px;
+    padding: 13px 0;
+    border-bottom: 1px solid #cadaCC;
+}
+
+.public-home .public-grounded-finding:last-child {
+    border-bottom: 0;
+}
+
+.public-home .public-grounded-finding span,
+.public-home .public-grounded-finding small {
+    color: #587667;
+    font-size: 11px;
+}
+
+.public-home .public-grounded-finding strong {
+    color: #10271e;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.public-home .public-draft-head {
+    padding-bottom: 14px;
+    border-bottom: 1px solid #cadaCC;
+}
+
+.public-home .public-draft-head strong {
+    color: #10271e;
+    font-size: 16px;
+}
+
+.public-home .public-draft-preview > p {
+    margin: 15px 0;
+    color: #385448;
+    font-size: 13px;
+    line-height: 1.65;
+}
+
+.public-home .public-draft-evidence {
+    display: grid;
+    gap: 4px;
+    padding: 12px 14px;
+    border-left: 3px solid #b58b19;
+    background: #eaf3e8;
+}
+
+.public-home .public-draft-evidence strong {
+    color: #173b2b;
+    font-size: 13px;
+}
+
+.public-home .public-mock-button {
+    align-self: flex-start;
+    margin-top: 16px;
+    padding: 8px 12px;
+    border: 1px solid #285f45;
+    border-radius: 6px;
+    color: #f5faf5;
+    background: #285f45;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.public-home .public-workflow-band {
+    margin-top: 92px;
+    border-color: #9db7a4;
+    background: #dbeadc;
+}
+
+.public-home .public-workflow-inner {
+    padding: 86px 0;
+}
+
+.public-home .public-workflow-list {
+    margin: 0;
+    padding: 0;
+    border-color: #a9c0af;
+    list-style: none;
+}
+
+.public-home .public-wf-row {
+    grid-template-columns: 90px minmax(190px, 0.55fr) minmax(320px, 1fr) auto;
+    border-color: #a9c0af;
+}
+
+.public-home .public-wf-num,
+.public-home .public-wf-tags {
+    color: #527060;
+}
+
+.public-home .public-wf-title {
+    margin: 0;
+    color: #10271e;
+    font-size: 18px;
+}
+
+.public-home .public-wf-desc {
+    margin: 0;
+    color: #385448;
+}
+
+.public-home .public-wf-tags {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+}
+
+.public-home .public-wf-tags span {
+    border-color: #9fb9a6;
+    border-radius: 999px;
+    background: #eaf4ea;
+}
+
+.public-home .public-architecture {
+    width: 100%;
+    max-width: none;
+    padding: 84px max(32px, calc((100% - 1280px) / 2));
+    color: #eef7ef;
+    background: #153c2b;
+}
+
+.public-home .public-architecture .public-section-head {
+    border-color: #3d6250;
+}
+
+.public-home .public-architecture .public-kicker,
+.public-home .public-architecture .public-section-head p {
+    color: #b9cebf;
+}
+
+.public-home .public-architecture .public-section-head h2 {
+    color: #f4faf4;
+}
+
+.public-home .public-architecture-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    border-top: 1px solid #3d6250;
+    border-bottom: 1px solid #3d6250;
+}
+
+.public-home .public-architecture-grid article {
+    min-width: 0;
+    padding: 26px 22px;
+    border-right: 1px solid #3d6250;
+}
+
+.public-home .public-architecture-grid article:last-child {
+    border-right: 0;
+}
+
+.public-home .public-architecture-grid span {
+    color: #9fbdab;
+    font-family: "Consolas", monospace;
+    font-size: 11px;
+}
+
+.public-home .public-architecture-grid h3 {
+    margin: 14px 0 10px;
+    color: #f4faf4;
+    font-size: 18px;
+}
+
+.public-home .public-architecture-grid p {
+    margin: 0;
+    color: #c4d6c8;
+    font-size: 13px;
+    line-height: 1.7;
+}
+
+.public-home .public-roles-grid {
+    gap: 18px;
+}
+
+.public-home .public-role-card {
+    min-height: 220px;
+    border-color: #9fbaa6;
+    border-radius: 8px;
+    background: #f3f9f3;
+    box-shadow: 0 5px 16px rgba(28, 71, 49, 0.07);
+}
+
+.public-home .public-role-card:hover {
+    border-color: #5e8b6d;
+}
+
+.public-home .public-role-primary {
+    border-color: #173b2b;
+    color: #f4faf4;
+    background: #173b2b;
+}
+
+.public-home .public-role-label,
+.public-home .public-role-card p {
+    color: #527060;
+}
+
+.public-home .public-role-primary .public-role-label,
+.public-home .public-role-primary p {
+    color: #bdd2c2;
+}
+
+.public-home .public-role-card h3 {
+    color: #10271e;
+}
+
+.public-home .public-role-primary h3 {
+    color: #f4faf4;
+}
+
+.public-home .public-role-cta {
+    border-color: #b9cdbd;
+    color: #173b2b;
+}
+
+.public-home .public-role-primary .public-role-cta {
+    border-color: #3d6250;
+    color: #f4faf4;
+}
+
+.public-home .public-foot {
+    margin-top: 104px;
+    padding: 34px 0;
+    border-color: #b9cdbd;
+}
+
+.public-home .public-foot-inner {
+    display: grid;
+    grid-template-columns: minmax(240px, 1fr) auto minmax(240px, 1fr);
+    align-items: center;
+    gap: 28px;
+    margin: 0 auto;
+}
+
+.public-home .public-foot-identity,
+.public-home .public-foot-meta {
+    display: grid;
+    gap: 5px;
+}
+
+.public-home .public-foot-identity > span,
+.public-home .public-foot-meta {
+    color: #527060;
+    font-size: 12px;
+}
+
+.public-home .public-foot-meta {
+    justify-items: end;
+    text-align: right;
+}
+
+@media (max-width: 1040px) {
+    .public-home .public-nav-inner,
+    .public-home .public-hero,
+    .public-home .public-section,
+    .public-home .public-workflow-inner,
+    .public-home .public-foot-inner {
+        width: min(100% - 40px, 840px);
+    }
+
+    .public-home .public-nav-inner {
+        flex-wrap: wrap;
+        gap: 16px;
+        padding: 12px 0;
+    }
+
+    .public-home .public-nav-links {
+        display: none;
+    }
+
+    .public-home .public-hero {
+        padding: 64px 0 72px;
+    }
+
+    .public-home .public-hero-grid,
+    .public-home .public-section-head,
+    .public-home .public-cap-row,
+    .public-home .public-cap-row:nth-child(even),
+    .public-home .public-roles-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .public-home .public-hero-grid {
+        gap: 48px;
+    }
+
+    .public-home .public-cap-row,
+    .public-home .public-cap-row:nth-child(even) {
+        grid-template-areas: "num" "copy" "visual";
+        gap: 24px;
+    }
+
+    .public-home .public-section-head {
+        gap: 24px;
+    }
+
+    .public-home .public-section-head h2 {
+        max-width: 22ch;
+    }
+
+    .public-home .public-wf-row {
+        grid-template-columns: 84px minmax(160px, 0.5fr) minmax(260px, 1fr);
+    }
+
+    .public-home .public-wf-tags {
+        grid-column: 2 / -1;
+        justify-content: flex-start;
+    }
+
+    .public-home .public-architecture {
+        width: 100%;
+        padding-right: 20px;
+        padding-left: 20px;
+    }
+
+    .public-home .public-architecture-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .public-home .public-architecture-grid article:nth-child(2) {
+        border-right: 0;
+    }
+
+    .public-home .public-architecture-grid article:nth-child(-n + 2) {
+        border-bottom: 1px solid #3d6250;
+    }
+
+    .public-home .public-foot-inner {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .public-home .public-foot-meta {
+        grid-column: 1 / -1;
+        justify-items: start;
+        text-align: left;
+    }
+}
+
+@media (max-width: 720px) {
+    .public-home .public-nav-inner,
+    .public-home .public-hero,
+    .public-home .public-section,
+    .public-home .public-workflow-inner,
+    .public-home .public-foot-inner {
+        width: calc(100% - 28px);
+    }
+
+    .public-home .public-nav-inner {
+        min-height: 60px;
+        gap: 8px 12px;
+    }
+
+    .public-home .public-nav-actions {
+        gap: 7px;
+    }
+
+    .public-home .public-nav-actions .public-btn {
+        padding: 7px 11px;
+        font-size: 12px;
+    }
+
+    .public-home .public-hero {
+        padding: 46px 0 58px;
+    }
+
+    .public-home .public-hero h1 {
+        max-width: 100%;
+        font-size: 46px;
+    }
+
+    .public-home .public-hero h1 span {
+        white-space: normal;
+    }
+
+    .public-home .public-preview-head,
+    .public-home .public-preview-foot,
+    .public-home .public-mock-toolbar,
+    .public-home .public-draft-head,
+    .public-home .public-analysis-line,
+    .public-home .public-sentiment-row {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .public-home .public-preview-stages,
+    .public-home .public-preview-meta,
+    .public-home .public-metric-strip,
+    .public-home .public-stage-list {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .public-home .public-preview-stages div,
+    .public-home .public-metric-strip div,
+    .public-home .public-stage-list div {
+        border-right: 0;
+        border-bottom: 1px solid #c2d5c5;
+    }
+
+    .public-home .public-preview-stages div:last-child,
+    .public-home .public-metric-strip div:last-child,
+    .public-home .public-stage-list div:last-child {
+        border-bottom: 0;
+    }
+
+    .public-home .public-preview-foot strong {
+        text-align: left;
+    }
+
+    .public-home .public-section {
+        padding-top: 72px;
+    }
+
+    .public-home .public-section-head h2 {
+        font-size: 34px;
+    }
+
+    .public-home .public-cap-row {
+        padding: 48px 0;
+    }
+
+    .public-home .public-cap-vis {
+        padding: 17px;
+    }
+
+    .public-home .public-wf-row {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 8px;
+        padding: 22px 0;
+    }
+
+    .public-home .public-wf-tags {
+        grid-column: auto;
+    }
+
+    .public-home .public-architecture-grid,
+    .public-home .public-foot-inner {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .public-home .public-architecture-grid article,
+    .public-home .public-architecture-grid article:nth-child(2) {
+        border-right: 0;
+        border-bottom: 1px solid #3d6250;
+    }
+
+    .public-home .public-architecture-grid article:last-child {
+        border-bottom: 0;
+    }
+
+    .public-home .public-foot-links {
+        justify-content: flex-start;
+        flex-wrap: wrap;
+    }
+}
+
+@media (max-width: 480px) {
+    .public-home .public-nav-brand {
+        font-size: 14px;
+    }
+
+    .public-home .public-nav-mark {
+        width: 26px;
+        height: 26px;
+    }
+
+    .public-home .public-nav-login {
+        font-size: 12px;
+    }
+
+    .public-home .public-product-name {
+        font-size: 16px;
+    }
+
+    .public-home .public-hero h1 {
+        font-size: 38px;
+        line-height: 1.12;
+    }
+
+    .public-home .public-hero-lead {
+        font-size: 15px;
+    }
+
+    .public-home .public-hero-actions {
+        align-items: stretch;
+    }
+
+    .public-home .public-hero-actions .public-btn,
+    .public-home .public-hero-actions .public-btn-link {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .public-home .public-preview-head,
+    .public-home .public-preview-meta,
+    .public-home .public-preview-finding,
+    .public-home .public-preview-foot {
+        padding-right: 17px;
+        padding-left: 17px;
+    }
+
+    .public-home .public-mock-options {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .public-home .public-section-head h2 {
+        font-size: 30px;
+    }
+
+    .public-home .public-role-card {
+        padding: 24px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .public-home *,
+    .public-home *::before,
+    .public-home *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+    }
+}

@@ -1,5 +1,6 @@
 import uuid
 from datetime import timedelta
+from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
@@ -107,29 +108,30 @@ class HomeView(TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context.update(service_client.get_home())
+        dashboard_url = reverse("feedback:dashboard")
+        customer_url = reverse("feedback:customer-home")
+
+        def login_url(next_url):
+            return f"{reverse('accounts:login')}?{urlencode({'next': next_url})}"
+
+        if self.request.user.is_authenticated:
+            workspace_url = dashboard_url if self.request.user.is_manager else customer_url
+        else:
+            workspace_url = reverse("accounts:login")
+
         context.update(
             {
-                "featured_capabilities": [
-                    {
-                        "title": "Survey Operations",
-                        "description": "以登入制問卷集中管理題型、資料型態與填答流程，讓回饋收集維持一致脈絡。",
-                    },
-                    {
-                        "title": "Statistical Insight",
-                        "description": "依照資料型態整理描述統計與可執行推論，並清楚標示條件不通過的原因。",
-                    },
-                    {
-                        "title": "Closed-loop Follow-up",
-                        "description": "把文字洞察與改善追蹤串接起來，讓管理者能把回饋轉成後續通知與行動。",
-                    },
-                ],
-                "homepage_steps": [
-                    "建立登入制問卷與題型資料標籤",
-                    "收集回覆並保留填答者追蹤偏好",
-                    "從統計與文字分析提取決策線索",
-                    "發布改善更新並回推給相關顧客",
-                ],
+                "workspace_url": workspace_url,
+                "manager_entry_url": (
+                    dashboard_url
+                    if self.request.user.is_authenticated and self.request.user.is_manager
+                    else login_url(dashboard_url)
+                ),
+                "customer_entry_url": (
+                    customer_url
+                    if self.request.user.is_authenticated and not self.request.user.is_manager
+                    else login_url(customer_url)
+                ),
             }
         )
         return context

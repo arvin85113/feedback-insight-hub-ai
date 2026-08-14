@@ -1,262 +1,331 @@
 {% extends "public_base.html" %}
 
-{% block title %}FeedBack IQ | 顧客回饋與改善追蹤平台{% endblock %}
+{% block title %}回饋洞察 AI 平台｜Feedback Insight Hub AI{% endblock %}
+{% block meta_description %}整合問卷管理、統計分析、文字洞察、Gemini 三階段營運分析與改善追蹤的 AI 回饋管理平台。{% endblock %}
+{% block body_class %}public-body public-home{% endblock %}
 
 {% block content %}
-<header class="public-hero">
-    <div class="public-hero-grid">
-        <div>
-            <div class="public-hero-tag">
-                <span class="public-version">v0.4 · 開發中</span>
-                <span>顧客回饋與改善追蹤平台</span>
+<main>
+    <header class="public-hero">
+        <div class="public-hero-grid">
+            <div class="public-hero-copy">
+                <div class="public-hero-tag">
+                    <span class="public-version">AI Edition · 2026</span>
+                    <span>EVIDENCE-GROUNDED AI OPERATIONS</span>
+                </div>
+                <p class="public-product-name">回饋洞察 AI 平台</p>
+                <h1>
+                    <span>把顧客回饋，</span>
+                    <span>轉化為可追溯的</span>
+                    <span>營運決策。</span>
+                </h1>
+                <p class="public-hero-lead">
+                    整合問卷管理、統計分析、文字洞察與 Gemini 三階段分析，從匿名聚合證據產生營運發現與改善追蹤草稿。
+                    資料未改變時直接讀取 Supabase 最新成功報告，重要決策仍由管理者確認。
+                </p>
+                <div class="public-hero-actions">
+                    <a class="public-btn" href="#workflow">查看產品流程</a>
+                    <a class="public-btn-link" href="{{ workspace_url }}">登入平台</a>
+                </div>
             </div>
-            <h1>
-                收集顧客回饋，<br>
-                <span class="public-ink-muted">分析、改善、</span><br>
-                並通知顧客結果。
-            </h1>
-            <p class="public-hero-lead">
-                FeedBack IQ 把問卷收集、統計分析、文字洞察與改善通知整合在同一條工作流。
-                每一筆改善任務都能對應到原始回饋與相關顧客，讓填答者知道意見如何被採納。
-            </p>
-            <div class="public-hero-actions">
-                <a class="public-btn" href="#roles">進入平台</a>
-                <a class="public-btn-link" href="#workflow">了解工作流</a>
-            </div>
-        </div>
 
-        <article class="public-hero-card" aria-label="管理端問卷列表示意">
-            <div class="public-hero-card-head">
-                <div class="public-window-dots"><span></span><span></span><span></span></div>
-                <span>Manager · Surveys</span>
-            </div>
-            <div class="public-hero-card-body">
-                <div class="public-hero-card-row">
+            <article class="public-ai-preview" aria-label="AI 營運分析示範預覽">
+                <div class="public-preview-head">
                     <div>
-                        <strong>2026 Q2 服務體驗追蹤</strong>
-                        <span class="public-meta">客戶體驗 · 已啟用</span>
-                        <span class="public-bar"><span style="width: 71%;"></span></span>
+                        <span class="public-preview-overline">DEMO ANALYSIS</span>
+                        <h2>AI 營運分析</h2>
                     </div>
-                    <span class="public-num">142</span>
+                    <span class="public-preview-current">目前為最新資料</span>
                 </div>
-                <div class="public-hero-card-row">
-                    <div>
-                        <strong>門市現場滿意度</strong>
-                        <span class="public-meta">門市營運 · 已啟用</span>
-                        <span class="public-bar"><span style="width: 74%;"></span></span>
+
+                <div class="public-preview-stages" aria-label="Gemini 三階段狀態">
+                    <div><span>統計分析</span><strong>已完成</strong></div>
+                    <div><span>文字洞察</span><strong>已完成</strong></div>
+                    <div><span>綜合營運決策</span><strong>已完成</strong></div>
+                </div>
+
+                <dl class="public-preview-meta">
+                    <div><dt>問卷</dt><dd>飲料店體驗回饋</dd></div>
+                    <div><dt>涵蓋回覆</dt><dd>103 份 <small>示範資料</small></dd></div>
+                    <div><dt>分析覆蓋率</dt><dd>99% <small>示範資料</small></dd></div>
+                    <div><dt>模型</dt><dd>gemini-2.5-flash</dd></div>
+                </dl>
+
+                <section class="public-preview-finding" aria-labelledby="preview-finding-title">
+                    <span class="public-preview-label">重點發現</span>
+                    <h3 id="preview-finding-title">等候時間與服務品質為優先改善議題</h3>
+                    <div class="public-preview-evidence">
+                        <span>Spearman ρ = -0.624，p &lt; 0.001</span>
+                        <span>「服務」共提及 26 次</span>
                     </div>
-                    <span class="public-num">89</span>
-                </div>
-                <div class="public-hero-card-row">
-                    <div>
-                        <strong>線上預約流程體驗</strong>
-                        <span class="public-meta">產品 / UX · 已啟用</span>
-                        <span class="public-bar"><span style="width: 56%;"></span></span>
-                    </div>
-                    <span class="public-num">56</span>
-                </div>
-            </div>
-            <div class="public-hero-card-foot">
-                <span>{{ active_survey_count }} 份問卷 · {{ response_count }} 筆回覆</span>
-                <span>更新於今天</span>
-            </div>
-        </article>
-    </div>
-</header>
+                </section>
 
-<section class="public-section" id="capabilities">
-    <div class="public-section-head">
-        <div class="public-label-col">
-            <span class="public-kicker">— 產品能力</span>
-            <h2>三個核心模組，組成同一條工作流。</h2>
-        </div>
-        <p>
-            不是「再多一個表單工具」。我們把問卷、統計、文字分析與改善追蹤放在同一個資料模型下，
-            讓回饋從收集到回應顧客的整個過程，可以被追蹤、被驗證。
-        </p>
-    </div>
-
-    <div class="public-cap-row">
-        <div class="public-cap-num">/01</div>
-        <div class="public-cap-text">
-            <h3>統計與文字洞察</h3>
-            <p>
-                以 Pandas 處理量化題目，依資料型態自動選擇 t-test、ANOVA、卡方、相關等方法，
-                並輸出顯著性與效應量。開放文字題以字典式比對找出高頻關鍵字與情緒傾向。
-            </p>
-            <ul>
-                <li>連續 / 類別 / 順序變數自動分流</li>
-                <li>顯著性、p 值、效應量標示</li>
-                <li>關鍵字頻率與情緒分布</li>
-            </ul>
-        </div>
-        <div class="public-cap-vis">
-            <div class="public-mock-stats">
-                <div class="public-mock-stat"><div class="public-mock-label">回覆</div><div class="public-mock-value">142<span>↑18%</span></div></div>
-                <div class="public-mock-stat"><div class="public-mock-label">情緒</div><div class="public-mock-value">7.2</div></div>
-                <div class="public-mock-stat"><div class="public-mock-label">顯著</div><div class="public-mock-value">.04</div></div>
-            </div>
-            <div class="public-mock-chart">
-                <span style="height: 32%"></span><span style="height: 48%"></span>
-                <span style="height: 42%"></span><span style="height: 60%" class="public-hi"></span>
-                <span style="height: 55%"></span><span style="height: 72%" class="public-hi"></span>
-                <span style="height: 65%"></span><span style="height: 82%" class="public-hi"></span>
-                <span style="height: 75%"></span><span style="height: 90%" class="public-peak"></span>
-            </div>
-        </div>
-    </div>
-
-    <div class="public-cap-row">
-        <div class="public-cap-num">/02</div>
-        <div class="public-cap-text">
-            <h3>問卷建立與管理</h3>
-            <p>
-                支援單選、多選、1-5 量表、開放文字、數值區間等題型；每種題型在後端帶有資料型態標記，
-                讓統計引擎能直接接手分析。可分配分類標籤管理多份問卷。
-            </p>
-            <ul>
-                <li>多種題型，含量表與開放文字</li>
-                <li>QR Code 與分享連結同步產生</li>
-                <li>分類標籤、啟用 / 草稿狀態</li>
-            </ul>
-        </div>
-        <div class="public-cap-vis">
-            <div class="public-mock-survey-head">
-                <strong>2026 Q2 服務體驗追蹤</strong>
-                <span>已啟用</span>
-            </div>
-            <div class="public-mock-question"><span>Q3</span>整體服務體驗的滿意程度？</div>
-            <div class="public-mock-scale">
-                <span>1</span><span>2</span><span>3</span><span class="public-selected">4</span><span>5</span>
-            </div>
-            <div class="public-mock-question"><span>Q4</span>希望優先改善哪一項？</div>
-            <div class="public-mock-option public-selected"><span></span>服務等待時間</div>
-            <div class="public-mock-option"><span></span>資訊清楚度</div>
-        </div>
-    </div>
-
-    <div class="public-cap-row">
-        <div class="public-cap-num">/03</div>
-        <div class="public-cap-text">
-            <h3>改善任務與結果通知</h3>
-            <p>
-                從文字洞察中建立改善任務後，可綁定回饋來源與相關顧客，
-                管理者能追蹤改善進度，並在任務完成後回到顧客 Portal 顯示最新狀態。
-            </p>
-            <ul>
-                <li>改善任務對應文字洞察主題</li>
-                <li>Email 通知 + Portal 狀態更新</li>
-                <li>顧客意見形成可追蹤閉環</li>
-            </ul>
-        </div>
-        <div class="public-cap-vis">
-            <div class="public-loop-row">
-                <div>
-                    <strong>縮短客服等待時間</strong>
-                    <div class="public-meta">關聯 23 筆回饋 · 進行中</div>
+                <div class="public-preview-foot">
+                    <span>來源：Supabase 快取</span>
+                    <strong>管理者確認後帶入改善追蹤</strong>
                 </div>
-                <div><span class="public-progress"><span style="width: 76%;"></span></span><span class="public-percent">76%</span></div>
-            </div>
-            <div class="public-loop-row">
-                <div>
-                    <strong>補強操作說明</strong>
-                    <div class="public-meta">關聯 14 筆回饋 · 進行中</div>
-                </div>
-                <div><span class="public-progress"><span style="width: 57%;"></span></span><span class="public-percent">57%</span></div>
-            </div>
-            <div class="public-loop-row">
-                <div>
-                    <strong>更新入口提示文案</strong>
-                    <div class="public-meta">已通知 30 位 · 完成</div>
-                </div>
-                <div><span class="public-progress"><span style="width: 100%;"></span></span><span class="public-percent">100%</span></div>
-            </div>
+            </article>
         </div>
-    </div>
-</section>
+    </header>
 
-<section class="public-workflow-band" id="workflow">
-    <div class="public-workflow-inner">
+    <section class="public-section" id="capabilities">
         <div class="public-section-head">
             <div class="public-label-col">
-                <span class="public-kicker">— 工作流</span>
-                <h2>四個階段，同一個資料模型。</h2>
+                <span class="public-kicker">產品能力</span>
+                <h2>四個能力，串成一條 AI 營運工作流。</h2>
             </div>
             <p>
-                從問卷上線、顧客填答、統計分析，到改善任務完成後通知顧客，
-                全部在同一個系統內完成，不需要在多個工具間搬資料。
+                AI 不取代統計計算，也不直接替管理者做決策。平台先建立可驗證的統計與文字結果，
+                再由 Gemini 整合分析，最後交由管理者確認改善行動。
             </p>
         </div>
 
-        <div class="public-workflow-list">
-            <div class="public-wf-row">
-                <span class="public-wf-num">STEP 01</span>
-                <span class="public-wf-title">建立問卷</span>
-                <span class="public-wf-desc">在管理端新增問卷、設定題目與分類，發布後自動產生分享連結與 QR Code。</span>
-                <div class="public-wf-tags"><span>Manager</span><span>~ 5 min</span></div>
-            </div>
-            <div class="public-wf-row">
-                <span class="public-wf-num">STEP 02</span>
-                <span class="public-wf-title">顧客填答</span>
-                <span class="public-wf-desc">顧客登入後填寫，系統自動關聯帳號，避免重複提交，並記錄完整時序。</span>
-                <div class="public-wf-tags"><span>Customer</span><span>登入綁定</span></div>
-            </div>
-            <div class="public-wf-row">
-                <span class="public-wf-num">STEP 03</span>
-                <span class="public-wf-title">統計與文字分析</span>
-                <span class="public-wf-desc">依題型自動執行對應統計方法；開放文字題輸出關鍵字與情緒分布。</span>
-                <div class="public-wf-tags"><span>Pandas</span><span>字典式 NLP</span></div>
-            </div>
-            <div class="public-wf-row">
-                <span class="public-wf-num">STEP 04</span>
-                <span class="public-wf-title">改善任務與通知</span>
-                <span class="public-wf-desc">建立改善任務、關聯顧客；任務完成後自動寄出通知並在 Portal 顯示進度。</span>
-                <div class="public-wf-tags"><span>Email</span><span>Portal</span></div>
-            </div>
+        <div class="public-capability-list">
+            <article class="public-cap-row">
+                <div class="public-cap-num">01</div>
+                <div class="public-cap-text">
+                    <h3>問卷與回饋管理</h3>
+                    <p>
+                        建立單選、多選、量表、文字與數值題型，透過分享連結或 QR Code 收集回覆。
+                        每份問卷獨立管理與分析，不混合不同問卷資料。
+                    </p>
+                    <ul>
+                        <li>多種題型與資料型態</li>
+                        <li>問卷啟用及分享流程</li>
+                        <li>每份問卷獨立分析</li>
+                    </ul>
+                </div>
+                <div class="public-cap-vis public-survey-preview" aria-label="問卷題型示範">
+                    <div class="public-mock-toolbar">
+                        <div><span>問卷建置</span><strong>飲料店體驗回饋</strong></div>
+                        <span class="public-mock-state">已啟用</span>
+                    </div>
+                    <div class="public-question-preview">
+                        <span class="public-question-number">01</span>
+                        <div><small>量表題</small><strong>整體服務體驗的滿意程度？</strong></div>
+                    </div>
+                    <div class="public-mock-scale" aria-hidden="true">
+                        <span>1</span><span>2</span><span>3</span><span class="public-selected">4</span><span>5</span>
+                    </div>
+                    <div class="public-question-preview">
+                        <span class="public-question-number">02</span>
+                        <div><small>單選題</small><strong>希望優先改善哪一項？</strong></div>
+                    </div>
+                    <div class="public-mock-options" aria-hidden="true">
+                        <span class="public-selected">等候時間</span><span>服務說明</span><span>門市環境</span>
+                    </div>
+                </div>
+            </article>
+
+            <article class="public-cap-row">
+                <div class="public-cap-num">02</div>
+                <div class="public-cap-text">
+                    <h3>統計分析與文字洞察</h3>
+                    <p>
+                        後端依資料型態產生描述統計、群組差異、相關分析與文字洞察。
+                        統計值由程式計算，不交由語言模型自行推測。
+                    </p>
+                    <ul>
+                        <li>描述統計與分布</li>
+                        <li>ANOVA、Kruskal-Wallis、相關分析</li>
+                        <li>關鍵字、情緒分類與分析覆蓋率</li>
+                    </ul>
+                </div>
+                <div class="public-cap-vis public-analysis-preview" aria-label="統計與文字洞察示範">
+                    <div class="public-metric-strip">
+                        <div><span>平均滿意度</span><strong>6.04</strong><small>樣本 103</small></div>
+                        <div><span>Spearman ρ</span><strong>-0.624</strong><small>p &lt; 0.001</small></div>
+                        <div><span>文字覆蓋率</span><strong>99%</strong><small>示範資料</small></div>
+                    </div>
+                    <div class="public-analysis-line">
+                        <div><strong>門市 × 整體滿意度</strong><span>單因子變異數分析，p &lt; 0.001</span></div>
+                        <span class="public-analysis-badge">ANOVA</span>
+                    </div>
+                    <div class="public-sentiment-row">
+                        <div><strong>價格策略</strong><span>負面回饋 12 份／共分析 29 份</span></div>
+                        <div class="public-sentiment-bar" aria-hidden="true"><span></span></div>
+                    </div>
+                    <div class="public-keywords" aria-label="關鍵字示範">
+                        <span>等候 · 18 次</span><span>服務 · 26 次</span><span>價格 · 34 次</span>
+                    </div>
+                </div>
+            </article>
+
+            <article class="public-cap-row">
+                <div class="public-cap-num">03</div>
+                <div class="public-cap-text">
+                    <h3>Gemini 三階段營運分析</h3>
+                    <p>
+                        statistics、text、synthesis 三個階段依序分析。綜合階段只讀取已驗證的上游輸出，
+                        產生營運摘要、跨來源發現與改善追蹤草稿。
+                    </p>
+                    <ul>
+                        <li>Structured Output 與後端二次驗證</li>
+                        <li>Evidence refs 與數值來源追溯</li>
+                        <li>階段狀態、版本與失敗 fallback</li>
+                        <li>不傳送姓名、email 或 user ID</li>
+                    </ul>
+                </div>
+                <div class="public-cap-vis public-stage-preview" aria-label="Gemini 三階段流程示範">
+                    <div class="public-stage-list">
+                        <div><span>01</span><strong>statistics</strong><small>completed</small></div>
+                        <div><span>02</span><strong>text</strong><small>completed</small></div>
+                        <div><span>03</span><strong>synthesis</strong><small>completed</small></div>
+                    </div>
+                    <div class="public-grounded-finding">
+                        <span>Evidence-grounded finding</span>
+                        <strong>等候時間感受與整體滿意度呈現負相關</strong>
+                        <small>依據：Spearman ρ = -0.624，p &lt; 0.001</small>
+                    </div>
+                    <div class="public-grounded-finding">
+                        <span>Evidence-grounded finding</span>
+                        <strong>價格與服務品質是文字回饋的主要議題</strong>
+                        <small>依據：已驗證的關鍵字與情緒聚合結果</small>
+                    </div>
+                </div>
+            </article>
+
+            <article class="public-cap-row">
+                <div class="public-cap-num">04</div>
+                <div class="public-cap-text">
+                    <h3>Supabase 快取與改善追蹤</h3>
+                    <p>
+                        系統透過 input hash 判斷資料是否更新。沒有新資料時直接讀取 Supabase 最新成功報告；
+                        只有最新且驗證成功的 AI 草稿才能由管理者帶入改善追蹤。
+                    </p>
+                    <ul>
+                        <li>Supabase/PostgreSQL 成功報告快取</li>
+                        <li>Freshness 與跨 snapshot reuse</li>
+                        <li>AI provenance 與重複匯入防護</li>
+                        <li>管理者確認後才建立改善項目</li>
+                        <li>未選擇通知時不建立 dispatch、不寄送 email</li>
+                    </ul>
+                </div>
+                <div class="public-cap-vis public-draft-preview" aria-label="AI 改善追蹤草稿示範">
+                    <div class="public-draft-head">
+                        <div><span>AI 改善草稿</span><strong>優化尖峰時段等候流程</strong></div>
+                        <span class="public-priority">高優先</span>
+                    </div>
+                    <p>重新檢視點餐、製作與取餐節點，建立尖峰時段可驗收的流程改善方案。</p>
+                    <div class="public-draft-evidence">
+                        <span>分析依據</span>
+                        <strong>等候時間感受 × 整體滿意度</strong>
+                        <small>Spearman ρ = -0.624，p &lt; 0.001</small>
+                    </div>
+                    <span class="public-mock-button" aria-hidden="true">帶入改善追蹤</span>
+                </div>
+            </article>
         </div>
-    </div>
-</section>
+    </section>
 
-<section class="public-section" id="roles">
-    <div class="public-section-head">
-        <div class="public-label-col">
-            <span class="public-kicker">— 角色入口</span>
-            <h2>依角色進入對應的工作場景。</h2>
+    <section class="public-workflow-band" id="workflow">
+        <div class="public-workflow-inner">
+            <div class="public-section-head">
+                <div class="public-label-col">
+                    <span class="public-kicker">產品流程</span>
+                    <h2>從回饋收集，到可執行改善。</h2>
+                </div>
+                <p>
+                    每一步都有明確資料邊界。統計由後端計算、Gemini 解讀匿名聚合證據，
+                    最後由管理者檢視限制並確認改善行動。
+                </p>
+            </div>
+
+            <ol class="public-workflow-list">
+                <li class="public-wf-row">
+                    <span class="public-wf-num">STEP 01</span>
+                    <h3 class="public-wf-title">建立問卷</h3>
+                    <p class="public-wf-desc">管理者設定題型、分類與資料型態，發布後產生分享入口。</p>
+                    <div class="public-wf-tags"><span>Manager</span></div>
+                </li>
+                <li class="public-wf-row">
+                    <span class="public-wf-num">STEP 02</span>
+                    <h3 class="public-wf-title">收集回覆</h3>
+                    <p class="public-wf-desc">顧客登入填答，系統保存問卷與回覆關聯。</p>
+                    <div class="public-wf-tags"><span>Customer</span></div>
+                </li>
+                <li class="public-wf-row">
+                    <span class="public-wf-num">STEP 03</span>
+                    <h3 class="public-wf-title">建立分析結果</h3>
+                    <p class="public-wf-desc">後端執行統計與文字分析，產生匿名聚合證據。</p>
+                    <div class="public-wf-tags"><span>Statistics</span><span>Evidence</span></div>
+                </li>
+                <li class="public-wf-row">
+                    <span class="public-wf-num">STEP 04</span>
+                    <h3 class="public-wf-title">Gemini 三階段分析</h3>
+                    <p class="public-wf-desc">依序執行統計分析、文字洞察與綜合營運決策；資料未改變時重用快取。</p>
+                    <div class="public-wf-tags"><span>Gemini</span><span>Supabase</span></div>
+                </li>
+                <li class="public-wf-row">
+                    <span class="public-wf-num">STEP 05</span>
+                    <h3 class="public-wf-title">確認改善行動</h3>
+                    <p class="public-wf-desc">管理者檢視證據與資料限制，將最新 AI 草稿帶入改善追蹤並自行編輯確認。</p>
+                    <div class="public-wf-tags"><span>Human Review</span></div>
+                </li>
+            </ol>
         </div>
-        <p>
-            同一個帳號系統下，依使用者身份切換到管理端或顧客端。
-        </p>
-    </div>
+    </section>
 
-    <div class="public-roles-grid">
-        <a class="public-role-card public-role-primary" href="{% if user.is_authenticated and user.is_manager %}{% url 'feedback:dashboard' %}{% else %}{% url 'accounts:login' %}?next={% url 'feedback:dashboard' %}{% endif %}">
-            <span class="public-role-label">/ MANAGER</span>
-            <h3>管理端</h3>
-            <p>檢視所有問卷的回覆量、情緒分布與改善任務進度。集中處理問卷編輯、分析與顧客通知。</p>
-            <span class="public-role-cta">進入管理端</span>
-        </a>
+    <section class="public-section public-architecture" id="architecture">
+        <div class="public-section-head">
+            <div class="public-label-col">
+                <span class="public-kicker">架構亮點</span>
+                <h2>AI 不只是摘要，而是可驗證的分析流程。</h2>
+            </div>
+            <p>
+                平台把模型輸出放進可追溯的資料流程中，保留階段狀態、來源證據與人工決策邊界。
+            </p>
+        </div>
+        <div class="public-architecture-grid">
+            <article><span>01</span><h3>分階段分析</h3><p>大型問卷拆分為 statistics、text、synthesis，降低單次輸出的負擔並保留階段狀態。</p></article>
+            <article><span>02</span><h3>證據約束</h3><p>統計數值由後端提供，Gemini 輸出必須引用已存在的 evidence refs。</p></article>
+            <article><span>03</span><h3>資料新鮮度</h3><p>input hash、版本與 Supabase 快取共同判斷是否需要重新分析。</p></article>
+            <article><span>04</span><h3>人工確認</h3><p>AI 只產生營運洞察與改善草稿，正式改善項目及通知仍由管理者控制。</p></article>
+        </div>
+    </section>
 
-        <a class="public-role-card" href="{% if user.is_authenticated and not user.is_manager %}{% url 'feedback:customer-home' %}{% else %}{% url 'accounts:login' %}?next={% url 'feedback:customer-home' %}{% endif %}">
-            <span class="public-role-label">/ CUSTOMER</span>
-            <h3>顧客端</h3>
-            <p>查看自己填過的問卷、收到的通知，以及對應改善任務的當前進度。</p>
-            <span class="public-role-cta">進入顧客端</span>
-        </a>
-    </div>
-</section>
+    <section class="public-section" id="roles">
+        <div class="public-section-head">
+            <div class="public-label-col">
+                <span class="public-kicker">角色入口</span>
+                <h2>依角色進入對應工作區。</h2>
+            </div>
+            <p>平台沿用既有登入與角色權限，管理端與顧客端各自保有清楚的操作範圍。</p>
+        </div>
+
+        <div class="public-roles-grid">
+            <a class="public-role-card public-role-primary" href="{{ manager_entry_url }}">
+                <span class="public-role-label">MANAGER</span>
+                <h3>管理端</h3>
+                <p>管理問卷、查看統計與文字分析、執行或讀取 AI 營運報告，並將已驗證草稿帶入改善追蹤。</p>
+                <span class="public-role-cta">進入管理端</span>
+            </a>
+
+            <a class="public-role-card" href="{{ customer_entry_url }}">
+                <span class="public-role-label">CUSTOMER</span>
+                <h3>顧客端</h3>
+                <p>填寫可用問卷、查看自己的回饋紀錄與系統提供的相關通知。</p>
+                <span class="public-role-cta">進入顧客端</span>
+            </a>
+        </div>
+    </section>
+</main>
 
 <footer class="public-foot">
     <div class="public-foot-inner">
-        <div class="public-foot-brand">
-            <span class="public-nav-mark">FI</span>
-            FeedBack IQ
+        <div class="public-foot-identity">
+            <div class="public-foot-brand"><span class="public-nav-mark">FI</span>回饋洞察 AI 平台</div>
+            <span>Feedback Insight Hub AI</span>
         </div>
         <div class="public-foot-links">
             <a href="#capabilities">產品功能</a>
             <a href="#workflow">流程</a>
             <a href="#roles">角色入口</a>
         </div>
-        <span class="public-foot-meta">v0.4 · 2026</span>
+        <div class="public-foot-meta">
+            <span>Evidence-grounded feedback operations.</span>
+            <span>2026</span>
+        </div>
     </div>
 </footer>
 {% endblock %}
