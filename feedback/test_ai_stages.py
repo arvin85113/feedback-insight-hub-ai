@@ -263,9 +263,9 @@ class AIStageServiceTests(AIReportTestCase):
         snapshot = snapshot or self.snapshot
         input_hash = stage_input_hash(snapshot, stage_type)
         module_versions = {
-            "statistics": ("2", "2"),
-            "text": ("2", "2"),
-            "synthesis": ("3", "2"),
+            "statistics": ("2", "5"),
+            "text": ("2", "5"),
+            "synthesis": ("3", "3"),
         }
         schema_version, prompt_version = module_versions[stage_type]
         revision = snapshot.analysis_stages.filter(stage_type=stage_type).count() + 1
@@ -318,8 +318,10 @@ class AIStageServiceTests(AIReportTestCase):
     @patch("feedback.ai_stage_service.create_gemini_client")
     def test_statistics_and_text_generate_independently(self, client_factory):
         client = client_factory.return_value
+        aliased_statistics = statistics_payload()
+        aliased_statistics["descriptive_statistics"][0]["evidence_refs"] = ["E001"]
         client.models.generate_content.side_effect = [
-            provider_response(statistics_payload()),
+            provider_response(aliased_statistics),
             provider_response(text_payload()),
         ]
         statistics = generate_stage(self.snapshot, SurveyAIAnalysisStage.StageType.STATISTICS)
@@ -328,15 +330,23 @@ class AIStageServiceTests(AIReportTestCase):
         self.assertEqual(text.status, SurveyAIAnalysisStage.Status.SUCCEEDED)
         self.assertEqual(client.models.generate_content.call_count, 2)
         self.assertIn("stats.wait.mean", statistics.output_json["_evidence_registry"])
+        self.assertEqual(
+            statistics.output_json["descriptive_statistics"][0]["evidence_refs"],
+            ["stats.wait.mean"],
+        )
+        sent_statistics = json.loads(
+            client.models.generate_content.call_args_list[0].kwargs["contents"]
+        )
+        self.assertEqual(sent_statistics["evidence_catalog"][0]["id"], "E001")
         statistics_schema = client.models.generate_content.call_args_list[0].kwargs["config"].response_schema
         evidence_items = statistics_schema["properties"]["descriptive_statistics"]["items"]["properties"]["evidence_refs"]["items"]
         self.assertNotIn("enum", evidence_items)
+        self.assertIn("E001", evidence_items["description"])
 
     @override_settings(AI_REPORT_REQUEST_INTERVAL_SECONDS=0)
     @patch("feedback.ai_stage_service.create_gemini_client")
     def test_schema_failure_retries_once_with_compact_profile(self, client_factory):
-        invalid = statistics_payload()
-        invalid["descriptive_statistics"][0]["rationale"] = "共有 103 份回覆。"
+        invalid = {"unexpected": []}
         client_factory.return_value.models.generate_content.side_effect = [
             provider_response(invalid),
             provider_response(statistics_payload()),
@@ -347,8 +357,36 @@ class AIStageServiceTests(AIReportTestCase):
         self.assertEqual(stage.status, SurveyAIAnalysisStage.Status.SUCCEEDED)
         self.assertEqual(stage.token_metrics["generation_profile"], "compact")
         self.assertEqual(stage.token_metrics["retry_count"], 1)
-        self.assertEqual(stage.token_metrics["attempts"][0]["validation_reason"], "invalid_text")
+        self.assertEqual(stage.token_metrics["attempts"][0]["validation_reason"], "invalid_statistics_root")
         self.assertEqual(client_factory.return_value.models.generate_content.call_count, 2)
+
+    @override_settings(AI_REPORT_REQUEST_INTERVAL_SECONDS=0)
+    @patch("feedback.ai_stage_service.create_gemini_client")
+    def test_invalid_individual_findings_are_not_published_or_retried(self, client_factory):
+        payload = statistics_payload()
+        payload["descriptive_statistics"].append(
+            {
+                **finding_payload("unknown-reference"),
+                "rationale": "包含 103 這個未允許數字。",
+            }
+        )
+        payload["descriptive_statistics"][0]["evidence_refs"] = ["[evidence-e1]"]
+        client_factory.return_value.models.generate_content.return_value = provider_response(payload)
+
+        stage = generate_stage(self.snapshot, SurveyAIAnalysisStage.StageType.STATISTICS)
+
+        self.assertEqual(stage.status, SurveyAIAnalysisStage.Status.SUCCEEDED)
+        self.assertEqual(client_factory.return_value.models.generate_content.call_count, 1)
+        self.assertEqual(len(stage.output_json["descriptive_statistics"]), 1)
+        self.assertEqual(
+            stage.output_json["descriptive_statistics"][0]["evidence_refs"],
+            ["stats.wait.mean"],
+        )
+        self.assertEqual(stage.token_metrics["discarded_finding_count"], 1)
+        self.assertEqual(
+            stage.token_metrics["discarded_finding_reasons"],
+            {"invalid_evidence_refs": 1},
+        )
 
     @override_settings(AI_REPORT_REQUEST_INTERVAL_SECONDS=0)
     @patch("feedback.ai_stage_service.create_gemini_client")
@@ -390,8 +428,13 @@ class AIStageServiceTests(AIReportTestCase):
         self.assertEqual(set(sent_input), {"data_scope", "statistics_analysis", "text_analysis", "existing_improvements", "upstream_stage_ids"})
         self.assertNotIn("source_snapshot", sent_input)
         schema = call.kwargs["config"].response_schema
-        allowed_refs = schema["properties"]["improvement_drafts"]["items"]["properties"]["evidence_refs"]["items"]["enum"]
-        self.assertEqual(allowed_refs, ["stats.wait.mean"])
+        evidence_items = schema["properties"]["improvement_drafts"]["items"]["properties"]["evidence_refs"]["items"]
+        self.assertNotIn("enum", evidence_items)
+        self.assertIn("E001", evidence_items["description"])
+        self.assertIn(
+            "E001",
+            sent_input["statistics_analysis"]["_evidence_registry"],
+        )
         draft_id = synthesis.output_json["improvement_drafts"][0]["draft_id"]
         self.assertEqual(len(draft_id), 36)
         self.assertNotIn("draft_id", synthesis_payload()["improvement_drafts"][0])
@@ -431,23 +474,23 @@ class AIStageServiceTests(AIReportTestCase):
         self.assertEqual(validated["combined_findings"][0]["evidence_refs"], [evidence_id])
 
     @override_settings(AI_REPORT_REQUEST_INTERVAL_SECONDS=0)
-    def test_synthesis_rejects_unknown_evidence_ref(self):
+    def test_synthesis_discards_unknown_evidence_draft(self):
         self.create_upstream_stages()
         payload = synthesis_payload()
         payload["improvement_drafts"][0]["evidence_refs"] = ["missing.ref"]
         with patch("feedback.ai_stage_service.create_gemini_client") as client_factory:
             client_factory.return_value.models.generate_content.return_value = provider_response(payload)
-            with self.assertRaises(StageError) as raised:
-                generate_stage(self.snapshot, SurveyAIAnalysisStage.StageType.SYNTHESIS)
-        self.assertEqual(raised.exception.error_code, "schema_invalid")
+            result = generate_stage(self.snapshot, SurveyAIAnalysisStage.StageType.SYNTHESIS)
+        self.assertEqual(result.status, SurveyAIAnalysisStage.Status.SUCCEEDED)
         stage = self.snapshot.analysis_stages.filter(stage_type="synthesis").latest("id")
-        self.assertEqual(stage.status, SurveyAIAnalysisStage.Status.FAILED)
-        self.assertEqual(stage.token_metrics["retry_count"], 1)
+        self.assertEqual(stage.status, SurveyAIAnalysisStage.Status.SUCCEEDED)
+        self.assertEqual(stage.token_metrics["retry_count"], 0)
         self.assertEqual(
-            [attempt["validation_reason"] for attempt in stage.token_metrics["attempts"]],
-            ["invalid_evidence_refs", "invalid_evidence_refs"],
+            stage.token_metrics["discarded_finding_reasons"],
+            {"invalid_evidence_refs": 1},
         )
-        self.assertEqual(client_factory.return_value.models.generate_content.call_count, 2)
+        self.assertEqual(len(stage.output_json["improvement_drafts"]), 1)
+        self.assertEqual(client_factory.return_value.models.generate_content.call_count, 1)
 
     def test_cross_snapshot_cache_creates_reused_row_for_current_snapshot(self):
         original = self.create_success_stage(

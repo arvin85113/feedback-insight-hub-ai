@@ -3,7 +3,7 @@ from collections.abc import Mapping
 
 
 SCHEMA_VERSION = "2"
-PROMPT_VERSION = "2"
+PROMPT_VERSION = "5"
 STAGE_TYPE = "statistics"
 SECTIONS = (
     "descriptive_statistics",

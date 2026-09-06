@@ -243,12 +243,15 @@ def execute_deterministic_job(
     _assert_lease(job, lease_seconds)
     adapter = _build_adapter(job, external_inputs)
     profile = json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
-    implementation_version = digest(
-        {
-            "analysis": pipeline_version(profile),
-            "worker": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-        }
-    )
+    try:
+        implementation_version = digest(
+            {
+                "analysis": pipeline_version(profile),
+                "worker": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+            }
+        )
+    except FileNotFoundError as exc:
+        raise WorkerExecutionError("pipeline_resource_missing") from exc
     target = _target_identity(job, adapter, implementation_version)
 
     def build_result(input_fingerprint):

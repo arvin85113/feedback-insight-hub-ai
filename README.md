@@ -101,7 +101,7 @@ Evidence projection 同時限制筆數與估算 token 預算，並以 determinis
 ## 可靠性與安全設計
 
 - **Manager 權限與 CSRF**：AI status／generation／草稿匯入端點皆受角色限制；POST 使用 Django CSRF 防護。
-- **伺服器端金鑰**：`GOOGLE_API_KEY` 僅從伺服器環境變數載入，不寫入前端、資料庫或 repository。
+- **本機 Worker 金鑰**：`GOOGLE_API_KEY` 僅由執行 Gemini 的本機 Worker／EXE 外部環境載入，不寫入前端、資料庫、repository 或 Render。
 - **問卷隔離**：snapshot、stage 與草稿查詢同時綁定 survey，避免跨問卷引用。
 - **Structured Output**：使用 Gemini response schema，後端仍執行嚴格欄位與 evidence 驗證。
 - **Evidence-grounded 輸出**：模型只能引用 evidence registry 中存在的 ID；顯示數值由後端 evidence 解析。
@@ -196,7 +196,7 @@ ADMIN_PASSWORD=
 ```
 
 - `DATABASE_URL`：本機使用 SQLite 時可不設定；連線 PostgreSQL／Supabase 時才填入。
-- `GOOGLE_API_KEY`：只有產生新 Gemini 報告時需要。未設定時，問卷、統計、文字洞察與改善追蹤仍可運作，但不能產生新的 AI 報告。
+- `GOOGLE_API_KEY`：只有本機產生新 Gemini 報告時需要；Render 不設定此值。未設定時，問卷、統計、文字洞察與改善追蹤仍可運作，但不能產生新的 AI 報告。
 - `GEMINI_MODEL`：預設為 `gemini-2.5-flash`。
 - `ADMIN_*`：僅在執行 `ensure_superuser` 時需要。
 - Email 為選配；本機 Demo 可不設定 `EMAIL_HOST`。
@@ -221,11 +221,11 @@ python manage.py runserver
 
 工作台以 Supabase 問卷資料為準，分別列出最新資料、統計／文字與 Gemini 的產生時間及新舊狀態。可手動更新勾選問卷或全部待更新問卷，也可保存「開啟時檢查／自動更新」設定；勾選「第一段完成後執行 Gemini」才會使用 API 額度。每次新輸入會建立或重用不可變 Snapshot／Stage，資料庫只切換最新發布指標，舊結果仍供後續比較。外部資料須先經 mapping 匯入成一般問卷，與網站填答共用相同流程。
 
-Windows EXE 打包入口為 `scripts/build_desktop.ps1`；需要主控台錯誤資訊時可加 `-Diagnostic` 產生獨立診斷版。打包工具屬開發依賴，需先依 `requirements-desktop.txt` 安裝；完整 Parquet、manifest、憑證與 `.env` 都不會打包進 EXE。封裝版從程序環境或 EXE 同層的外部 `.env` 讀取 `DATABASE_URL`／`FEEDBACK_HUB_DATABASE_URL`；正式用途只接受 PostgreSQL，秘密檔須另行限制存取且不得提交 Git。
+Windows EXE 打包入口為 `scripts/build_desktop.ps1`；需要主控台錯誤資訊時可加 `-Diagnostic` 產生獨立診斷版。打包工具屬開發依賴，需先依 `requirements-desktop.txt` 安裝；完整 Parquet、manifest、憑證與 `.env` 都不會打包進 EXE。封裝版依序從程序環境、`FEEDBACK_HUB_ENV_FILE` 指定檔、EXE 同層或 `%LOCALAPPDATA%\FeedbackInsightHub\.env` 讀取 `DATABASE_URL`／`FEEDBACK_HUB_DATABASE_URL`；位於本專案 `dist` 內的開發封裝也可重用 Git 根目錄的外部 `.env`。正式用途只接受 PostgreSQL，秘密檔須另行限制存取且不得提交 Git。
 
 ## 部署現況
 
-Repository 保留 `render.yaml` 與 `build.sh`：Django 以 Gunicorn 啟動，WhiteNoise 處理靜態檔案，build 階段執行依賴安裝、`collectstatic` 與 migration。管理員建立及 `fix_empty_slugs` 是具資料寫入副作用的明確維護操作，不會在每次部署自動執行。正式環境可透過 `DATABASE_URL` 連接 PostgreSQL／Supabase。
+Repository 保留 `render.yaml` 與 `build.sh`：Django 以 Gunicorn 啟動，WhiteNoise 處理靜態檔案，build 階段執行依賴安裝、`collectstatic` 與 migration。Render 執行環境強制只讀已發布分析，且不配置 `GOOGLE_API_KEY`；管理員建立及 `fix_empty_slugs` 是具資料寫入副作用的明確維護操作，不會在每次部署自動執行。正式環境可透過 `DATABASE_URL` 連接 PostgreSQL／Supabase。
 
 現有 Render blueprint 只定義 Django web service，分析頁設定為只讀已發布結果。資料庫 migration `0015`～`0018` 已於 2026-09-06 套用至設定的 Supabase；提交 `43c9839` 已自動部署至 [feedback-insight-hub-ai.onrender.com](https://feedback-insight-hub-ai.onrender.com/)，Render 顯示 Live，公開首頁及靜態資源健康檢查均為 HTTP 200。
 

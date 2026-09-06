@@ -64,7 +64,13 @@ class AIWorkerTests(TestCase):
             provider_response(synthesis_payload()),
         ]
 
-        result = execute_ai_job(job, allow_paid_ai=True, lease_seconds=60)
+        progress = []
+        result = execute_ai_job(
+            job,
+            allow_paid_ai=True,
+            lease_seconds=60,
+            progress=lambda stage, percent: progress.append((stage, percent)),
+        )
 
         self.assertEqual(client_factory.return_value.models.generate_content.call_count, 3)
         self.assertEqual(set(result.stage_ids), {"statistics", "text", "synthesis"})
@@ -74,6 +80,9 @@ class AIWorkerTests(TestCase):
         self.assertEqual(state.published_ai_payload["executive_summary"], synthesis_payload()["executive_summary"])
         self.assertNotIn("_evidence_registry", repr(state.published_ai_payload))
         self.assertEqual(state.publication_manifest["ai"]["model_name"], settings.GEMINI_MODEL)
+        self.assertEqual(progress[0], ("產生統計解讀", 8))
+        self.assertEqual(progress[-1], ("Gemini 結果已發布", 100))
+        self.assertEqual([percent for _, percent in progress], sorted(percent for _, percent in progress))
         job.refresh_from_db()
         self.assertEqual(job.status, AnalysisJob.Status.SUCCEEDED)
 

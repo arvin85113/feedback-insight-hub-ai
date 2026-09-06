@@ -4,6 +4,7 @@ import json
 import logging
 import re
 import time
+from collections import Counter
 from collections.abc import Mapping
 
 from django.conf import settings
@@ -32,7 +33,6 @@ STAGE_MODULES = {
     SurveyAIAnalysisStage.StageType.TEXT: ai_text_service,
     SurveyAIAnalysisStage.StageType.SYNTHESIS: ai_synthesis_service,
 }
-STAGE_EVIDENCE_ENUM_LIMIT = 20
 SAFE_COMPACT_RETRY_ERRORS = frozenset({"schema_invalid", "output_truncated", "rate_limited"})
 UPSTREAM_TYPES = (
     SurveyAIAnalysisStage.StageType.STATISTICS,
@@ -330,19 +330,63 @@ def _profile_instruction(module, profile):
     return instruction
 
 
-def _bind_evidence_enum(schema, evidence_by_id):
-    allowed_ids = sorted(evidence_by_id)
-    if not allowed_ids:
+def _provider_evidence_projection(stage, stage_input, evidence_by_id):
+    """Give early stages short evidence codes without changing stored IDs.
+
+    Gemini rejects a dynamic enum in some nested statistics/text schemas.  Long
+    hash-like IDs are also easy for a model to mistype.  Send short aliases to
+    those two stages, accept either the advertised alias or an exact canonical
+    ID, and restore canonical IDs before anything is persisted.
+    """
+    if not evidence_by_id:
+        return stage_input, dict(evidence_by_id), {}
+
+    canonical_to_alias = {
+        canonical_id: f"E{index:03d}"
+        for index, canonical_id in enumerate(evidence_by_id, start=1)
+    }
+
+    def replace_ids(node):
+        if isinstance(node, str):
+            return canonical_to_alias.get(node, node)
+        if isinstance(node, list):
+            return [replace_ids(item) for item in node]
+        if isinstance(node, dict):
+            return {
+                canonical_to_alias.get(key, key): replace_ids(value)
+                for key, value in node.items()
+            }
+        return node
+
+    projected = replace_ids(copy.deepcopy(stage_input))
+    data_scope = projected.get("data_scope")
+    if isinstance(data_scope, dict):
+        # Names and timestamps with digits are display metadata, not AI
+        # evidence.  Hiding them prevents the model from copying ungrounded
+        # numbers into narrative fields that intentionally forbid numbers.
+        projected["data_scope"] = {"scope": "目前問卷；精確數值以證據資料為準。"}
+    provider_registry = dict(evidence_by_id)
+    alias_to_canonical = {
+        alias: canonical_id for canonical_id, alias in canonical_to_alias.items()
+    }
+    for alias, canonical_id in alias_to_canonical.items():
+        provider_registry[alias] = evidence_by_id[canonical_id]
+    return projected, provider_registry, alias_to_canonical
+
+
+def _describe_evidence_aliases(schema, aliases):
+    if not aliases:
         return schema
+    description = "只能填入下列短代碼：" + "、".join(aliases)
 
     def visit(node):
         if not isinstance(node, dict):
             return
         properties = node.get("properties")
         if isinstance(properties, dict):
-            evidence_refs = properties.get("evidence_refs")
-            if isinstance(evidence_refs, dict) and isinstance(evidence_refs.get("items"), dict):
-                evidence_refs["items"]["enum"] = allowed_ids
+            refs = properties.get("evidence_refs")
+            if isinstance(refs, dict) and isinstance(refs.get("items"), dict):
+                refs["items"]["description"] = description
         for value in node.values():
             if isinstance(value, dict):
                 visit(value)
@@ -354,7 +398,124 @@ def _bind_evidence_enum(schema, evidence_by_id):
     return schema
 
 
-def _attempt_config(module, profile, evidence_by_id, *, bind_evidence_enum):
+def _normalize_provider_refs(value, evidence_by_id):
+    if not isinstance(value, list):
+        return value
+    normalized = []
+    for item in value:
+        candidates = []
+        if isinstance(item, int) and item > 0:
+            candidates.append(f"E{item:03d}")
+        elif isinstance(item, str):
+            stripped = item.strip()
+            if stripped in evidence_by_id:
+                candidates.append(stripped)
+            for match in re.finditer(r"(?i)\bE(?:VIDENCE)?[\s_:-]*0*(\d+)\b", stripped):
+                candidates.append(f"E{int(match.group(1)):03d}")
+        for candidate in candidates:
+            if candidate in evidence_by_id and candidate not in normalized:
+                normalized.append(candidate)
+    return normalized
+
+
+def _sanitize_provider_payload(payload, stage, evidence_by_id, module, profile):
+    """Discard only unpublishable individual findings, never the evidence."""
+    if not isinstance(payload, Mapping):
+        return payload, {}
+    sanitized = copy.deepcopy(payload)
+    discarded = Counter()
+
+    if stage.stage_type in (
+        SurveyAIAnalysisStage.StageType.STATISTICS,
+        SurveyAIAnalysisStage.StageType.TEXT,
+    ):
+        if set(sanitized) != set(module.SECTIONS):
+            return sanitized, {}
+        for section in module.SECTIONS:
+            rows = sanitized.get(section)
+            if not isinstance(rows, list) or len(rows) > module.PROFILE_LIMITS[profile]["findings"]:
+                return sanitized, {}
+            accepted = []
+            for row in rows:
+                candidate = copy.deepcopy(row)
+                if isinstance(candidate, dict):
+                    candidate["evidence_refs"] = _normalize_provider_refs(
+                        candidate.get("evidence_refs"),
+                        evidence_by_id,
+                    )
+                try:
+                    _validate_stage_finding(
+                        candidate,
+                        evidence_by_id,
+                        max_refs=module.PROFILE_LIMITS[profile]["evidence_refs"],
+                        max_limitations=module.PROFILE_LIMITS[profile]["limitations"],
+                    )
+                except ValueError as exc:
+                    discarded[_safe_validation_reason(exc)] += 1
+                    continue
+                accepted.append(candidate)
+            sanitized[section] = accepted
+    elif stage.stage_type == SurveyAIAnalysisStage.StageType.SYNTHESIS:
+        for section in ("combined_findings", "improvement_drafts"):
+            rows = sanitized.get(section)
+            if not isinstance(rows, list):
+                continue
+            accepted = []
+            for row in rows:
+                candidate = copy.deepcopy(row)
+                if not isinstance(candidate, dict):
+                    accepted.append(candidate)
+                    continue
+                refs = _normalize_provider_refs(
+                    candidate.get("evidence_refs"),
+                    evidence_by_id,
+                )
+                if not refs:
+                    discarded["invalid_evidence_refs"] += 1
+                    continue
+                candidate["evidence_refs"] = refs
+                accepted.append(candidate)
+            sanitized[section] = accepted
+
+    return sanitized, dict(sorted(discarded.items()))
+
+
+def _restore_canonical_evidence_refs(validated, alias_to_canonical, evidence_by_id):
+    if not alias_to_canonical:
+        return validated
+
+    def visit(node):
+        if isinstance(node, dict):
+            refs = node.get("evidence_refs")
+            if isinstance(refs, list):
+                canonical_refs = [alias_to_canonical.get(ref, ref) for ref in refs]
+                node["evidence_refs"] = canonical_refs
+                if "evidence" in node:
+                    node["evidence"] = [evidence_by_id[ref] for ref in canonical_refs]
+            for value in node.values():
+                visit(value)
+        elif isinstance(node, list):
+            for item in node:
+                visit(item)
+
+    visit(validated)
+    return validated
+
+
+def _system_instruction(module, profile, *, evidence_aliases_bound):
+    instruction = f"{module.SYSTEM_INSTRUCTION}\n{_profile_instruction(module, profile)}"
+    if evidence_aliases_bound:
+        instruction += "\nevidence_refs 必須逐字複製 evidence_catalog 中 E 開頭的短代碼，不得自行改寫。"
+    return instruction
+
+
+def _attempt_config(
+    module,
+    profile,
+    *,
+    evidence_aliases,
+    evidence_aliases_bound,
+):
     if profile == COMPACT_PROFILE:
         thinking_budget = settings.GEMINI_COMPACT_THINKING_BUDGET
         output_tokens = settings.GEMINI_COMPACT_MAX_OUTPUT_TOKENS
@@ -362,10 +523,13 @@ def _attempt_config(module, profile, evidence_by_id, *, bind_evidence_enum):
         thinking_budget = settings.GEMINI_THINKING_BUDGET
         output_tokens = settings.GEMINI_MAX_OUTPUT_TOKENS
     response_schema = module.response_schema_for_profile(profile)
-    if bind_evidence_enum:
-        response_schema = _bind_evidence_enum(response_schema, evidence_by_id)
+    response_schema = _describe_evidence_aliases(response_schema, evidence_aliases)
     return types.GenerateContentConfig(
-        system_instruction=f"{module.SYSTEM_INSTRUCTION}\n{_profile_instruction(module, profile)}",
+        system_instruction=_system_instruction(
+            module,
+            profile,
+            evidence_aliases_bound=evidence_aliases_bound,
+        ),
         temperature=0.2,
         max_output_tokens=output_tokens,
         thinking_config=types.ThinkingConfig(thinking_budget=thinking_budget),
@@ -379,12 +543,22 @@ def _attempt_config(module, profile, evidence_by_id, *, bind_evidence_enum):
 
 
 def _run_stage_attempt(client, stage, stage_input, evidence_by_id, module, *, profile, retry_count):
-    contents = json.dumps(stage_input, ensure_ascii=False, separators=(",", ":"))
-    system_instruction = f"{module.SYSTEM_INSTRUCTION}\n{_profile_instruction(module, profile)}"
-    bind_evidence_enum = (
-        stage.stage_type == SurveyAIAnalysisStage.StageType.SYNTHESIS
-        and 0 < len(evidence_by_id) <= STAGE_EVIDENCE_ENUM_LIMIT
+    provider_input, provider_evidence_by_id, alias_to_canonical = _provider_evidence_projection(
+        stage,
+        stage_input,
+        evidence_by_id,
     )
+    contents = json.dumps(provider_input, ensure_ascii=False, separators=(",", ":"))
+    evidence_aliases_bound = bool(alias_to_canonical)
+    system_instruction = _system_instruction(
+        module,
+        profile,
+        evidence_aliases_bound=evidence_aliases_bound,
+    )
+    # Dynamic enum constraints were rejected by Gemini for this schema.  The
+    # provider sees short aliases plus a schema description; the backend still
+    # performs the authoritative allow-list validation.
+    bind_evidence_enum = False
     metrics = {
         "total_evidence_count": len(evidence_by_id),
         "selected_evidence_count": len(evidence_by_id),
@@ -402,6 +576,7 @@ def _run_stage_attempt(client, stage, stage_input, evidence_by_id, module, *, pr
         "generation_profile": profile,
         "retry_count": retry_count,
         "evidence_enum_bound": bind_evidence_enum,
+        "evidence_aliases_bound": evidence_aliases_bound,
     }
     started = time.perf_counter()
     try:
@@ -412,8 +587,8 @@ def _run_stage_attempt(client, stage, stage_input, evidence_by_id, module, *, pr
             config=_attempt_config(
                 module,
                 profile,
-                evidence_by_id,
-                bind_evidence_enum=bind_evidence_enum,
+                evidence_aliases=list(alias_to_canonical),
+                evidence_aliases_bound=evidence_aliases_bound,
             ),
         )
         metrics["generation_ms"] = round((time.perf_counter() - started) * 1000)
@@ -430,20 +605,34 @@ def _run_stage_attempt(client, stage, stage_input, evidence_by_id, module, *, pr
                 http_status=metrics["http_status"],
             )
         payload = _response_payload(response)
+        payload, discarded_reasons = _sanitize_provider_payload(
+            payload,
+            stage,
+            provider_evidence_by_id,
+            module,
+            profile,
+        )
+        metrics["discarded_finding_reasons"] = discarded_reasons
+        metrics["discarded_finding_count"] = sum(discarded_reasons.values())
         if stage.stage_type == SurveyAIAnalysisStage.StageType.SYNTHESIS:
             validated = module.validate_output(
                 payload,
-                evidence_by_id,
+                provider_evidence_by_id,
                 stage.input_hash,
                 profile=profile,
             )
         else:
             validated = module.validate_output(
                 payload,
-                evidence_by_id,
+                provider_evidence_by_id,
                 _validate_stage_finding,
                 profile=profile,
             )
+        validated = _restore_canonical_evidence_refs(
+            validated,
+            alias_to_canonical,
+            evidence_by_id,
+        )
         validated["_evidence_registry"] = evidence_by_id
         return validated, metrics
     except ValueError as exc:
@@ -503,6 +692,9 @@ def _stage_token_metrics(attempts, *, profile=None, retry_count=0):
         "candidates_token_count": final.get("candidates_token_count"),
         "thinking_token_count": final.get("thinking_token_count"),
         "total_token_count": final.get("total_token_count"),
+        "evidence_aliases_bound": final.get("evidence_aliases_bound", False),
+        "discarded_finding_count": final.get("discarded_finding_count", 0),
+        "discarded_finding_reasons": final.get("discarded_finding_reasons", {}),
         "attempts": attempts,
     }
 

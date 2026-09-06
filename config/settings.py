@@ -25,13 +25,18 @@ AI_REPORT_COMPACT_MAX_ESTIMATED_INPUT_TOKENS = int(
 )
 AI_REPORT_RATE_LIMIT_BACKOFF_SECONDS = float(os.getenv("AI_REPORT_RATE_LIMIT_BACKOFF_SECONDS", "6"))
 AI_REPORT_REQUEST_INTERVAL_SECONDS = float(os.getenv("AI_REPORT_REQUEST_INTERVAL_SECONDS", "6"))
-ANALYSIS_READ_PUBLISHED_ONLY = os.getenv("ANALYSIS_READ_PUBLISHED_ONLY", "False").lower() == "true"
+RENDER_EXTERNAL_HOSTNAME = os.getenv("RENDER_EXTERNAL_HOSTNAME", "").strip()
+_IS_RENDER_RUNTIME = bool(RENDER_EXTERNAL_HOSTNAME) or os.getenv("RENDER", "").lower() == "true"
+# Render must never fall back to request-time statistics, NLP, or Gemini even
+# when an existing service has not synchronized the render.yaml environment.
+ANALYSIS_READ_PUBLISHED_ONLY = _IS_RENDER_RUNTIME or (
+    os.getenv("ANALYSIS_READ_PUBLISHED_ONLY", "False").lower() == "true"
+)
 ANALYSIS_AUTO_AI_ENABLED = os.getenv("ANALYSIS_AUTO_AI_ENABLED", "False").lower() == "true"
 
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-secret-key-change-me")
 DEBUG = os.getenv("DEBUG", "True").lower() == "true"
 ALLOWED_HOSTS = [host for host in os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1,testserver,.onrender.com").split(",") if host]
-RENDER_EXTERNAL_HOSTNAME = os.getenv("RENDER_EXTERNAL_HOSTNAME", "").strip()
 if RENDER_EXTERNAL_HOSTNAME and RENDER_EXTERNAL_HOSTNAME not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
 CSRF_TRUSTED_ORIGINS = [

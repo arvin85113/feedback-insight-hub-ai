@@ -64,25 +64,45 @@ class FeedbackInsightDesktop:
                 dpg.add_theme_color(dpg.mvThemeCol_WindowBg, (244, 246, 251))
                 dpg.add_theme_color(dpg.mvThemeCol_ChildBg, (255, 255, 255))
                 dpg.add_theme_color(dpg.mvThemeCol_Text, (30, 40, 61))
-                dpg.add_theme_color(dpg.mvThemeCol_Button, (75, 94, 208))
-                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (91, 110, 224))
-                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (60, 77, 178))
                 dpg.add_theme_color(dpg.mvThemeCol_FrameBg, (232, 235, 243))
+                dpg.add_theme_color(dpg.mvThemeCol_FrameBgHovered, (218, 224, 237))
+                dpg.add_theme_color(dpg.mvThemeCol_FrameBgActive, (205, 214, 232))
+                dpg.add_theme_color(dpg.mvThemeCol_CheckMark, (45, 73, 158))
+                dpg.add_theme_color(dpg.mvThemeCol_Border, (151, 163, 184))
+                dpg.add_theme_color(dpg.mvThemeCol_TableHeaderBg, (218, 225, 238))
+                dpg.add_theme_color(dpg.mvThemeCol_TableBorderStrong, (128, 141, 163))
+                dpg.add_theme_color(dpg.mvThemeCol_TableBorderLight, (181, 190, 207))
+                dpg.add_theme_color(dpg.mvThemeCol_TableRowBg, (255, 255, 255))
+                dpg.add_theme_color(dpg.mvThemeCol_TableRowBgAlt, (240, 243, 249))
                 dpg.add_theme_style(dpg.mvStyleVar_WindowPadding, 24, 20)
                 dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 10, 7)
                 dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 6)
                 dpg.add_theme_style(dpg.mvStyleVar_ChildRounding, 10)
                 dpg.add_theme_style(dpg.mvStyleVar_ItemSpacing, 9, 7)
+            with dpg.theme_component(dpg.mvButton):
+                dpg.add_theme_color(dpg.mvThemeCol_Text, (255, 255, 255))
+                dpg.add_theme_color(dpg.mvThemeCol_Button, (48, 73, 184))
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (64, 91, 207))
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (37, 57, 150))
+            with dpg.theme_component(dpg.mvButton, enabled_state=False):
+                # Busy-state buttons remain readable without looking active.
+                dpg.add_theme_color(dpg.mvThemeCol_Text, (79, 91, 116))
+                dpg.add_theme_color(dpg.mvThemeCol_Button, (207, 214, 228))
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (207, 214, 228))
+                dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (207, 214, 228))
+                dpg.add_theme_color(dpg.mvThemeCol_Border, (168, 178, 198))
         dpg.bind_theme(theme)
         font_path = self._font_path()
         if font_path:
             with dpg.font_registry():
-                font = dpg.add_font(str(font_path), 17)
+                font = dpg.add_font(str(font_path), 18)
             dpg.bind_font(font)
 
     def _build(self):
         with dpg.window(label="工作未完成", modal=True, show=False, tag="error_dialog", width=540, height=190):
-            dpg.add_text("", tag="error_message", wrap=490)
+            # Modal windows use a dark native background in some packaged
+            # Dear PyGui builds, so keep the message contrast explicit.
+            dpg.add_text("", tag="error_message", wrap=490, color=(238, 242, 252))
             dpg.add_spacer(height=14)
             dpg.add_button(label="關閉", callback=lambda: dpg.configure_item("error_dialog", show=False))
 
@@ -365,7 +385,9 @@ class FeedbackInsightDesktop:
             self._configure_style()
             self._build()
             dpg.create_viewport(
-                title="Feedback Insight Hub｜本機分析工作台", width=1380, height=760,
+                # Keep the native Windows title ASCII-only; localized text stays
+                # inside the UTF-8/CJK-font-controlled application canvas.
+                title="Feedback Insight Hub", width=1380, height=760,
                 min_width=1080, min_height=620,
             )
             dpg.setup_dearpygui()

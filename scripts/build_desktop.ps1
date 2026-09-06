@@ -8,6 +8,29 @@ $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $PythonPath = Join-Path $ProjectRoot $Python
 $BuildName = if ($Diagnostic) { "FeedbackInsightHubDiagnostic" } else { "FeedbackInsightHub" }
 $WindowMode = if ($Diagnostic) { "--console" } else { "--windowed" }
+$PipelineSourceFiles = @(
+    "feedback\analysis_adapters.py",
+    "feedback\analysis_input.py",
+    "feedback\analysis_worker.py",
+    "feedback\background_analysis.py",
+    "feedback\local_service.py",
+    "feedback\models.py",
+    "feedback\text_pipeline.py",
+    "feedback\ai_snapshot_service.py",
+    "feedback\ai_stage_service.py",
+    "feedback\ai_statistics_service.py",
+    "feedback\ai_text_service.py",
+    "feedback\ai_synthesis_service.py"
+)
+$PipelineDataArgs = @()
+foreach ($SourceFile in $PipelineSourceFiles) {
+    $SourcePath = Join-Path $ProjectRoot $SourceFile
+    if (-not (Test-Path -LiteralPath $SourcePath -PathType Leaf)) {
+        throw "找不到分析管線來源：$SourcePath"
+    }
+    $PipelineDataArgs += "--add-data"
+    $PipelineDataArgs += "$SourcePath;feedback"
+}
 
 if (-not (Test-Path -LiteralPath $PythonPath)) {
     throw "找不到專案 Python：$PythonPath"
@@ -29,6 +52,7 @@ try {
         --specpath (Join-Path $ProjectRoot "build") `
         --collect-data feedback `
         --collect-all dearpygui `
+        @PipelineDataArgs `
         --hidden-import config.settings `
         --hidden-import accounts `
         --hidden-import accounts.apps `

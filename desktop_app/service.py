@@ -332,7 +332,9 @@ class DesktopService:
             connection.ensure_connection()
             if getattr(sys, "frozen", False) and connection.vendor != "postgresql":
                 raise DesktopServiceError(
-                    "尚未設定 Supabase PostgreSQL 連線；請使用 EXE 外部環境設定，憑證不會打包進程式。"
+                    "尚未設定 Supabase PostgreSQL 連線。請在 EXE 同層或 "
+                    "%LOCALAPPDATA%\\FeedbackInsightHub\\.env 設定 DATABASE_URL（或 "
+                    "FEEDBACK_HUB_DATABASE_URL）；憑證不會打包進程式。"
                 )
             submission_summary = (
                 FeedbackSubmission.objects.filter(
@@ -535,6 +537,10 @@ class DesktopService:
                     retryable=exc.retryable,
                     retry_delay_seconds=30 if exc.retryable else 0,
                 )
+                if exc.code == "pipeline_resource_missing":
+                    raise DesktopServiceError(
+                        "本機分析元件不完整，請使用最新的完整應用程式資料夾重新執行。"
+                    ) from exc
                 raise DesktopServiceError(f"問卷分析失敗（{exc.code}）") from exc
             except Exception as exc:
                 code = f"desktop_worker_{type(exc).__name__.lower()}"[:64]
@@ -642,7 +648,22 @@ class DesktopService:
             with self._active_job_lock:
                 self._active_job_id = job.pk
             try:
-                execute_ai_job(job, allow_paid_ai=True, lease_seconds=lease_seconds)
+                start_percent = (index - 1) * 100 / len(targets)
+                width_percent = 100 / len(targets)
+
+                def ai_progress(stage, percent):
+                    if progress:
+                        progress(
+                            f"{status.title}｜{stage}",
+                            int(start_percent + width_percent * percent / 100),
+                        )
+
+                execute_ai_job(
+                    job,
+                    allow_paid_ai=True,
+                    lease_seconds=lease_seconds,
+                    progress=ai_progress,
+                )
             except AIWorkerCancelled:
                 finish_cancelled_job(job.pk, job.lease_token)
                 cancelled = True
@@ -658,6 +679,11 @@ class DesktopService:
                         retryable=exc.retryable,
                         retry_delay_seconds=30 if exc.retryable else 0,
                     )
+                if exc.code == "ai_schema_invalid":
+                    raise DesktopServiceError(
+                        "Gemini 回覆未通過 evidence／格式驗證，結果未發布；"
+                        "系統不會自動重呼付費 API。"
+                    ) from exc
                 raise DesktopServiceError(f"Gemini 分析失敗（{exc.code}）") from exc
             except Exception as exc:
                 code = f"desktop_ai_{type(exc).__name__.lower()}"[:64]

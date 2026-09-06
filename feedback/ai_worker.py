@@ -49,7 +49,7 @@ def _checkpoint(job, lease_seconds):
         raise AIWorkerSuperseded
 
 
-def execute_ai_job(job, *, allow_paid_ai=False, lease_seconds=600):
+def execute_ai_job(job, *, allow_paid_ai=False, lease_seconds=600, progress=None):
     """Generate the three existing AI stages and publish synthesis.
 
     The caller must explicitly authorize paid API use.  Provider uncertainty is
@@ -89,20 +89,27 @@ def execute_ai_job(job, *, allow_paid_ai=False, lease_seconds=600):
     snapshot = state.published_snapshot
 
     stages = {}
+    stage_steps = (
+        (SurveyAIAnalysisStage.StageType.STATISTICS, "產生統計解讀", 8, 30),
+        (SurveyAIAnalysisStage.StageType.TEXT, "產生文字洞察", 38, 60),
+        (SurveyAIAnalysisStage.StageType.SYNTHESIS, "產生綜合解析", 68, 90),
+    )
     try:
-        for stage_type in (
-            SurveyAIAnalysisStage.StageType.STATISTICS,
-            SurveyAIAnalysisStage.StageType.TEXT,
-            SurveyAIAnalysisStage.StageType.SYNTHESIS,
-        ):
+        for stage_type, label, start_percent, end_percent in stage_steps:
             _checkpoint(job, lease_seconds)
+            if progress:
+                progress(label, start_percent)
             stages[stage_type] = generate_stage(snapshot, stage_type)
+            if progress:
+                progress(f"{label}完成", end_percent)
     except StageError as exc:
         # A provider timeout or connection loss has an uncertain billing/result
         # state.  Do not turn it into an automatic whole-job retry.
         raise AIWorkerExecutionError(f"ai_{exc.error_code}", retryable=False) from exc
 
     _checkpoint(job, lease_seconds)
+    if progress:
+        progress("驗證並發布 Gemini 結果", 95)
     publication = publish_analysis_stages(
         job.pk,
         job.lease_token,
@@ -116,6 +123,8 @@ def execute_ai_job(job, *, allow_paid_ai=False, lease_seconds=600):
     )
     if publication.stale:
         raise AIWorkerSuperseded
+    if progress:
+        progress("Gemini 結果已發布", 100)
     return AIWorkerRunResult(
         job_id=job.pk,
         snapshot_id=snapshot.pk,

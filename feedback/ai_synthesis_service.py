@@ -7,7 +7,7 @@ from collections.abc import Mapping
 
 
 SCHEMA_VERSION = "3"
-PROMPT_VERSION = "2"
+PROMPT_VERSION = "3"
 STAGE_TYPE = "synthesis"
 PRIORITIES = {"high", "medium", "low"}
 _UNTRUSTED_NUMBER_RE = re.compile(r"\d|百分之[零〇一二兩三四五六七八九十百千萬億]+")

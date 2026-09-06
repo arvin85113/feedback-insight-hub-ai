@@ -220,8 +220,10 @@ class DesktopDatabaseServiceTests(TestCase):
             SurveyAnalysisState,
         )
 
-        def publish_fixture(job, *, allow_paid_ai, lease_seconds):
+        def publish_fixture(job, *, allow_paid_ai, lease_seconds, progress=None):
             self.assertTrue(allow_paid_ai)
+            if progress:
+                progress("產生測試解析", 50)
             snapshot = SurveyAnalysisState.objects.get(survey=self.survey).published_snapshot
             stage = SurveyAIAnalysisStage.objects.create(
                 snapshot=snapshot,
