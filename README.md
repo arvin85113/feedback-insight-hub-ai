@@ -227,7 +227,7 @@ Windows EXE 打包入口為 `scripts/build_desktop.ps1`；需要主控台錯誤�
 
 Repository 保留 `render.yaml` 與 `build.sh`：Django 以 Gunicorn 啟動，WhiteNoise 處理靜態檔案，build 階段執行依賴安裝、`collectstatic` 與 migration。管理員建立及 `fix_empty_slugs` 是具資料寫入副作用的明確維護操作，不會在每次部署自動執行。正式環境可透過 `DATABASE_URL` 連接 PostgreSQL／Supabase。
 
-現有 Render blueprint 只定義 Django web service，分析頁設定為只讀已發布結果。資料庫 migration `0015`～`0018` 已於 2026-09-06 套用至設定的 Supabase；Render 程式版本尚未在本回合部署。
+現有 Render blueprint 只定義 Django web service，分析頁設定為只讀已發布結果。資料庫 migration `0015`～`0018` 已於 2026-09-06 套用至設定的 Supabase；提交 `43c9839` 已自動部署至 [feedback-insight-hub-ai.onrender.com](https://feedback-insight-hub-ai.onrender.com/)，Render 顯示 Live，公開首頁及靜態資源健康檢查均為 HTTP 200。
 
 ## 專案結構
 

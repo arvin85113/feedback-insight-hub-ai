@@ -14,7 +14,7 @@
 - 外部匯入來源拆成 namespace、穩定 record key、內容雜湊與來源版本；同鍵不同內容列為衝突，不覆寫既有資料。
 - migration `0015`～`0018` 已套用至設定的 Supabase；套用前備份位於 Git 忽略的受限本機資料夾。核心 3／8／150／710 列前後一致。
 - 隔離 SQLite 的 `feedback`／`accounts` 受影響範圍 204 項通過；另以臨時 PostgreSQL 17.11 隔離叢集通過 2 項多 Worker 原子領取、租約接手及舊租約發布拒絕測試，測試產物已清理。
-- Render blueprint 改用現行 `runtime` 欄位；build 不再重設管理員帳密或執行一次性 slug 修復，並補上 Render 反向代理 HTTPS、動態 hostname 與安全 Cookie 設定。尚未正式部署。
+- Render blueprint 改用現行 `runtime` 欄位；build 不再重設管理員帳密或執行一次性 slug 修復，並補上 Render 反向代理 HTTPS、動態 hostname 與安全 Cookie 設定。提交 `43c9839` 已自動部署為 Live，公開首頁與靜態資源驗證正常。
 
 ---
 

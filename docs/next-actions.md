@@ -1,6 +1,6 @@
 # Feedback Insight Hub 下一階段行動計畫
 
-> 狀態：執行中；各階段仍以本文件的「實作進度」及測試證據判定。資料庫 migration 已套用不代表 Render 程式已部署。
+> 狀態：執行中；各階段仍以本文件的「實作進度」及測試證據判定。migration 與程式部署一般仍須分別查證；本次實際狀態記於下方。
 > 基準日期：2026-09-05。執行時仍以實際程式、Git 差異及驗證證據為準。
 
 ## 實作進度（2026-09-06）
@@ -12,7 +12,7 @@
 - Django 回覆建立、Answer／題目／詞典變更可更新版本並合併待處理工作；既有批次匯入改為每批流程只排一個等價工作。發布時會在短交易內重查租約與版本，拒絕過期 Worker，且 mock 階段不得正式發布。
 - 第三階段第一批已實作：`run_analysis_worker_once` 僅領取 deterministic 工作，可從 Answer 或已登錄固定版本 Parquet 產生無原始評論的版本化本機產物；快取與輸入完整性通過後建立／重用 Snapshot，再以短交易發布統計／文字指標。`run_analysis_worker` 可供程序管理員持續輪詢，仍未安裝成 Windows／雲端服務。
 - 第四階段第一批已實作：`run_ai_worker_once` 只領取 AI synthesis 工作，未帶 `--allow-paid-ai` 時不領取；沿用既有三階段 schema／遮蔽證據與 Snapshot，provider timeout 等不確定狀態不盲目重呼。僅以 mock provider 測試，未呼叫真實 Gemini。
-- 第五階段第一批已實作：發布交易把有限的統計／文字及 AI 展示副本保存於 `SurveyAnalysisState`，排除大型 evidence catalog；統計、文字及 AI 狀態端點在 `ANALYSIS_READ_PUBLISHED_ONLY=True` 時只讀這些副本，不觸發 request-time 分析。同步 POST 在此模式只排背景工作；頁面顯示最新／等待新版及 AI 版本差異。設定預設關閉，尚未部署。
+- 第五階段第一批已實作：發布交易把有限的統計／文字及 AI 展示副本保存於 `SurveyAnalysisState`，排除大型 evidence catalog；統計、文字及 AI 狀態端點在 `ANALYSIS_READ_PUBLISHED_ONLY=True` 時只讀這些副本，不觸發 request-time 分析。同步 POST 在此模式只排背景工作；頁面顯示最新／等待新版及 AI 版本差異。本機預設關閉，Render blueprint 已啟用並部署。
 - `ANALYSIS_AUTO_AI_ENABLED=True` 時，AI 工作只會在 deterministic 發布交易成功後排入；AI Worker 會在 provider 呼叫前再次核對統計與文字版本，防止以舊 Snapshot 冒充新版分析。
 - 2026-09-06 已校正桌面方向：正式資料統一保存於 Supabase 的問卷模型；桌面工作台列出各問卷的資料量、最新資料／分析時間及新舊狀態，可手動或依本機設定更新統計／文字結果。Parquet 驗證與 mock 預覽降為匯入前工具，不再是正式產品主畫面。
 - 2026-09-06 桌面流程已拆成兩段：第一段發布統計／文字 Snapshot，第二段在管理員勾選 API 額度選項後執行 Gemini 並發布新 Stage；列表分別顯示兩段時間與新舊狀態。隔離測試驗證未啟用時不觸及 AI worker，啟用後保留原 Snapshot 並新增 synthesis Stage。
@@ -21,7 +21,7 @@
 - Windows 封裝已改用不依賴 Tcl/Tk 的 Dear PyGui；校正後 one-folder EXE 位於 `dist/FeedbackInsightHub/FeedbackInsightHub.exe`，smoke-test exit code 為 0，未包含 `.env`。新版 Supabase 畫面的實際正式連線、跨機器驗收、安裝包及程式碼簽章仍未完成。
 - `0015`～`0018` 已套用至設定的 Supabase：新增匯入來源、分析工作／發布狀態與 v2 生命週期欄位，既有 3／8／150／710 筆核心列數保持一致。程序服務安裝、Render 部署與真實 Gemini 驗收仍未完成。
 - 已新增 `config.settings_postgres_test` 與 PostgreSQL 專用雙 Worker 測試，強制使用獨立 `TEST_DATABASE_URL`、隔離確認旗標及測試用途資料庫名稱，避免誤接 `DATABASE_URL`。2026-09-06 使用臨時 PostgreSQL 17.11 隔離叢集執行 2 項測試，雙 Worker 原子領取、租約接手及舊租約發布拒絕均通過；測試資料庫、叢集與下載檔已停止並刪除，未連 Supabase。SQLite 跳過仍不視為通過。
-- Render 上線前檢查已移除 build 階段的 `ensure_superuser` 與 `fix_empty_slugs`，避免每次部署重設帳密或執行一次性資料修復；依賴、靜態檔與 migration 保留，並補齊反向代理 HTTPS、安全 Cookie 與動態 Render hostname 設定。正式部署仍未執行。
+- Render 上線前檢查已移除 build 階段的 `ensure_superuser` 與 `fix_empty_slugs`，避免每次部署重設帳密或執行一次性資料修復；依賴、靜態檔與 migration 保留，並補齊反向代理 HTTPS、安全 Cookie 與動態 Render hostname 設定。提交 `43c9839` 已於 2026-09-06 23:20:40（GMT+8）自動部署為 Live，耗時 1 分 35 秒；公開首頁及 CSS 為 HTTP 200，暖機首頁三次中位數 0.141 秒，管理頁未登入時正確導向登入，HTTP 正確轉 HTTPS。
 
 隔離 PostgreSQL 可用後，只執行 `feedback.test_analysis_jobs_postgres`；使用 `config.settings_postgres_test`，並明確提供 `TEST_DATABASE_URL` 與 `TEST_DATABASE_CONFIRM_ISOLATED=1`。該角色必須能讓 Django 測試流程建立及銷毀測試資料庫，且不得指向正式 Supabase。
 
