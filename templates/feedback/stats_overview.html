@@ -239,7 +239,7 @@
                                 <div class="empty-card">
                                     <div>
                                         <h3>目前沒有符合此方法的組合</h3>
-                                        <p>請確認題目資料型態與回覆數是否足夠。</p>
+                                        <p>{{ group.empty_help|default:"請確認題目資料型態與回覆數是否足夠。" }}</p>
                                     </div>
                                 </div>
                             {% endfor %}

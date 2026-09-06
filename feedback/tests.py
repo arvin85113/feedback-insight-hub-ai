@@ -417,6 +417,18 @@ class ExistingAnalysisRegressionTests(AIReportTestCase):
         self.assertContains(response, "相關係數 r")
         self.assertContains(response, "p &lt; 0.001")
 
+    def test_stats_page_explains_where_ordinal_scale_comparisons_are_shown(self):
+        self.client.force_login(self.manager)
+        payload = {"charts": [], "question_analysis": [], "inferential_analysis": []}
+        url = f"{reverse('feedback:stats-overview')}?survey={self.survey.slug}"
+
+        with patch("feedback.views.local_service.get_stats_payload", return_value=payload):
+            response = self.client.get(url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "1–10 量表屬順序資料")
+        self.assertContains(response, "分組結果請查看「排序與關聯」")
+
     def test_p_value_keeps_precision_before_display_formatting(self):
         self.assertEqual(_round_p_value(0.03749), 0.03749)
         self.assertEqual(_round_p_value(0.0000412), 0.000041)

@@ -654,6 +654,7 @@ class StatsOverviewView(DashboardBaseMixin, TemplateView):
                 "badge": "平均數比較", "badge_class": "method-mean",
                 "title": "名目分組 × 連續結果",
                 "desc": "2 組跑 Welch t-test，3-5 組跑單因子 ANOVA，並附上效果量。",
+                "empty_help": "此問卷沒有可搭配的連續型（小數）題目；1–10 量表屬順序資料，分組結果請查看「排序與關聯」。",
                 "families": ("mean_comparison",),
             },
             {
@@ -661,6 +662,7 @@ class StatsOverviewView(DashboardBaseMixin, TemplateView):
                 "badge": "類別關聯", "badge_class": "method-category",
                 "title": "名目 × 名目",
                 "desc": "單選名目題之間跑卡方檢定；多選題只做多重回應頻率，不當分組。",
+                "empty_help": "至少需要兩個具有效回覆的單選名目題；多選題不會作為卡方分組欄位。",
                 "families": ("categorical_association",),
             },
             {
@@ -668,6 +670,7 @@ class StatsOverviewView(DashboardBaseMixin, TemplateView):
                 "badge": "順序 / 相關", "badge_class": "method-rank",
                 "title": "排序與關聯",
                 "desc": "名目 × 順序跑非母數檢定；連續 × 連續跑 Pearson，涉及順序資料跑 Spearman。",
+                "empty_help": "需要可比較的順序或數值題目，且各組有效回覆須符合檢定最低條件。",
                 "families": ("nonparametric_rank", "correlation"),
             },
         ]
