@@ -67,6 +67,16 @@
                         <span class="toggle-desc">未開啟則儲存為草稿，可稍後從問卷管理頁啟用</span>
                     </div>
                 </label>
+                <label class="toggle-label">
+                    <div class="toggle-wrapper">
+                        {{ survey_edit_form.analysis_enabled }}
+                        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                    </div>
+                    <div class="toggle-text">
+                        <span class="toggle-title">納入分析</span>
+                        <span class="toggle-desc">關閉時停止安排新分析，既有發布結果仍保留</span>
+                    </div>
+                </label>
             </div>
             <div class="setting-block">
                 <div class="setting-block-header">通知設定</div>
@@ -100,6 +110,7 @@
                             <div class="question-card-title-row">
                                 <strong>{{ question.title }}</strong>
                                 <span class="pill">{{ question.get_kind_display }} / {{ question.get_data_type_display }}</span>
+                                {% if not question.is_active %}<span class="pill">已停用</span>{% endif %}
                             </div>
                             {% if question.help_text %}
                                 <span class="question-card-preview">{{ question.help_text }}</span>
@@ -126,12 +137,21 @@
                         </form>
                         <button type="button" class="button button-ghost button-small edit-question-btn"
                                 data-question-id="{{ question.id }}">編輯</button>
-                        <form method="post" style="display:inline">
-                            {% csrf_token %}
-                            <input type="hidden" name="action" value="delete-question">
-                            <input type="hidden" name="question_id" value="{{ question.id }}">
-                            <button type="submit" class="button button-danger button-small">刪除</button>
-                        </form>
+                        {% if question.is_active %}
+                            <form method="post" style="display:inline">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="delete-question">
+                                <input type="hidden" name="question_id" value="{{ question.id }}">
+                                <button type="submit" class="button button-danger button-small">刪除／停用</button>
+                            </form>
+                        {% else %}
+                            <form method="post" style="display:inline">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="restore-question">
+                                <input type="hidden" name="question_id" value="{{ question.id }}">
+                                <button type="submit" class="button button-ghost button-small">恢復</button>
+                            </form>
+                        {% endif %}
                     </div>
                 </div>
                 <div class="question-response-preview" aria-label="題目預覽">

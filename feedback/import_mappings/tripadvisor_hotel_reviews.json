@@ -1,0 +1,133 @@
+{
+  "mapping_version": "tripadvisor-hotel-reviews-v1",
+  "dataset": {
+    "name": "jniimi/tripadvisor-review-rating",
+    "version": "1a1b7077c997eb496e402c6e9c97d91989eb24bb",
+    "source_url": "https://huggingface.co/datasets/jniimi/tripadvisor-review-rating",
+    "license": "Apache-2.0"
+  },
+  "survey": {
+    "title": "TripAdvisor 飯店旅客多構面評價分析",
+    "slug": "tripadvisor-hotel-review-ratings",
+    "description": "主要展示資料來源分為三層：評論平台來源為 TripAdvisor；原始研究資料為 Li、Ott、Cardie（2013）之飯店評論研究資料；Hugging Face 整理版本為 jniimi/tripadvisor-review-rating，revision 1a1b7077c997eb496e402c6e9c97d91989eb24bb，default/train。授權標記與資料卡皆為 Apache-2.0，但上傳者標記不等於完整權利保證。正式流程匯入固定版本清理後的全部有效唯一資料，不按星級或飯店平衡；seed=42 抽樣僅屬歷史相容性驗證。本系統不是 TripAdvisor 官方系統，資料不代表即時 TripAdvisor 市場。評論原文不翻譯、不改寫、不截斷，改善建議僅供教學情境模擬。清理前後筆數、缺失值、匯入筆數與時間由匯入批次保存。",
+    "is_active": false
+  },
+  "timestamp_field": "post_date",
+  "deduplication_fields": [
+    "source_identity_sha256"
+  ],
+  "source_item_id_field": "",
+  "metadata_fields": [
+    "hotel_id"
+  ],
+  "huggingface_preparation": {
+    "config": "default",
+    "split": "train",
+    "output_fields": [
+      "hotel_id",
+      "title",
+      "text",
+      "overall",
+      "cleanliness",
+      "value",
+      "location",
+      "rooms",
+      "sleep_quality",
+      "post_date"
+    ],
+    "required_fields": [
+      "overall",
+      "text"
+    ],
+    "identity_hash_source_fields": [
+      "hotel_id",
+      "user_id",
+      "post_date"
+    ],
+    "identity_hash_output_field": "source_identity_sha256"
+  },
+  "questions": [
+    {
+      "source_field": "overall",
+      "title": "整體評分 Overall rating",
+      "kind": "scale",
+      "data_type": "ordinal",
+      "required": true,
+      "normalizers": ["integer"],
+      "options": ["1", "2", "3", "4", "5"]
+    },
+    {
+      "source_field": "cleanliness",
+      "title": "清潔度 Cleanliness",
+      "kind": "scale",
+      "data_type": "ordinal",
+      "required": false,
+      "normalizers": ["integer"],
+      "options": ["1", "2", "3", "4", "5"]
+    },
+    {
+      "source_field": "value",
+      "title": "性價比 Value",
+      "kind": "scale",
+      "data_type": "ordinal",
+      "required": false,
+      "normalizers": ["integer"],
+      "options": ["1", "2", "3", "4", "5"]
+    },
+    {
+      "source_field": "location",
+      "title": "地點評分 Location",
+      "kind": "scale",
+      "data_type": "ordinal",
+      "required": false,
+      "normalizers": ["integer"],
+      "options": ["1", "2", "3", "4", "5"]
+    },
+    {
+      "source_field": "rooms",
+      "title": "客房評分 Rooms",
+      "kind": "scale",
+      "data_type": "ordinal",
+      "required": false,
+      "normalizers": ["integer"],
+      "options": ["1", "2", "3", "4", "5"]
+    },
+    {
+      "source_field": "sleep_quality",
+      "title": "睡眠品質 Sleep quality",
+      "kind": "scale",
+      "data_type": "ordinal",
+      "required": false,
+      "normalizers": ["integer"],
+      "options": ["1", "2", "3", "4", "5"]
+    },
+    {
+      "source_field": "title",
+      "title": "評論標題 Review title",
+      "kind": "short_text",
+      "data_type": "text",
+      "required": false,
+      "normalizers": [],
+      "options": []
+    },
+    {
+      "source_field": "text",
+      "title": "評論原文 Review text",
+      "kind": "long_text",
+      "data_type": "text",
+      "required": true,
+      "normalizers": [],
+      "options": [],
+      "enable_keyword_tracking": true
+    },
+    {
+      "source_field": "text",
+      "title": "評論長度 Review length",
+      "kind": "integer",
+      "data_type": "discrete",
+      "required": true,
+      "normalizers": ["text_length"],
+      "options": []
+    }
+  ]
+}

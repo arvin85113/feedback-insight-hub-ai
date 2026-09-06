@@ -1,0 +1,5 @@
+-r requirements.txt
+
+# Runtime UI and Windows packaging dependencies; installed separately from the web service.
+dearpygui>=2,<3
+pyinstaller>=6,<7

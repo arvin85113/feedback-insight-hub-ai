@@ -17,7 +17,7 @@
 
 **技術標籤**
 
-`Python` `Django 6.0.3` `Flask 3.1.2` `PostgreSQL / Supabase` `Google Gemini` `google-genai` `Pandas` `SciPy` `jieba` `HTML / CSS`
+`Python` `Django 6.0.8` `PostgreSQL / Supabase` `Google Gemini` `google-genai` `Pandas` `SciPy` `jieba` `HTML / CSS`
 
 ## 專案動機
 
@@ -66,21 +66,20 @@
 
 ```mermaid
 flowchart LR
-    A["問卷回覆"] --> B["Django 權限、ORM 與資料處理"]
-    B --> C["後端統計與文字聚合"]
-    B -. "選配 domain API" .-> F["Flask feedback service"]
-    C --> D["Privacy-safe 聚合快照"]
-    D --> E["Gemini: statistics -> text -> synthesis"]
-    E --> G[("PostgreSQL / Supabase 快取")]
-    G --> H["營運報告與改善追蹤"]
+    A["網站填答／外部資料匯入"] --> B["Render Django：權限、ORM、排程"]
+    B --> C[("Supabase：問卷、回覆、工作、歷史結果")]
+    C --> D["本機 EXE 第一段：統計與文字"]
+    D --> E["本機 EXE 第二段：Gemini"]
+    E --> C
+    C --> F["Render Django：讀取最新發布結果"]
 ```
 
-目前 AI snapshot 直接使用 Django `feedback/local_service.py` 的最新統計與文字聚合流程。`feedback/service_client.py` 仍保留 Flask service 與 circuit-breaker fallback；由於 Flask `/api/stats` 尚未同步 Django 最新推論統計合約，現階段 Demo 建議不設定 `FEEDBACK_SERVICE_URL`。
+正式路徑以 Django 為單一後端與唯一 ORM；頁面、問卷寫入、工作排程及發布結果讀取均使用同一套 Django domain service，不存在逾時後重複寫入的跨服務 fallback。
 
 | 元件 | 主要責任 |
 |---|---|
 | Django | 登入與角色權限、頁面、問卷、ORM、聚合快照、AI stage、改善追蹤與通知 |
-| Flask service | 既有首頁、顧客、dashboard、統計、文字分析與提交 API；目前為選配路徑 |
+| 本機 EXE | 掃描問卷版本，依設定執行統計／文字及 Gemini，並發布版本化結果 |
 | Pandas／SciPy | 描述統計與推論檢定，提供 Gemini 可引用的後端證據 |
 | PostgreSQL／Supabase | 問卷資料、匿名聚合 snapshot、stage revision、AI 報告與改善 provenance |
 | Gemini | 以 `google-genai` 讀取已驗證聚合資料，產生洞察與改善草稿 |
@@ -139,13 +138,13 @@ Evidence projection 同時限制筆數與估算 token 預算，並以 determinis
 
 ## 測試與品質
 
-最近一次完整驗證日期為 **2026-08-14**，共 **92 項 Django 測試通過**。
+最近一次受影響範圍驗證日期為 **2026-09-06**，共 **204 項 Django 測試通過**。
 
 | 檢查 | 結果 |
 |---|---|
-| Django test suite | 92 項通過 |
-| `python manage.py check` | 通過 |
-| `python manage.py migrate --check` | 通過 |
+| Django `feedback`／`accounts` 測試 | 隔離 SQLite 共 204 項通過 |
+| Supabase migration | `0015`～`0018` 套用成功；3／8／150／710 筆核心列數前後一致 |
+| Supabase 唯讀完整性 | 題目代碼、回覆冪等鍵及 Answer 配對均無重複 |
 | `python manage.py makemigrations --check --dry-run` | 無 schema drift |
 | 修改 Python 檔案 `py_compile` | 通過 |
 | `python -m pip check` | 無相依套件衝突 |
@@ -200,7 +199,7 @@ ADMIN_PASSWORD=
 - `GOOGLE_API_KEY`：只有產生新 Gemini 報告時需要。未設定時，問卷、統計、文字洞察與改善追蹤仍可運作，但不能產生新的 AI 報告。
 - `GEMINI_MODEL`：預設為 `gemini-2.5-flash`。
 - `ADMIN_*`：僅在執行 `ensure_superuser` 時需要。
-- Email 與 Flask service 均為選配；本機 Demo 可不設定 `EMAIL_HOST` 與 `FEEDBACK_SERVICE_URL`。
+- Email 為選配；本機 Demo 可不設定 `EMAIL_HOST`。
 
 ### 3. 初始化並啟動 Django
 
@@ -211,13 +210,24 @@ python manage.py seed_demo
 python manage.py runserver
 ```
 
-開啟 `http://127.0.0.1:8000/`。目前 Demo 建議使用 Django-only 分析路徑；只有在驗證 Flask payload 相容性時才啟動 `services/feedback_service/`。
+開啟 `http://127.0.0.1:8000/`。網站與本機工作台共用 Django models、分析契約及 Supabase 權威狀態。
+
+### 4. 啟動本機分析工作台
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-desktop.txt
+.\.venv\Scripts\python.exe -m desktop_app
+```
+
+工作台以 Supabase 問卷資料為準，分別列出最新資料、統計／文字與 Gemini 的產生時間及新舊狀態。可手動更新勾選問卷或全部待更新問卷，也可保存「開啟時檢查／自動更新」設定；勾選「第一段完成後執行 Gemini」才會使用 API 額度。每次新輸入會建立或重用不可變 Snapshot／Stage，資料庫只切換最新發布指標，舊結果仍供後續比較。外部資料須先經 mapping 匯入成一般問卷，與網站填答共用相同流程。
+
+Windows EXE 打包入口為 `scripts/build_desktop.ps1`；需要主控台錯誤資訊時可加 `-Diagnostic` 產生獨立診斷版。打包工具屬開發依賴，需先依 `requirements-desktop.txt` 安裝；完整 Parquet、manifest、憑證與 `.env` 都不會打包進 EXE。封裝版從程序環境或 EXE 同層的外部 `.env` 讀取 `DATABASE_URL`／`FEEDBACK_HUB_DATABASE_URL`；正式用途只接受 PostgreSQL，秘密檔須另行限制存取且不得提交 Git。
 
 ## 部署現況
 
-Repository 保留 `render.yaml` 與 `build.sh`：Django 以 Gunicorn 啟動，WhiteNoise 處理靜態檔案，build 階段執行依賴安裝、migration、管理者建立與 `collectstatic`。正式環境可透過 `DATABASE_URL` 連接 PostgreSQL／Supabase。
+Repository 保留 `render.yaml` 與 `build.sh`：Django 以 Gunicorn 啟動，WhiteNoise 處理靜態檔案，build 階段執行依賴安裝、`collectstatic` 與 migration。管理員建立及 `fix_empty_slugs` 是具資料寫入副作用的明確維護操作，不會在每次部署自動執行。正式環境可透過 `DATABASE_URL` 連接 PostgreSQL／Supabase。
 
-現有 Render blueprint 同時定義 Django web service 與 Flask private service；但 Flask 統計 payload 尚未同步 Django 最新推論分析格式。就業博覽會 Demo 建議部署 Django web service，並保持 `FEEDBACK_SERVICE_URL` 未設定，除非 Flask service 已完成相容性驗證。
+現有 Render blueprint 只定義 Django web service，分析頁設定為只讀已發布結果。資料庫 migration `0015`～`0018` 已於 2026-09-06 套用至設定的 Supabase；Render 程式版本尚未在本回合部署。
 
 ## 專案結構
 
@@ -236,7 +246,7 @@ feedback/                         問卷、統計、文字分析、AI 與改善�
   tests.py                        Snapshot、Structured Output、權限與回歸測試
   test_ai_resilience.py           大型資料、錯誤分類與回退測試
   test_ai_stages.py               三階段、快取、草稿匯入與 UI 測試
-services/feedback_service/        Flask domain service 與 SQLAlchemy mirror models
+desktop_app/                      Supabase 問卷狀態、本機分析更新與 Windows 桌面介面
 templates/                        Django 頁面與 AI 報告 UI
 static/css/app.css                無前端框架的手寫樣式
 ```
@@ -249,8 +259,8 @@ static/css/app.css                無前端框架的手寫樣式
 - Manager 目前共用可見問卷，尚未實作 organization／owner 層級的資料隔離。
 - 文字情緒規則與 LLM 洞察都需要人工判斷，不應直接視為客觀事實。
 - 統計相關與群組差異不代表因果關係。
-- AI 呼叫目前由同步 POST 執行，長時間工作尚未移至 background job。
-- Flask 統計 API 尚未同步 Django 最新推論統計 payload，Demo 建議走 Django-only。
+- 真實 Gemini、Supabase 與 Render 的完整兩段流程仍待已授權環境驗收。
+- PostgreSQL 17.11 隔離測試已驗證原子領取、租約接手與過期 Worker 發布拒絕；尚待程序服務安裝與正式端到端驗收。
 - 既有改善項目目前可建立與追蹤，但尚未提供完整編輯與狀態歷程。
 
 ### 近期規劃

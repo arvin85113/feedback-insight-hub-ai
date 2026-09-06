@@ -1,7 +1,7 @@
 # Feedback Insight Hub — 技術展示文件
 
 > 本文件供 NotebookLM 研究用途，涵蓋各核心功能背後的實際程式碼、CSS 設計模式與 JS 互動模式。
-> 生成日期：2026-05-10
+> 更新日期：2026-09-06
 
 ---
 
@@ -11,8 +11,8 @@
 
 | 層次 | 技術選擇 | 原因 |
 |---|---|---|
-| Web 框架 | Django 6.0.3 | ORM 整合、auth、template 一體化，適合快速搭建管理後台 |
-| 微服務 | Flask 3.1.2 | 分離 feedback domain 邏輯，未來可獨立擴展 |
+| Web 框架 | Django 6.0.8 | ORM 整合、auth、template 一體化，適合快速搭建管理後台 |
+| 後端服務 | Django 6.0.8 | 單一 domain model、權限、交易與工作協調邊界 |
 | 統計分析 | pandas + scipy | 靈活的 DataFrame 操作 + 成熟的統計函式 |
 | 文字分析 | 字典驅動 pipeline | 可控、可快取、可版本化，不依賴第三方 NLP 服務 |
 | 前端 | Django templates + 純手寫 CSS | 無框架依賴，完整掌控設計語言 |
@@ -20,56 +20,38 @@
 
 ---
 
-## 2. 服務架構：Circuit-Breaker 設計模式
-
-### 雙層服務設計
+## 2. 服務架構：單一寫入路徑與背景運算
 
 ```
 Browser → Django (port 8000)
-               │
-               ├── feedback/service_client.py
-               │        │
-               │        ├── Flask microservice（若 FEEDBACK_SERVICE_URL 設定且健康）
-               │        │        └── /api/stats, /api/dashboard, ...
-               │        │
-               │        └── feedback/local_service.py（fallback，目前主要路徑）
-               │                 └── Django ORM → Shared DB
-               │
-               └── Django ORM → Shared DB（直接查詢）
+               ├── 權限／問卷／填答／工作排程
+               └── Django ORM → Supabase PostgreSQL
+
+Windows EXE → Django ORM → 領取 AnalysisJob
+               ├── 統計／文字分析
+               ├── 選用 Gemini 分析
+               └── 新增 Snapshot／Stage 並原子更新發布指標
 ```
 
-### 關鍵實作：`feedback/service_client.py`
+### 關鍵實作：`feedback/local_service.py` 與 `feedback/analysis_jobs.py`
 
 ```python
-class FeedbackServiceClient:
-    def __init__(self):
-        self.base_url = os.getenv("FEEDBACK_SERVICE_URL", "").rstrip("/")
-        self.connect_timeout = float(os.getenv("FEEDBACK_SERVICE_CONNECT_TIMEOUT", "0.35"))
-        self.read_timeout    = float(os.getenv("FEEDBACK_SERVICE_READ_TIMEOUT", "0.8"))
-        self.failure_cooldown = float(os.getenv("FEEDBACK_SERVICE_FAILURE_COOLDOWN", "30"))
-        self._disabled_until = 0.0          # 時間戳：禁用截止時間
-        self._session = requests.Session()
-
-    def _service_available(self):
-        return bool(self.base_url) and time.monotonic() >= self._disabled_until
-
-    def _mark_failure(self):
-        # 記錄失敗後，停止重試 30 秒（可調整）
-        self._disabled_until = time.monotonic() + self.failure_cooldown
-
-    def get_stats(self, slug):
-        if self._service_available():
-            try:
-                return self._get("/api/stats", params={"survey": slug})
-            except requests.RequestException:
-                self._mark_failure()          # 失敗 → 進入冷卻
-        return local_service.get_stats_payload(slug)   # 自動 fallback
+def submit_survey_payload(survey, *, idempotency_key, answers, **respondent):
+    with transaction.atomic():
+        submission, created = FeedbackSubmission.objects.get_or_create(
+            idempotency_key=idempotency_key,
+            defaults={"survey": survey, **respondent},
+        )
+        if created:
+            # 建立 Answer 後，只合併排入一份版本化工作。
+            schedule_survey_analysis(survey.pk, change="input")
 ```
 
 **設計重點：**
-- `_disabled_until` 使用單調時鐘，避免重試風暴（retry storm）
-- 冷卻期間所有請求直接走 Django fallback，不嘗試 Flask
-- `FEEDBACK_SERVICE_URL` 未設定時，直接略過 Flask，無網路開銷
+- 單一 Django 交易處理填答、冪等性及版本失效，沒有跨服務 fallback 重複寫入窗口。
+- 網頁 GET 只讀有限大小的已發布 payload；重運算由本機 Worker／EXE 執行。
+- Snapshot／Stage 新增歷史版本，只有發布指標會在租約與版本核對後更新。
+- 外部資料先映射成一般 Survey／Question／Submission／Answer，再進同一排程流程。
 
 ---
 

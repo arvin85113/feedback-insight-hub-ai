@@ -1,3 +1,5 @@
+import uuid
+
 from django import forms
 
 from .models import ImprovementNotice, ImprovementUpdate, Question, Survey, SurveyCategory
@@ -7,7 +9,7 @@ class SurveyFormBuilder(forms.Form):
     def __init__(self, *args, survey: Survey, **kwargs):
         super().__init__(*args, **kwargs)
         self.survey = survey
-        for question in survey.questions.all():
+        for question in survey.questions.filter(is_active=True):
             self.fields[f"question_{question.id}"] = self._build_field(question)
 
     def _build_field(self, question: Question):
@@ -49,6 +51,11 @@ class SurveyFormBuilder(forms.Form):
 
 
 class RespondentMetaForm(forms.Form):
+    idempotency_key = forms.UUIDField(
+        widget=forms.HiddenInput,
+        initial=uuid.uuid4,
+        required=False,
+    )
     consent_follow_up = forms.BooleanField(label="願意接收後續改善通知", required=False)
 
 
@@ -153,6 +160,7 @@ class SurveyCreateForm(forms.ModelForm):
             "description",
             "thank_you_email_enabled",
             "is_active",
+            "analysis_enabled",
         )
         labels = {
             "title": "問卷名稱",
@@ -160,6 +168,7 @@ class SurveyCreateForm(forms.ModelForm):
             "description": "問卷說明",
             "thank_you_email_enabled": "完成後寄送確認信",
             "is_active": "立即啟用問卷",
+            "analysis_enabled": "納入分析",
         }
         widgets = {
             "description": forms.Textarea(attrs={"rows": 4}),
@@ -211,12 +220,20 @@ class SurveyEditForm(forms.ModelForm):
 
     class Meta:
         model = Survey
-        fields = ("title", "category", "description", "is_active", "thank_you_email_enabled")
+        fields = (
+            "title",
+            "category",
+            "description",
+            "is_active",
+            "analysis_enabled",
+            "thank_you_email_enabled",
+        )
         labels = {
             "title": "問卷名稱",
             "category": "問卷分類",
             "description": "問卷說明",
             "is_active": "立即啟用問卷",
+            "analysis_enabled": "納入分析",
             "thank_you_email_enabled": "完成後寄送確認信",
         }
         widgets = {

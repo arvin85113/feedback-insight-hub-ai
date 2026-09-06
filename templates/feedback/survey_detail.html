@@ -30,8 +30,9 @@
     </div>
 
     <form method="post" class="survey-card-stack" id="surveyForm" novalidate
-          data-total-q="{{ survey.questions.count }}">
+          data-total-q="{{ active_question_count }}">
         {% csrf_token %}
+        {{ respondent_form.idempotency_key }}
 
         {# Step 0: respondent info + consent #}
         <article class="survey-card survey-card-accent survey-step"

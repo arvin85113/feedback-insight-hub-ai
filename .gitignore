@@ -21,3 +21,8 @@ Thumbs.db
 update-log-*.txt
 scripts/local/
 feedback/management/commands/generate_synthetic_submissions.py
+
+# Local external datasets and generated analysis artifacts (may contain identifiers)
+data/local/
+*.parquet.part
+/.tmp_tripadvisor_sample_25.csv

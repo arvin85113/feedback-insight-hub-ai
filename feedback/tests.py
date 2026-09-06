@@ -74,7 +74,7 @@ class PublicHomeTests(TestCase):
         )
         self.home_url = reverse("feedback:home")
 
-    @patch("feedback.views.service_client.get_home")
+    @patch("feedback.views.local_service.get_home_payload")
     def test_homepage_presents_current_ai_product_without_legacy_copy(self, get_home):
         response = self.client.get(self.home_url)
 
@@ -369,7 +369,7 @@ class ExistingAnalysisRegressionTests(AIReportTestCase):
             "category_sentiments": [{"category": "流程", "positive": 0, "neutral": 1, "negative": 3, "total": 4}],
         }
         url = f"{reverse('feedback:text-analysis')}?survey={self.survey.slug}"
-        with patch("feedback.views.service_client.get_text_analysis", return_value=payload):
+        with patch("feedback.views.local_service.get_text_analysis_payload", return_value=payload):
             response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "等待")
@@ -411,7 +411,7 @@ class ExistingAnalysisRegressionTests(AIReportTestCase):
             ],
         }
         url = f"{reverse('feedback:stats-overview')}?survey={self.survey.slug}"
-        with patch("feedback.views.service_client.get_stats", return_value=payload):
+        with patch("feedback.views.local_service.get_stats_payload", return_value=payload):
             response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "相關係數 r")
@@ -450,7 +450,7 @@ class DashboardSurveySelectionTests(AIReportTestCase):
         self.add_responses(enough, enough_question, count=3)
         Survey.objects.create(title="停用問卷", slug="inactive", is_active=False)
         self.client.force_login(self.manager)
-        with patch("feedback.views.service_client.get_dashboard", return_value={}):
+        with patch("feedback.views.local_service.get_dashboard_payload", return_value={}):
             response = self.client.get(reverse("feedback:dashboard"))
         self.assertContains(response, "服務體驗")
         self.assertContains(response, "資料不足")

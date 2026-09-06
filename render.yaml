@@ -1,7 +1,7 @@
 services:
   - type: web
     name: feedback-insight-hub
-    env: python
+    runtime: python
     buildCommand: "bash build.sh"
     startCommand: "python -m gunicorn config.wsgi:application"
     plan: free
@@ -12,21 +12,5 @@ services:
         generateValue: true
       - key: DEBUG
         value: false
-      - key: FEEDBACK_SERVICE_URL
-        value: "http://feedback-domain-service:10000"
-      - key: FEEDBACK_SERVICE_CONNECT_TIMEOUT
-        value: "0.35"
-      - key: FEEDBACK_SERVICE_READ_TIMEOUT
-        value: "0.8"
-      - key: FEEDBACK_SERVICE_FAILURE_COOLDOWN
-        value: "30"
-
-  - type: pserv
-    name: feedback-domain-service
-    env: python
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "python -m gunicorn services.feedback_service.app:app --bind 0.0.0.0:10000"
-    plan: free
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.13.2
+      - key: ANALYSIS_READ_PUBLISHED_ONLY
+        value: true

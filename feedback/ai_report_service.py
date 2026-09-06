@@ -24,6 +24,7 @@ from .models import SurveyAIReportSnapshot
 
 
 logger = logging.getLogger(__name__)
+SAFE_COMPACT_RETRY_ERRORS = frozenset({"schema_invalid", "output_truncated", "rate_limited"})
 _REQUEST_RATE_LOCK = threading.Lock()
 _NEXT_REQUEST_AT = 0.0
 
@@ -762,7 +763,11 @@ def generate_report(snapshot):
                 metrics.append(attempt_error.metrics)
                 _persist_generation_metrics(snapshot, metrics)
                 last_error = attempt_error.report_error
-                if profile == COMPACT_PROFILE or not last_error.retryable:
+                if (
+                    profile == COMPACT_PROFILE
+                    or not last_error.retryable
+                    or last_error.error_code not in SAFE_COMPACT_RETRY_ERRORS
+                ):
                     break
                 if last_error.error_code == "rate_limited":
                     time.sleep(settings.AI_REPORT_RATE_LIMIT_BACKOFF_SECONDS * (2**retry_count))

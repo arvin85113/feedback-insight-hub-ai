@@ -1,5 +1,6 @@
 from datetime import timedelta
 
+from django.db import transaction
 from django.db.models import Count, Max, Q
 from django.db.models.functions import TruncDate
 from django.utils import timezone
@@ -18,7 +19,7 @@ from .models import (
     text_analysis_summary,
     tokenize_feedback,
 )
-from .text_pipeline import ANALYSIS_VERSION, build_analysis_text, estimate_sentiment_score
+from .analysis_jobs import schedule_survey_analysis, suppress_analysis_scheduling
 
 _STATS_PAYLOAD_CACHE = {}
 _STATS_PAYLOAD_CACHE_MAX_SIZE = 16
@@ -308,6 +309,23 @@ def _round_p_value(value):
 
 
 def get_survey_pandas_stats(survey):
+    import pandas as pd
+
+    questions = list(survey.questions.filter(is_active=True).order_by("order", "id"))
+    answer_rows = Answer.objects.filter(
+        question__survey=survey,
+        question__is_active=True,
+        submission__is_complete=True,
+        submission__voided_at__isnull=True,
+    ).values("submission_id", "question_id", "value")
+    records = {}
+    for row in answer_rows.iterator(chunk_size=2000):
+        records.setdefault(row["submission_id"], {})[f"Q_{row['question_id']}"] = row["value"]
+    return analyze_frame(questions, pd.DataFrame(list(records.values())))
+
+
+def analyze_frame(questions, df):
+    """Shared calculation boundary: question descriptors + aligned rows; no ORM I/O."""
     try:
         import pandas as pd
         from scipy import stats
@@ -321,15 +339,8 @@ def get_survey_pandas_stats(survey):
             ],
         }
 
-    questions = list(survey.questions.order_by("order", "id"))
-    answer_rows = list(Answer.objects.filter(question__survey=survey).values("submission_id", "question_id", "value"))
-    if not questions or not answer_rows:
+    if not questions or df.empty:
         return {"charts": [], "inferential_analysis": []}
-
-    records = {}
-    for row in answer_rows:
-        records.setdefault(row["submission_id"], {})[f"Q_{row['question_id']}"] = row["value"]
-    df = pd.DataFrame(list(records.values()))
     question_by_col = {f"Q_{question.id}": question for question in questions}
 
     charts = []
@@ -346,7 +357,7 @@ def get_survey_pandas_stats(survey):
         }
 
     def clean_category_series(col):
-        return df[col].astype(str).str.strip().replace("", pd.NA)
+        return df[col].astype("string").str.strip().replace("", pd.NA)
 
     def encode_ordinal(question, col):
         ordered_options = question.options
@@ -689,6 +700,8 @@ def get_survey_pandas_stats(survey):
             working = pd.DataFrame({"left": left_series, "right": right_series}).dropna()
             method_key = "pearson" if left_type == right_type == "continuous" else "spearman"
             base_result = build_result(left_col, right_col, family="correlation", method_key=method_key)
+            base_result["valid_n"] = len(working)
+            base_result["excluded_n"] = len(df) - len(working)
             if len(working) < 3:
                 base_result["skipped_reason"] = "相關分析至少需要 3 筆有效配對資料"
                 inferential_analysis.append(base_result)
@@ -739,7 +752,7 @@ def build_stats_payload(survey):
                 "data_type": question.get_data_type_display(),
                 "analysis": recommend_analysis(question),
             }
-            for question in survey.questions.all()
+            for question in survey.questions.filter(is_active=True)
         ],
         "inferential_analysis": pandas_stats["inferential_analysis"],
         "available_tests_count": available_tests_count,
@@ -759,12 +772,28 @@ def get_stats_payload(slug):
         }
 
     question_signature = tuple(
-        Question.objects.filter(survey=survey)
+        Question.objects.filter(survey=survey, is_active=True)
         .order_by("order", "id")
         .values_list("id", "title", "kind", "data_type", "options_text", "order")
     )
-    answer_signature = Answer.objects.filter(question__survey=survey).aggregate(count=Count("id"), max_id=Max("id"))
-    cache_key = (survey.id, question_signature, answer_signature["count"], answer_signature["max_id"])
+    answer_signature = Answer.objects.filter(
+        question__survey=survey,
+        question__is_active=True,
+        submission__is_complete=True,
+        submission__voided_at__isnull=True,
+    ).aggregate(count=Count("id"), max_id=Max("id"))
+    try:
+        state = survey.analysis_state
+    except Survey.analysis_state.RelatedObjectDoesNotExist:
+        state = None
+    cache_key = (
+        survey.id,
+        question_signature,
+        answer_signature["count"],
+        answer_signature["max_id"],
+        getattr(state, "input_version", None),
+        getattr(state, "config_version", None),
+    )
     cached_payload = _STATS_PAYLOAD_CACHE.get(cache_key)
     if cached_payload is not None:
         return cached_payload
@@ -783,7 +812,10 @@ def build_text_analysis_payload(survey):
     if tracked_keywords:
         for analysis_text, value in Answer.objects.filter(
             question__survey=survey,
+            question__is_active=True,
             question__enable_keyword_tracking=True,
+            submission__is_complete=True,
+            submission__voided_at__isnull=True,
         ).values_list("analysis_text", "value"):
             for keyword in set(tokenize_feedback(analysis_text or value)) & tracked_keywords:
                 response_counts[keyword] = response_counts.get(keyword, 0) + 1
@@ -805,38 +837,58 @@ def get_text_analysis_payload(slug):
     return build_text_analysis_payload(survey)
 
 
-def submit_survey_payload(survey, *, user, respondent_name, respondent_email, consent_follow_up, answers):
-    submission = FeedbackSubmission.objects.create(
-        survey=survey,
-        user=user,
-        respondent_name=respondent_name,
-        respondent_email=respondent_email,
-        consent_follow_up=consent_follow_up,
-    )
-    for question in survey.questions.all():
-        key = f"question_{question.id}"
-        value = answers.get(key)
-        if value is None:
-            continue
-        if isinstance(value, list):
-            value = ", ".join(value)
-        analysis_text = None
-        analysis_version = None
-        if question.kind in {Question.Kind.SHORT_TEXT, Question.Kind.LONG_TEXT}:
-            analysis_text = build_analysis_text(value)
-            analysis_version = ANALYSIS_VERSION if analysis_text else None
-        sentiment_score = estimate_sentiment_score(value) if analysis_text else None
-        Answer.objects.create(
-            submission=submission,
-            question=question,
-            value=value,
-            analysis_text=analysis_text,
-            sentiment_score=sentiment_score,
-            analysis_version=analysis_version,
-        )
+def _submission_result(submission, *, reused=False):
     return {
         "submission_id": submission.id,
-        "thank_you_email_enabled": survey.thank_you_email_enabled,
+        "thank_you_email_enabled": submission.survey.thank_you_email_enabled,
         "respondent_email": submission.respondent_email,
-        "survey_title": survey.title,
+        "survey_title": submission.survey.title,
+        "reused": reused,
     }
+
+
+def submit_survey_payload(
+    survey,
+    *,
+    user,
+    respondent_name,
+    respondent_email,
+    consent_follow_up,
+    answers,
+    idempotency_key=None,
+):
+    with transaction.atomic():
+        with suppress_analysis_scheduling():
+            defaults = {
+                    "survey": survey,
+                    "user": user,
+                    "respondent_name": respondent_name,
+                    "respondent_email": respondent_email,
+                    "consent_follow_up": consent_follow_up,
+            }
+            if idempotency_key:
+                submission, created = FeedbackSubmission.objects.get_or_create(
+                    idempotency_key=idempotency_key,
+                    defaults=defaults,
+                )
+            else:
+                submission = FeedbackSubmission.objects.create(**defaults)
+                created = True
+            if not created:
+                if submission.survey_id != survey.pk or submission.user_id != getattr(user, "pk", None):
+                    raise ValueError("idempotency key 已由其他填答使用")
+                return _submission_result(submission, reused=True)
+            for question in survey.questions.filter(is_active=True):
+                key = f"question_{question.id}"
+                value = answers.get(key)
+                if value is None:
+                    continue
+                if isinstance(value, list):
+                    value = ", ".join(value)
+                Answer.objects.create(
+                    submission=submission,
+                    question=question,
+                    value=value,
+                )
+        schedule_survey_analysis(survey.pk, change="input")
+    return _submission_result(submission)

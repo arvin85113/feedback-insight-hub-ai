@@ -1,0 +1,100 @@
+{
+  "mapping_version": "synthetic-fixture-v1",
+  "dataset": {
+    "name": "synthetic-import-test",
+    "version": "1",
+    "source_url": "https://example.invalid/synthetic-import-test",
+    "license": "Synthetic test fixture; not research data"
+  },
+  "survey": {
+    "title": "TEST - Generic Dataset Import",
+    "slug": "test-generic-dataset-import",
+    "description": "Synthetic fixture used only for automated importer tests.",
+    "is_active": false
+  },
+  "timestamp_field": "timestamp",
+  "deduplication_fields": ["item_id", "user_id", "timestamp"],
+  "source_item_id_field": "item_id",
+  "metadata_fields": ["item_id", "segment"],
+  "questions": [
+    {
+      "source_field": "rating",
+      "title": "Overall rating",
+      "kind": "scale",
+      "data_type": "ordinal",
+      "required": true,
+      "normalizers": ["integer"],
+      "options": ["1", "2", "3", "4", "5"]
+    },
+    {
+      "source_field": "count",
+      "title": "Helpful count",
+      "kind": "integer",
+      "data_type": "discrete",
+      "required": true,
+      "normalizers": ["integer"]
+    },
+    {
+      "source_field": "price",
+      "title": "Purchase amount",
+      "kind": "decimal",
+      "data_type": "continuous",
+      "required": true,
+      "normalizers": ["decimal"]
+    },
+    {
+      "source_field": "verified",
+      "title": "Verified response",
+      "kind": "single_choice",
+      "data_type": "nominal",
+      "required": true,
+      "normalizers": [
+        {
+          "name": "boolean",
+          "true_values": [true, "true", "yes", "1"],
+          "false_values": [false, "false", "no", "0"],
+          "true_label": "Yes",
+          "false_label": "No"
+        }
+      ],
+      "options": ["Yes", "No"]
+    },
+    {
+      "source_field": "segment",
+      "title": "Customer segment",
+      "kind": "single_choice",
+      "data_type": "nominal",
+      "required": true,
+      "normalizers": ["strip"],
+      "options": ["retail", "vip"]
+    },
+    {
+      "source_field": "title",
+      "title": "Feedback title",
+      "kind": "short_text",
+      "data_type": "text",
+      "required": false,
+      "normalizers": ["strip", {"name": "safe_truncate", "max_length": 100}],
+      "options": []
+    },
+    {
+      "source_field": "review",
+      "title": "Feedback detail",
+      "kind": "long_text",
+      "data_type": "text",
+      "required": true,
+      "normalizers": ["strip", {"name": "safe_truncate", "max_length": 500}],
+      "options": [],
+      "enable_keyword_tracking": true
+    },
+    {
+      "source_field": "review",
+      "title": "Feedback length",
+      "kind": "integer",
+      "data_type": "discrete",
+      "required": true,
+      "normalizers": ["strip", "text_length"],
+      "options": []
+    }
+  ]
+}

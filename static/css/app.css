@@ -1103,6 +1103,51 @@ ul.errorlist {
     align-items: end;
 }
 
+.analysis-publication-status {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: -4px 0 16px;
+    padding: 10px 14px;
+    border: 1px solid rgba(79, 125, 100, 0.22);
+    border-radius: 12px;
+    background: rgba(79, 125, 100, 0.06);
+    color: var(--muted);
+    font-size: 0.84rem;
+}
+
+.analysis-publication-status > div {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.analysis-publication-status strong {
+    color: var(--text);
+}
+
+.analysis-publication-pill {
+    padding: 4px 9px;
+    border-radius: 999px;
+    font-weight: 700;
+}
+
+.analysis-publication-pill-current {
+    background: rgba(50, 133, 83, 0.12);
+    color: #23663c;
+}
+
+.analysis-publication-pill-waiting {
+    background: rgba(178, 122, 32, 0.14);
+    color: #815710;
+}
+
+.analysis-publication-note {
+    color: #815710;
+}
+
 /* ── Analytics compact meta strip (replaces kpi-strip) ── */
 .analytics-meta-strip {
     display: flex;

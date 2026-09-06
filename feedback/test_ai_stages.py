@@ -366,6 +366,20 @@ class AIStageServiceTests(AIReportTestCase):
         self.assertEqual(stage.status, SurveyAIAnalysisStage.Status.FAILED)
         self.assertEqual(stage.token_metrics["retry_count"], 0)
 
+    @override_settings(AI_REPORT_REQUEST_INTERVAL_SECONDS=0)
+    @patch("feedback.ai_stage_service.create_gemini_client")
+    def test_timeout_does_not_blindly_retry_stage(self, client_factory):
+        client_factory.return_value.models.generate_content.side_effect = TimeoutError()
+
+        with self.assertRaises(StageError) as raised:
+            generate_stage(self.snapshot, SurveyAIAnalysisStage.StageType.STATISTICS)
+
+        self.assertEqual(raised.exception.error_code, "timeout")
+        self.assertEqual(client_factory.return_value.models.generate_content.call_count, 1)
+        stage = self.snapshot.analysis_stages.filter(stage_type="statistics").latest("id")
+        self.assertEqual(stage.status, SurveyAIAnalysisStage.Status.FAILED)
+        self.assertEqual(stage.token_metrics["retry_count"], 0)
+
     @patch("feedback.ai_stage_service.create_gemini_client")
     def test_synthesis_uses_only_validated_upstream_outputs_and_backend_uuid(self, client_factory):
         self.create_upstream_stages()
@@ -675,7 +689,7 @@ class AIStageDashboardTests(AIReportTestCase):
         )
 
     def test_dashboard_uses_stage_status_endpoint_and_shows_three_stage_shell(self):
-        with patch("feedback.views.service_client.get_dashboard", return_value={}):
+        with patch("feedback.views.local_service.get_dashboard_payload", return_value={}):
             response = self.client.get(reverse("feedback:dashboard"))
         self.assertContains(response, self.status_url())
         self.assertContains(response, "AI 正在分析統計資料")

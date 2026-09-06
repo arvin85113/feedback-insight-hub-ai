@@ -1,0 +1,23 @@
+{% if analysis_publication %}
+<section class="analysis-publication-status" aria-live="polite">
+    {% if analysis_publication.available %}
+        <div>
+            <strong>已發布結果</strong>
+            <span>Snapshot #{{ analysis_publication.snapshot_id }}</span>
+        </div>
+        {% if analysis_stage_fresh %}
+            <span class="analysis-publication-pill analysis-publication-pill-current">符合目前資料版本</span>
+        {% else %}
+            <span class="analysis-publication-pill analysis-publication-pill-waiting">顯示上一版，等待新版分析</span>
+        {% endif %}
+        {% if analysis_publication.ai and not analysis_publication.freshness.ai %}
+            <span class="analysis-publication-note">AI 結果仍為上一版本。</span>
+        {% endif %}
+    {% else %}
+        <div>
+            <strong>尚無已發布結果</strong>
+            <span>背景分析完成後會自動顯示；重新整理不會在網站上重算。</span>
+        </div>
+    {% endif %}
+</section>
+{% endif %}

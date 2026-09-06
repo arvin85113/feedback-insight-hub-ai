@@ -33,6 +33,7 @@ STAGE_MODULES = {
     SurveyAIAnalysisStage.StageType.SYNTHESIS: ai_synthesis_service,
 }
 STAGE_EVIDENCE_ENUM_LIMIT = 20
+SAFE_COMPACT_RETRY_ERRORS = frozenset({"schema_invalid", "output_truncated", "rate_limited"})
 UPSTREAM_TYPES = (
     SurveyAIAnalysisStage.StageType.STATISTICS,
     SurveyAIAnalysisStage.StageType.TEXT,
@@ -553,7 +554,11 @@ def generate_stage(snapshot, stage_type, *, force=False):
             except StageAttemptError as exc:
                 attempts.append(exc.metrics)
                 last_error = exc.stage_error
-                if profile == COMPACT_PROFILE or not last_error.retryable:
+                if (
+                    profile == COMPACT_PROFILE
+                    or not last_error.retryable
+                    or last_error.error_code not in SAFE_COMPACT_RETRY_ERRORS
+                ):
                     break
                 if last_error.error_code == "rate_limited":
                     time.sleep(settings.AI_REPORT_RATE_LIMIT_BACKOFF_SECONDS * (2**retry_count))

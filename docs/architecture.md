@@ -1,13 +1,13 @@
 # System Architecture — Feedback Insight Hub
 
-> **Current as of:** 2026-05-10
+> **Current as of:** 2026-09-06
 > **Initial design doc (2026-04-22):** `docs/architecture-initial.md`
 
 ---
 
 ## System Overview
 
-問卷回饋洞察平台，提供問卷建立、回饋收集、統計分析、文字分析、改善追蹤與通知管理等功能。分為**顧客（Customer）**與**管理者（Manager）**兩種角色。後端以 Django 為主，並整合 Flask 微服務（目前實際部署使用 Django-only fallback）。
+問卷回饋洞察平台，提供問卷建立、回饋收集、外部資料匯入、統計分析、文字分析、改善追蹤與通知管理等功能。分為**顧客（Customer）**與**管理者（Manager）**兩種角色。Django 是唯一後端與 ORM；Supabase PostgreSQL 是權威資料庫，本機 Worker／EXE 執行重運算。
 
 ---
 
@@ -34,19 +34,20 @@ Browser
   |
   v
 Django (port 8000)
-  |-- Django ORM ─────────────────────────────→ Shared DB
-  |-- feedback/service_client.py
-        |-- Flask service (if FEEDBACK_SERVICE_URL set and healthy)
-        └-- feedback/local_service.py (fallback, current recommended)
-              |
-              └─→ Django ORM → Shared DB
+  |-- 權限、問卷、填答、排程
+  └-- Django ORM ─────────────────────────────→ Shared DB
+
+Windows EXE
+  |-- 第一段：統計與文字分析
+  |-- 第二段：Gemini 綜合解析
+  └-- Django ORM ─────────────────────────────→ Shared DB
 
 Shared DB:
   - local: db.sqlite3
   - production: Supabase PostgreSQL
 ```
 
-**Circuit-breaker pattern:** `service_client.py` 先嘗試 Flask，失敗自動切換 `local_service.py`；`FEEDBACK_SERVICE_URL` 未設定則直接使用 local。
+網站與本機工作台共用 Django models、工作協調與分析輸入契約，不維護第二套 HTTP domain service 或 ORM 鏡像。
 
 ---
 
@@ -68,7 +69,7 @@ Shared DB:
 - 單一問卷頁：頂部 KPI 膠囊列 + 資料地圖 / 描述統計 / 推論分析 tab
 - 描述統計：計數、平均、中位數、標準差、信賴區間、分布長條圖
 - 推論統計（自動匹配）：Welch t-test、One-way ANOVA、Chi-square、Mann-Whitney U、Kruskal-Wallis、Pearson / Spearman 相關
-- ⚠️ 推論統計目前僅 Django fallback 路徑實作；Flask `/api/stats` 尚未同步
+- 推論統計由共用 Django 分析服務與本機 Worker 使用同一 `AnalysisInput` 合約。
 
 ### 4. 文字洞察 (`/dashboard/text-analysis/`)
 - 問卷索引 → 選擇問卷 → 進入分析工作台
@@ -118,11 +119,10 @@ Shared DB:
 
 | 項目 | 技術 |
 |---|---|
-| 主框架 | Django 6.0.3 |
-| 微服務 | Flask 3.1.2 |
+| 主框架 | Django 6.0.8 |
 | 資料庫 | SQLite（本機）/ Supabase PostgreSQL（生產） |
-| ORM | Django ORM（主）+ SQLAlchemy（Flask 微服務鏡像） |
-| 統計 | pandas + scipy（Django fallback） |
+| ORM | Django ORM |
+| 統計 | pandas + scipy |
 | 文字分析 | 字典驅動 pipeline（`feedback/text_pipeline.py`） |
 | 靜態檔案 | Whitenoise |
 | 部署 | Render |
@@ -133,9 +133,13 @@ Shared DB:
 ## Data Flow
 
 ```
-顧客填答
-  → FeedbackSubmission + Answer 寫入 DB
-  → Manager 在 dashboard 檢視統計 / 文字分析
+網站填答或固定外部資料匯入
+  → Supabase 的 Survey + Question + FeedbackSubmission + Answer
+  → 交易後更新版本並合併 AnalysisJob
+  → 本機 Worker／EXE 串流讀取問卷資料並計算統計 / 文字分析
+  → 可選擇由 Gemini 產生第二段解析
+  → 新 Snapshot／Stage 發布回 Supabase，舊版本保留
+  → Render 只讀最新成功結果
   → 建立 ImprovementUpdate
   → ImprovementDispatch 寄出通知 Email 給相關顧客
   → 顧客在 /app/notifications/ 查看並標記已讀
@@ -149,13 +153,13 @@ Shared DB:
 |---|---|
 | `config/` | Django settings, root URLs, WSGI/ASGI |
 | `accounts/` | User model, auth views, signup, profile, preferences |
-| `feedback/` | Main Django app: surveys, views, service client, stats, text pipeline |
+| `feedback/` | Main Django app: surveys, views, jobs, stats, text pipeline |
 | `feedback/data/` | Text-analysis dictionaries, keyword maps |
 | `feedback/management/commands/` | Custom management commands |
-| `feedback/local_service.py` | Django fallback: stats + text analysis |
-| `feedback/service_client.py` | Circuit-breaker client to Flask |
+| `feedback/local_service.py` | Django domain service: stats + text analysis + submission |
+| `feedback/analysis_jobs.py` | 版本失效、工作租約與發布協調 |
+| `feedback/analysis_adapters.py` | Answer／Parquet 共用分析輸入契約 |
 | `feedback/text_pipeline.py` | Tokenization, sentiment, ANALYSIS_VERSION |
-| `services/feedback_service/` | Flask microservice + SQLAlchemy models |
 | `static/css/app.css` | Main stylesheet |
 | `templates/` | All Django templates |
 
@@ -171,9 +175,11 @@ Shared DB:
 | 逐步式問卷（一題一頁） | 降低填答認知負擔，使用 `data-has-error` 屬性支援後端驗證錯誤的步驟導航。 |
 | Analysis-purpose data type model | 採 `continuous / discrete / nominal / ordinal / text` 分類，對應各統計方法的適用條件，而非純統計學的 Stevens 四等級。 |
 | 自動推論方法匹配 | 系統根據題目資料型別組合自動選擇檢定方法（Welch t-test、ANOVA、Chi-square、Mann-Whitney、Kruskal-Wallis、Pearson、Spearman），不符條件時回傳 `skipped_reason` 而非靜默略過。 |
-| 字典驅動文字分析 | 使用自訂詞典、同義詞正規化、情緒字典評分（`feedback/text_pipeline.py`），結果快取於 `Answer` 欄位，避免每次請求重算。 |
+| 字典驅動文字分析 | 使用自訂詞典、同義詞正規化、情緒字典評分（`feedback/text_pipeline.py`）；網站提交只保存原始答案並排程，正式統計／文字計算由本機 Worker 執行。 |
 | Survey-index-first 流程 | 統計分析、文字洞察、改善追蹤、通知中心均採「先選問卷 → 再進入工作台」的流程，減少頁面跳轉並讓各功能聚焦於單一問卷。 |
-| Django fallback 優先 | `service_client.py` 採 circuit-breaker 設計，Flask 不可用時自動使用 Django ORM 路徑；推論統計（Pandas/SciPy）目前只在 Django 路徑完整實作。 |
+| Django 單一後端 | Render 與問卷寫入使用 Django，避免雙 ORM 與逾時 fallback 造成重複寫入。 |
+| 問卷／題目生命週期分離 | `Survey.is_active` 控制填答、`analysis_enabled` 控制分析、`archived_at` 保留歷史；題目以 `code` 作穩定識別並可停用。 |
+| 回覆與匯入可追溯 | 回覆具有冪等鍵、寫入時間、完整／作廢狀態；外部來源以 namespace＋record key 去重，內容改變列為衝突而不覆寫。 |
 
 ---
 

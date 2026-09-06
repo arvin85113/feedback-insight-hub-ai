@@ -1,0 +1,40 @@
+{
+  "lock_version": 1,
+  "dataset": "jniimi/tripadvisor-review-rating",
+  "source_revision": "1a1b7077c997eb496e402c6e9c97d91989eb24bb",
+  "source_revision_date": "2024-04-24T08:16:01Z",
+  "config": "default",
+  "split": "train",
+  "viewer_conversion_revision": "22d127d6bcd9f652435844608051c3ea2fccfd91",
+  "revision_correspondence": {
+    "evidence": "Dataset Viewer /parquet response header x-revision equals source_revision; the returned refs/convert/parquet branch resolved to viewer_conversion_revision.",
+    "verified_at": "2026-09-05T03:13:44Z"
+  },
+  "source_card_field_evidence": {
+    "hotel_id": "The fixed-revision dataset card describes hotel_id as the unique identifier for hotels.",
+    "limitations": "The field name and card description support intended semantics; value distribution alone does not prove identity semantics."
+  },
+  "files": [
+    {
+      "path": "default/train/0000.parquet",
+      "size": 220909380,
+      "lfs_sha256": "288d4befe7257460de95d63f0e1553f33b17d075c733739e5577358782f60571",
+      "url": "https://huggingface.co/datasets/jniimi/tripadvisor-review-rating/resolve/22d127d6bcd9f652435844608051c3ea2fccfd91/default/train/0000.parquet"
+    }
+  ],
+  "cleaning_version": "tripadvisor-clean-v1",
+  "maximum_text_length": 50000,
+  "required_columns": [
+    "hotel_id",
+    "user_id",
+    "title",
+    "text",
+    "overall",
+    "cleanliness",
+    "value",
+    "location",
+    "rooms",
+    "sleep_quality",
+    "post_date"
+  ]
+}

@@ -1,0 +1,93 @@
+{
+  "mapping_version": "amazon-beauty-2023-v1",
+  "dataset": {
+    "name": "jhan21/amazon-beauty-reviews-dataset",
+    "version": "ba629f69635bcdbc560bf0cdf83adab24e68129b",
+    "source_url": "https://huggingface.co/datasets/jhan21/amazon-beauty-reviews-dataset",
+    "license": "CC BY-SA 4.0 (dataset card text; Hugging Face metadata currently conflicts and says CC0-1.0)"
+  },
+  "survey": {
+    "title": "Amazon Beauty 2023 公開顧客評論分析",
+    "slug": "amazon-beauty-2023-real-reviews",
+    "description": "資料集：jhan21/amazon-beauty-reviews-dataset（Amazon Reviews'23／All Beauty）；來源：Hugging Face 與 McAuley Lab Amazon Reviews'23；版本：ba629f69635bcdbc560bf0cdf83adab24e68129b；抽樣：固定 seed 的等機率不放回抽樣，保留自然星級比例；本系統並非 Amazon 官方系統，改善建議僅為教學情境模擬。清理前後筆數、random seed 與匯入時間由 DatasetImportBatch 保存。",
+    "is_active": false
+  },
+  "timestamp_field": "timestamp",
+  "deduplication_fields": [
+    "user_id",
+    "asin",
+    "parent_asin",
+    "timestamp",
+    "rating"
+  ],
+  "source_item_id_field": "asin",
+  "metadata_fields": [
+    "asin",
+    "parent_asin"
+  ],
+  "questions": [
+    {
+      "source_field": "rating",
+      "title": "商品評分 Product rating",
+      "kind": "scale",
+      "data_type": "ordinal",
+      "required": true,
+      "normalizers": ["integer"],
+      "options": ["1", "2", "3", "4", "5"]
+    },
+    {
+      "source_field": "verified_purchase",
+      "title": "是否為已驗證購買 Verified purchase",
+      "kind": "single_choice",
+      "data_type": "nominal",
+      "required": true,
+      "normalizers": [
+        {
+          "name": "boolean",
+          "true_values": [true, "true", "1"],
+          "false_values": [false, "false", "0"],
+          "true_label": "Yes",
+          "false_label": "No"
+        }
+      ],
+      "options": ["Yes", "No"]
+    },
+    {
+      "source_field": "helpful_vote",
+      "title": "有幫助票數 Helpful votes",
+      "kind": "integer",
+      "data_type": "discrete",
+      "required": true,
+      "normalizers": ["integer"],
+      "options": []
+    },
+    {
+      "source_field": "title",
+      "title": "評論標題 Review title",
+      "kind": "short_text",
+      "data_type": "text",
+      "required": false,
+      "normalizers": [],
+      "options": []
+    },
+    {
+      "source_field": "text",
+      "title": "評論原文 Review text",
+      "kind": "long_text",
+      "data_type": "text",
+      "required": true,
+      "normalizers": [],
+      "options": [],
+      "enable_keyword_tracking": true
+    },
+    {
+      "source_field": "text",
+      "title": "評論長度 Review length",
+      "kind": "integer",
+      "data_type": "discrete",
+      "required": true,
+      "normalizers": ["text_length"],
+      "options": []
+    }
+  ]
+}

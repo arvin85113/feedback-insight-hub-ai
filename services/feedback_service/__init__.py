@@ -1,1 +1,0 @@
-"""Feedback domain microservice package."""

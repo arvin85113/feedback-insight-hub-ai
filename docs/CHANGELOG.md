@@ -1,6 +1,20 @@
 # CHANGELOG
 
+> 本文件保存歷史事件；包含「每次 PR 必跑」及「常駐」等舊措辭的段落亦屬歷史紀錄。
+> 現行操作指引以 [根目錄 AGENTS.md](../AGENTS.md) 與當次需求為準；歷史命令不構成執行授權，DB 狀態須另查。
+
 依日期反向排列。每個條目說明改了什麼、為什麼改、以及哪些檔案受到影響。
+
+---
+
+## 2026-09-06 — Django 單一路徑與資料庫 schema v2
+
+- 移除第二套 feedback HTTP 服務、ORM 鏡像、呼叫端、設定與依賴，網站寫入統一走 Django domain service。
+- 問卷新增可分析／封存狀態；題目新增穩定代碼與停用狀態；回覆新增冪等鍵、寫入時間、完整與作廢狀態。
+- 外部匯入來源拆成 namespace、穩定 record key、內容雜湊與來源版本；同鍵不同內容列為衝突，不覆寫既有資料。
+- migration `0015`～`0018` 已套用至設定的 Supabase；套用前備份位於 Git 忽略的受限本機資料夾。核心 3／8／150／710 列前後一致。
+- 隔離 SQLite 的 `feedback`／`accounts` 受影響範圍 204 項通過；另以臨時 PostgreSQL 17.11 隔離叢集通過 2 項多 Worker 原子領取、租約接手及舊租約發布拒絕測試，測試產物已清理。
+- Render blueprint 改用現行 `runtime` 欄位；build 不再重設管理員帳密或執行一次性 slug 修復，並補上 Render 反向代理 HTTPS、動態 hostname 與安全 Cookie 設定。尚未正式部署。
 
 ---
 
@@ -151,7 +165,7 @@
 
 - `feedback/local_service.py` 為連續 / 離散數值題目準備 `counts` 資料。
 - `stats_overview.html` 在 `chart.counts` 存在時顯示數值分布長條圖，對齊類別題目的長條顯示方式。
-- Pandas/SciPy 推論統計仍限 Django fallback；Flask `/api/stats` 尚未同步此格式。
+- 當時 Pandas／SciPy 推論統計僅主應用路徑完整，舊第二服務未同步此格式。
 
 ### Email 設定
 

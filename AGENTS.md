@@ -1,472 +1,119 @@
 # AGENTS.md
 
-This file is the source of truth for coding-agent guidance in this repository.
-
-> For the full change history see `docs/CHANGELOG.md`.
-
-## Project Overview
-
-**Feedback Insight Hub** — a bilingual (Traditional Chinese / English) feedback and survey management platform. Django handles presentation, authentication, and ORM; a Flask microservice handles the feedback domain with analytics. The two services share the same PostgreSQL database (Supabase in production).
-
-## Current Collaboration Baseline (2026-05-10)
-
-- The product is now fully login-only. Old quick/hybrid access modes have been removed from UI, admin, runtime payloads, and schema.
-- `Survey.access_mode` and `FeedbackSubmission.source` were removed in migration `feedback/0008_remove_feedbacksubmission_source_and_more.py`.
-- Supabase production database has already applied migration `feedback.0008`; `feedback_survey.access_mode` and `feedback_feedbacksubmission.source` are confirmed removed.
-- Current practical deployment is Django-only fallback. Keep `FEEDBACK_SERVICE_URL` unset unless the Flask service is explicitly deployed and kept schema-compatible.
-- Pandas/SciPy stats are implemented in Django fallback (`feedback/local_service.py`) and shown in `stats_overview.html` via `inferential_analysis`.
-- Flask `/api/stats` still returns the legacy stats payload and does not yet include Pandas `inferential_analysis`; enabling Flask for stats would skip the new inference panel for now.
-- Google login on signup is an intentional disabled placeholder owned by another teammate. Do not remove it as stale UI.
-- Manager analysis-related pages now use a unified survey-index first flow: pick a survey from list cards, then drill into stats / text analysis / improvements / notices.
-- Customer portal has been split into account profile (`/accounts/profile/`) and notification preferences (`/accounts/preferences/`). The customer home page focuses on account summary, submission records, and notification summaries.
-- Uncommitted local collaboration files may exist (`AGENTS.md`, `scripts/`). Do not mix them into unrelated feature commits unless requested.
-- Password reset / password change flows added via Django built-in auth views (`accounts/urls.py`). Templates live in `templates/accounts/`.
-- Notification AJAX mark-as-read added: `MarkNoticeReadView` at `/app/notifications/<pk>/read/`. `ImprovementDispatch.is_read` field added in migration `feedback/0007_add_is_read_to_improvementdispatch.py`.
-- Unread notification count injected via `feedback/context_processors.py` → `unread_notification_count`; registered in `TEMPLATES.context_processors`.
-- Email backend auto-detects SMTP vs console: if `EMAIL_HOST` env var is set, Django uses SMTP; otherwise falls back to console (safe for local dev without `.env` config).
-- Text analysis selected-survey view should show KPI summary, word cloud, compact keyword cards, category sentiment distribution, and keyword-category rules.
-- A regression was fixed where duplicate `text_analysis_summary()` / `category_sentiment_summary()` definitions in `feedback/models.py` overrode sentiment logic and caused category sentiment to appear as empty. Keep only one active definition for each helper.
-
-### 2026-05-10 UI and UX baseline
-
-- Survey fill page (`survey_detail.html`) is now a step-by-step one-question-per-page form with a progress bar.
-- Step 0 shows read-only respondent info (name + email auto-filled from `request.user`) and the `consent_follow_up` checkbox. Respondent name/email are no longer editable fields.
-- The improvement-tracking KPI card was removed from the survey fill page (irrelevant from the customer's perspective).
-- The form uses `novalidate` to prevent HTML5 browser validation from blocking submission on hidden steps. Django server-side validation still runs.
-- Each step card has a `data-has-error` attribute set by the template; JS always stays in step mode and navigates to the first error step on validation failure.
-- Survey manager list cards now show stat chips (題目 / 回覆 / 最近回覆, font-size 18px) and a 3-day response trend mini bar chart inside the clickable area.
-- Stats / text-analysis / improvement / notice center pages now use the same `.survey-row-body` card layout as the survey manager, with page-specific first chip and the same green background on the clickable area.
-- Stats selected-survey page uses compact header KPI pills and a three-tab workflow: data map, descriptive statistics, inferential analysis.
-- Text analysis selected-survey page uses compact header KPI pills and three tabs: keyword summary, sentiment distribution, keyword-category rules. Keyword cards are compact 3-column cards; category sentiment is shown as card-based stacked bars with inline labels.
-- Builder scale question preview no longer truncates at 7 options; CSS uses `flex-wrap: wrap`.
-- Builder header uses the same compact KPI pill layout as stats/text-analysis selected-survey pages, with actions for stats, text insight, and returning to the survey list.
-- Keyword-category rules can be created, edited inline, and deleted from the text-analysis rules tab. Create/update/delete redirects preserve `#text-rules`.
-- `seed_demo.py` scale question now includes `options_text` for 1–10 to avoid the fallback 1–5 IntegerField.
-
-### 2026-05-09 UI, analytics, and email baseline
-
-- Public homepage, login/signup, password reset/change, and customer-facing pages were restyled toward a quieter visual language.
-- Manager pages intentionally keep the existing manager dashboard shell; do not let public/customer CSS changes pollute manager workspace pages.
-- Customer portal nav is simplified to Home / Customer Portal / Notifications / Profile / Logout. Notifications and Profile should have visible active/background states.
-- Notification history, preferences, profile, and password flows now use the newer customer/public styling.
-- Gmail SMTP password reset works when `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USE_TLS`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, and `DEFAULT_FROM_EMAIL` are configured. `EMAIL_HOST_PASSWORD` must be a Google App Password.
-- Stats descriptive charts now include distribution bars for continuous/discrete numeric questions when `chart.counts` exists, matching the categorical bar display.
-
-### Codex Windows Encoding Notes
-
-Current working location is intentionally simplified to `C:\Projects\Project`. Keep this path for Codex work instead of moving the project back to Desktop or another path with Chinese / synced-folder segments.
-
-When Codex reads Markdown or other text files in PowerShell, use explicit UTF-8 decoding:
-
-```powershell
-Get-Content README.md -Encoding utf8
-Get-Content AGENTS.md -Encoding utf8
-```
-
-To verify whether a file is genuinely corrupted or only displayed with the wrong terminal decoding:
-
-```powershell
-python scripts\diagnose_text_encoding.py --preview AGENTS.md
-```
-
-If the diagnostic script shows that the file content is valid, do not rewrite the file to fix terminal mojibake; read it again with explicit UTF-8 decoding.
-
-### ⚠️ Schema fields that must NOT be reverted
-
-The following fields exist in the database (Supabase production) and are used by production code. **Never remove them from `feedback/models.py` or create a migration that drops them without a coordinated schema migration plan:**
-
-| Model | Field | Added in |
-|---|---|---|
-| `Survey` | `category` (FK → SurveyCategory) | `feedback/0007_add_survey_category.py` |
-| `Answer` | `analysis_text` | `feedback/0007_answer_analysis_text_answer_analysis_version_and_more.py` |
-| `Answer` | `sentiment_score` | same |
-| `Answer` | `analysis_version` | same |
-| `ImprovementDispatch` | `is_read` | `feedback/0007_add_is_read_to_improvementdispatch.py` |
-
-The following fields were **intentionally removed** and must NOT be added back:
-
-| Model | Field | Removed in |
-|---|---|---|
-| `Survey` | `access_mode` | `feedback/0008_remove_feedbacksubmission_source_and_more.py` |
-| `FeedbackSubmission` | `source` | same |
-
-## Commands
-
-### Local Development
-
-```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Initialize database and seed demo data
-python manage.py migrate
-python manage.py ensure_superuser
-python manage.py seed_demo
-
-# Diagnose text encoding / mojibake safely in Windows terminals
-python scripts/diagnose_text_encoding.py
-python scripts/diagnose_text_encoding.py --preview AGENTS.md
-
-# Start Flask microservice (port 5001)
-python -m flask --app services.feedback_service.app run --host 127.0.0.1 --port 5001
-
-# Start Django dev server (port 8000)
-python manage.py runserver
-```
-
-`.env` is auto-loaded via `python-dotenv` at `config/settings.py` startup. Copy `.env.example` to `.env` before first run.
-
-### Production (Render)
-
-```bash
-# Django
-gunicorn config.wsgi:application
-
-# Flask
-gunicorn services.feedback_service.app:app --bind 0.0.0.0:10000
-```
-
-### Custom Management Commands
-
-```bash
-python manage.py ensure_superuser        # Create admin from env vars (ADMIN_USERNAME/EMAIL/PASSWORD)
-python manage.py seed_demo               # Seed example survey + keyword categories
-python manage.py seed_notification_test  # Seed 4 test users, survey, submissions, improvement dispatch + email
-```
-
-## Architecture
-
-### Two-Layer Service Design
-
-```
-Django (port 8000)  →  service_client.py  →  Flask microservice (port 5001)
-                                        ↘  local_service.py (fallback)
-                                              ↓
-                                    Shared PostgreSQL (Supabase) / SQLite DB
-```
-
-**`feedback/service_client.py`** implements a circuit-breaker pattern: it tries the Flask microservice first, and on failure automatically falls back to `feedback/local_service.py` (which queries the DB via Django ORM). A `disabled_until` timestamp prevents retry storms (default 30s cooldown). If `FEEDBACK_SERVICE_URL` is not set at all, the local provider is used exclusively.
-
-### Key Directories
-
-| Path | Purpose |
-|---|---|
-| `config/` | Django settings, URLs, WSGI/ASGI |
-| `accounts/` | Django app: users, roles, preferences |
-| `feedback/` | Django app: surveys, views, service client, local service |
-| `services/feedback_service/` | Flask microservice: API routes, SQLAlchemy models, analytics |
-| `templates/` | Django HTML templates (all UI) |
-| `static/css/app.css` | Single hand-written CSS file, no external framework |
-
-### Flask API Endpoints (`services/feedback_service/app.py`)
-
-- `GET /health` — health check
-- `GET /api/home` — homepage stats
-- `GET /api/customers/<user_id>/home` — customer dashboard
-- `GET /api/customers/<user_id>/notifications` — customer notifications
-- `GET /api/dashboard` — manager dashboard metrics
-- `GET /api/stats?survey=<slug>` — survey charts and statistical analysis
-- `GET /api/text-analysis?survey=<slug>` — keyword frequency analysis
-- `POST /api/surveys/<slug>/submissions` — submit survey responses
-
-### Django URL Structure (`feedback/urls.py`)
-
-| URL | View | Name |
-|---|---|---|
-| `/` | HomeView | `feedback:home` |
-| `/app/` | CustomerHomeView | `feedback:customer-home` |
-| `/app/notifications/` | CustomerNotificationsView | `feedback:customer-notifications` |
-| `/app/notifications/<pk>/read/` | MarkNoticeReadView | `feedback:notice-mark-read` |
-| `/dashboard/` | DashboardView | `feedback:dashboard` |
-| `/dashboard/forms/` | SurveyManagerView | `feedback:survey-manager` |
-| `/dashboard/forms/new/` | SurveyCreateView | `feedback:survey-create` |
-| `/dashboard/forms/<slug>/builder/` | SurveyBuilderView | `feedback:survey-builder` |
-| `/dashboard/stats/` | StatsOverviewView | `feedback:stats-overview` |
-| `/dashboard/text-analysis/` | TextAnalysisView | `feedback:text-analysis` |
-| `/dashboard/improvements/` | ImprovementListView | `feedback:improvement-list` |
-| `/dashboard/notices/` | NoticeCenterView | `feedback:notice-center` |
-| `/dashboard/notices/<pk>/` | NoticeDetailView | `feedback:notice-detail` |
-| `/survey/<slug>/` | SurveyDetailView | `feedback:survey-detail` |
-| `/survey/<slug>/success/` | SurveySubmitSuccessView | `feedback:survey-success` |
-| `/survey/<slug>/improvement/new/` | ImprovementCreateView | `feedback:improvement-create` |
-| `/accounts/login/` | — | `accounts:login` |
-| `/accounts/logout/` | — | `accounts:logout` |
-| `/accounts/signup/` | — | `accounts:signup` |
-| `/accounts/preferences/` | — | `accounts:preferences` |
-| `/accounts/profile/` | — | `accounts:profile` |
-| `/accounts/password-reset/` | PasswordResetView | `accounts:password_reset` |
-| `/accounts/password-reset/done/` | PasswordResetDoneView | `accounts:password_reset_done` |
-| `/accounts/reset/<uidb64>/<token>/` | PasswordResetConfirmView | `accounts:password_reset_confirm` |
-| `/accounts/reset/done/` | PasswordResetCompleteView | `accounts:password_reset_complete` |
-| `/accounts/password-change/` | PasswordChangeView | `accounts:password_change` |
-| `/accounts/password-change/done/` | PasswordChangeDoneView | `accounts:password_change_done` |
-
-### Roles
-
-Two user roles (`accounts/models.py`): `CUSTOMER` and `MANAGER`. Role-based access is enforced via Django mixins in views (`ManagerRequiredMixin`, `CustomerRequiredMixin`, `DashboardBaseMixin`).
-
-### Survey Access
-
-All surveys require login. `Survey.AccessMode`, `Survey.access_mode`, and `FeedbackSubmission.source` have been removed from the active schema. There is no anonymous or quick-access mode.
-
-`SurveyDetailView.dispatch` enforces the following checks in order, rendering in-place at the survey URL for all non-auth cases:
-
-1. **Unauthenticated** → redirect to `/accounts/login/?next=<path>` (the only redirect case).
-2. **`survey.is_active == False`** → render survey page with `survey_notice` message; form is hidden.
-3. **No questions** → render survey page with `survey_notice` message; form is hidden.
-4. **Customer already submitted** → render survey page with `survey_notice` message; form is hidden. Managers are exempt from this check.
-
-The user flow is: scan QR code → redirect to login if not authenticated → fill survey after login. Inactive surveys are not listed on the home page (`is_active=True` filter in both `local_service.py` and Flask `app.py`).
-
-### Survey Create Flow
-
-`SurveyCreateView` handles `/dashboard/forms/new/`. On valid POST:
-1. `slug` is auto-generated from `slugify(title)`. If collision exists, appends `-2`, `-3`, etc.
-2. `improvement_tracking_enabled` is always forced to `True` (not user-editable).
-
-`SurveyCreateForm` fields: `title`, `category`, `description`, `thank_you_email_enabled`, `is_active`.
-
-After creation, redirects to `feedback:survey-builder` for the new survey's slug.
-
-### Survey Category
-
-`SurveyCategory` model (`feedback/models.py`) — optional classification for surveys.
-
-- `name`: unique CharField
-- `Survey.category`: nullable FK → `SurveyCategory` (`SET_NULL`)
-
-`SurveyManagerView` supports:
-- `?sort=newest` (default) / `?sort=oldest` / `?sort=title`
-- `?category=<id>` — filter by category
-
-Admin: `SurveyCategoryAdmin` registered; `improvement_tracking_enabled` is `readonly` in `SurveyAdmin`.
-
-### Survey Builder
-
-`SurveyBuilderView` (`/dashboard/forms/<slug>/builder/`) has two functional tabs:
-
-| Tab | key | Content |
-|---|---|---|
-| 題目設定 | `questions` | Question list (with inline edit) + add-question form |
-| 問卷設定 | `settings` | `SurveyEditForm`: title, category, description, is_active (toggle), thank_you_email_enabled (checkbox), slug (read-only + copy button) |
-
-The builder page header uses compact KPI pills for survey title, question count, response count, and latest response time. Header actions link to stats, text-analysis, and the survey list. Tab state is preserved via `?tab=<key>` query param on redirect after POST.
-
-POST actions (`action` hidden input):
-- `delete-question` — delete a question by `question_id`
-- `edit-question` — update a question via `QuestionCreateForm(instance=question)`
-- `update-survey` — update survey metadata via `SurveyEditForm(instance=survey)`
-- (default, no action) — add a new question
-
-`SurveyEditForm` fields: `title`, `category`, `description`, `is_active`, `thank_you_email_enabled`.
-
-### Survey Fill Form (Step-by-Step)
-
-`survey_detail.html` is a stepped one-question-per-page form:
-- Step 0: read-only respondent info (name + email from `request.user`) + `consent_follow_up` checkbox only.
-- Steps 1–N: one question per step.
-- Navigation: "開始填答 →" on step 0, "下一題 →" on middle steps, "送出回饋" on last step.
-- `<form novalidate>` prevents browser HTML5 validation from blocking on hidden steps.
-- `data-has-error` attribute on each step card; JS navigates to first error step on server-side validation failure.
-- `respondent_name` and `respondent_email` are read from `request.user` in the view POST handler, not from form fields.
-
-### Text Analysis
-
-Text analysis is dictionary-driven and cached on `Answer` rows.
-
-Core files:
-- `feedback/text_pipeline.py` — tokenization, synonym normalization, sentiment scoring, and `ANALYSIS_VERSION`.
-- `feedback/data/` — stopwords, synonyms, keyword/category map, sentiment dictionaries, negation words, and intensifiers.
-- `feedback/local_service.py` — Django fallback payload with keywords, summary, and category sentiment distribution.
-- `services/feedback_service/app.py` — Flask payload mirrors the same text-analysis contract.
-
-`Answer` cached fields:
-- `analysis_text`: normalized text used for keyword analysis.
-- `sentiment_score`: approximate sentiment score from dictionary rules.
-- `analysis_version`: text pipeline version used when the row was computed.
-
-Management commands:
-- `python manage.py rebuild_text_analysis --dry-run` — preview historical text-answer rebuild.
-- `python manage.py rebuild_text_analysis` — backfill `analysis_text`, `sentiment_score`, and `analysis_version`.
-- `python manage.py sync_keyword_categories --dry-run` / `python manage.py sync_keyword_categories` — sync `feedback/data/keyword_category_map.json` into `KeywordCategory`.
-- `python manage.py top_uncategorized_keywords --survey <slug>` — inspect high-frequency uncategorized terms.
-
-Payload keys from `service_client.get_text_analysis(slug)`:
-- `keywords`: list of keyword rows with `keyword`, `count`, and `category`.
-- `summary`: includes answer coverage and average sentiment score.
-- `category_sentiments`: per-category positive / neutral / negative counts.
-
-Rule source-of-truth policy for text analysis:
-- Runtime classification uses `KeywordCategory` rows from DB.
-- `feedback/data/keyword_category_map.json` is a versioned seed file, not auto-loaded at runtime.
-- Team workflow should be: edit JSON -> run `sync_keyword_categories --dry-run` -> run `sync_keyword_categories` on target environment.
-- Avoid using manual DB edits as the primary update path, otherwise JSON and DB will drift.
-
-`TextAnalysisView` must pass all three payload sections into template context (`keywords`, `analysis_summary`, `category_sentiments`). If only `keywords` is passed, the word cloud/sentiment panel will partially render or appear empty.
-
-Text analysis selected-survey UI:
-- Uses compact header KPI pills instead of a large workflow description.
-- Uses tabs for keyword summary, sentiment distribution, and keyword-category rules.
-- Keyword summary uses a word cloud plus compact three-column keyword cards.
-- Sentiment distribution uses one card per category; the stacked bar includes inline positive / neutral / negative counts and percentages.
-- Keyword-category rules support create, inline edit, and delete from the rules tab.
-
-`keyword_summary()` in `feedback/models.py` pre-loads all `KeywordCategory` rules (1 query) then matches with fuzzy substring containment, avoiding N+1 queries.
-
-### Statistical Analysis
-
-`feedback/local_service.py` contains the current Pandas/SciPy statistical engine used by the Django fallback stats path.
-
-`get_survey_pandas_stats(survey)` returns:
-- `charts`: template-compatible chart records (`type="numeric"` or `type="category"`).
-- `inferential_analysis`: automatic statistical test records.
-
-Data type rules:
-- `continuous`: numeric quantity with meaningful magnitude. Gets numeric summaries; eligible DV for t-test / ANOVA / Pearson.
-- `discrete`: count-like numeric. Gets numeric summaries only; not auto-used as DV.
-- `nominal`: unordered category. Gets frequency chart; single-choice can be IV.
-- `ordinal`: ordered category without guaranteed equal spacing. Gets frequency chart; used in rank tests.
-- `text`: handled by text analysis pipeline only.
-
-Inference rules:
-- `nominal IV x continuous DV`: Welch t-test (2 groups) or one-way ANOVA (3–5 groups).
-- `nominal x nominal`: chi-square (single-choice only). Effect size: Cramer's V.
-- `nominal IV x ordinal DV`: Mann-Whitney U (2 groups) or Kruskal-Wallis (3–5 groups).
-- `continuous x continuous`: Pearson correlation.
-- Ordinal-rank pairs: Spearman correlation.
-
-Important: this engine is wired through Django fallback only. Flask `/api/stats` has not been upgraded to this Pandas contract.
-
-### Notice Center
-
-`/dashboard/notices/` follows the survey-index first pattern. It lists surveys with category filter and sort controls; selecting a survey via `?survey=<slug>` opens the notice list.
-
-### Improvement List Page
-
-`/dashboard/improvements/` uses the survey-index first pattern. Selecting a survey opens its improvement tracking workspace with a per-survey tracking toggle.
-
-POST actions:
-- `toggle-tracking` — enable / disable `Survey.improvement_tracking_enabled`
-- inline create improvement — only available when tracking is enabled
-
-### Customer Portal
-
-`/app/` is the customer-facing dashboard:
-- Account summary and latest status.
-- Submission record cards with status filters: `all`, `pending`, `tracking`, `improved`.
-- Each submission row shows survey title, category pill, status pill, and metadata (`<answer_count> 題已作答，提交時間：YYYY/M/D`).
-- Answer snippets are intentionally not shown to avoid leaking context.
-- Notification summary links to `/app/notifications/`.
-
-`/accounts/preferences/` — global notification opt-in + per-survey follow-up switches.
-`/accounts/profile/` — user profile data (name, email, organization). Keep profile fields out of preferences.
-
-### Manager Workspace Layout
-
-The manager sidebar (`dashboard_base.html`) is fixed: `position: sticky; height: 100vh` on `.manager-sidebar`, with `.manager-shell` set to `height: 100vh; overflow: hidden` and `.manager-main` set to `overflow-y: auto; height: 100vh`.
-
-### Signup Form (`/accounts/signup/`)
-
-`CustomerSignUpForm` fields: `username`, `first_name`, `email`, `notification_opt_in`, `password1`, `password2`. The signup page includes a disabled Google login placeholder button (coming soon) — do not remove it.
-
-## Environment Variables
-
-| Variable | Default | Notes |
-|---|---|---|
-| `DJANGO_SECRET_KEY` | — | Required in production |
-| `DEBUG` | `True` | Set `False` in production |
-| `ALLOWED_HOSTS` | — | Comma-separated |
-| `DATABASE_URL` | SQLite | PostgreSQL URL for production (Supabase) |
-| `FEEDBACK_SERVICE_URL` | — | Omit to use Django fallback only (recommended) |
-| `FEEDBACK_SERVICE_CONNECT_TIMEOUT` | `0.35` | Seconds |
-| `FEEDBACK_SERVICE_READ_TIMEOUT` | `0.8` | Seconds |
-| `FEEDBACK_SERVICE_FAILURE_COOLDOWN` | `30` | Seconds before retrying Flask |
-| `ADMIN_USERNAME` | — | Used by `ensure_superuser` |
-| `ADMIN_EMAIL` | — | Used by `ensure_superuser` |
-| `ADMIN_PASSWORD` | — | Used by `ensure_superuser` |
-| `EMAIL_HOST` | — | If set, auto-switches to SMTP backend |
-| `EMAIL_PORT` | `587` | SMTP port |
-| `EMAIL_USE_TLS` | `True` | |
-| `EMAIL_USE_SSL` | `False` | Mutually exclusive with TLS |
-| `EMAIL_HOST_USER` | — | SMTP username / Gmail address |
-| `EMAIL_HOST_PASSWORD` | — | Gmail App Password (16-digit; requires 2FA) |
-| `DEFAULT_FROM_EMAIL` | `noreply@feedback-platform.local` | Sender address |
-
-## Data Models
-
-**Django ORM** (source of truth): `SurveyCategory`, `Survey`, `Question`, `FeedbackSubmission`, `Answer`, `KeywordCategory`, `ImprovementUpdate`, `ImprovementDispatch` in `feedback/models.py`. `ImprovementDispatch.is_read` (bool, default False) tracks customer read status. `User` (extends `AbstractUser`) with `role` and `notification_opt_in` in `accounts/models.py`.
-
-**SQLAlchemy models** in `services/feedback_service/models.py` mirror the Django schema. When adding fields, update both ORMs and create a Django migration.
-
-## Migrations
-
-| Migration | Description |
-|---|---|
-| `feedback/0001` – `0004` | Initial schema |
-| `feedback/0005` | Remove QUICK/HYBRID choices |
-| `feedback/0006` | Data migration: convert hybrid/quick to login |
-| `feedback/0007_add_survey_category` | Add SurveyCategory; add Survey.category FK |
-| `feedback/0007_answer_analysis_text_...` | Add Answer cached text-analysis fields |
-| `feedback/0007_add_is_read_to_improvementdispatch` | Add `is_read` to ImprovementDispatch |
-| `feedback/0008` | Remove Survey.access_mode and FeedbackSubmission.source |
-| `feedback/0009_merge_20260428_2019` | Merge migration |
-| `feedback/0010_merge_20260505_2155` | Merge migration |
-
-## Deployment
-
-Deployed on **Render** (see `render.yaml`):
-- `feedback-insight-hub` (type: web) — Django, built via `build.sh`
-- `feedback-domain-service` (type: pserv) — Flask private service
-
-`build.sh` runs: `pip install`, `migrate`, `ensure_superuser`, `seed_demo`, `collectstatic`.
-
-## Git Collaboration Rules
-
-**Before opening a PR, always run:**
-
-```bash
-git fetch origin && git merge origin/main
-python manage.py check
-python manage.py migrate --check
-python -m py_compile feedback/models.py feedback/views.py feedback/local_service.py
-```
-
-**Hard rules:**
-
-1. Never edit `feedback/models.py` without creating a matching migration.
-2. Never remove `SurveyCategory`, `Survey.category`, `Answer.analysis_text/sentiment_score/analysis_version`, or `ImprovementDispatch.is_read`.
-3. Never add back `Survey.access_mode` or `FeedbackSubmission.source`.
-4. Feature branches must be rebased / merged from latest `main` before PR.
-5. Do not commit `AGENTS.md` or `scripts/` in feature PRs unless explicitly requested.
-
-## Dependencies
-
-```
-Django==6.0.3
-dj-database-url==3.0.1
-Flask==3.1.2
-gunicorn==23.0.0
-psycopg[binary]==3.3.3
-python-dotenv==1.0.1
-pandas==2.3.3
-requests==2.32.5
-scipy==1.16.3
-SQLAlchemy==2.0.43
-whitenoise==6.9.0
-```
-
-No frontend JS/CSS framework. All UI is custom HTML + `static/css/app.css`.
-
-### Notification System
-
-`feedback/context_processors.py` provides `unread_notification_count` injected into every template context. Registered in `TEMPLATES.context_processors` in `config/settings.py`.
-
-**AJAX mark-as-read flow:**
-1. Each notification row has `data-pk`, `data-is-read`, `data-survey-url` attributes.
-2. On click, JS POSTs to `/app/notifications/<pk>/read/` with `X-Requested-With: XMLHttpRequest` and CSRF cookie.
-3. `MarkNoticeReadView` returns `{"ok": true}` for AJAX, or redirects for non-AJAX.
-4. Frontend removes `record-row-unread` class, decrements badge, updates pill to "已讀", navigates to `data-survey-url`.
-
-## Merge Incident Log - 2026-05-07
-
-See `docs/CHANGELOG.md` for the full incident record. Summary: a dangerous migration chain (`0010_remove_answer_analysis_text_and_more`) from `origin/main` was identified and removed before production deployment. The production-safe schema was preserved.
+本檔是根目錄代理指引；依使用者本次需求限定範圍，規劃與歷史紀錄不代表功能已完成。
+只讀本任務需要的參考資料；實際程式、資料產物與驗證證據優先於舊對話摘要。
+
+## 工作邊界
+
+- 開始修改前讀本檔、確認實際 Git 根目錄與 git status，保留使用者及其他協作者修改。
+- 不因文件列出命令就執行；不自行正式匯入、部署、寄信、commit 或 push。
+- schema 變更可依任務產生 migration 檔；套用至開發／正式 DB 須確認目標及授權；隔離測試 DB 可依測試流程建立與套用。
+- PR 前先檢查目前分支、目標分支與差異，再依團隊策略處理；不固定自動 merge／rebase。
+- 不把無關 AGENTS.md、scripts 或既有未提交修改混入功能提交；指引修改需在任務範圍內。
+- 不自動開子代理、啟動完整伺服器或擴大重構；使用者要求時才依範圍進行。
+- 憑證不得提交 Git、放進 log 或打包至 EXE；不輸出 .env 或連線秘密。
+
+## 已確認現況（2026-09-05 工作區盤點）
+
+- Django 負責頁面、權限及 ORM；核心是 Survey／Question／FeedbackSubmission／Answer。
+- 網站問卷為 login-only；保留 CUSTOMER／MANAGER 權限與伺服器端驗證。
+- UI 修改保留註冊頁停用的 Google 登入佔位；公開／客戶頁樣式不得污染管理頁，填答身分取自登入使用者。
+- Django 是唯一後端與 ORM；頁面、填答、分析協調及本機工作台共用 Django domain service，不恢復第二套 fallback 寫入路徑。
+- 統計使用 Pandas／SciPy，網站與本機 Worker 共用分析契約。
+- 既有 SurveyAIReportSnapshot／SurveyAIAnalysisStage 有指紋、版本、revision 與成功結果重用。
+- 網頁統計／文字頁仍可能在 request 計算；Snapshot／Gemini 產生仍有同步 POST 路徑。
+- 通用匯入器及 Amazon／TripAdvisor mapping 已存在；匯入器可展開 Submission／Answer。
+- TripAdvisor 本機 raw／clean／report／manifest 已存在，固定版本資料為 201,295 列。
+- AnalysisInput、AnswerInput、ParquetInput 與本機統計／詞典 NLP／AI schema mock 管線已存在。
+- 本機 analysis-mock 是格式與流程驗證產物，不是真實 Gemini 結論或已發布的雲端 Snapshot。
+- SurveyAnalysisState／AnalysisJob、版本失效、待處理合併、租約／心跳／重試／取消及發布前版本核對已在程式定義；0015～0018 已於 2026-09-06 套用至設定的 Supabase。deterministic／AI 單次命令與持續輪詢 CLI、有限展示副本及選用的發布只讀頁已存在；仍未安裝為服務或呼叫真實 Gemini。
+- 桌面工作台已把統計／文字與 Gemini 分為兩段，分別顯示時間及版本狀態；Gemini 預設停用，管理員勾選 API 額度選項後才執行。Render blueprint 已收斂為 Django 單一 web service。
+
+## 目標架構／尚未實作
+
+- 現階段目標：收資料 → 背景統計與文字分析 → 既有 schema 及 Gemini → 版本化發布 → Render 快速展示。
+- 目標由 Supabase PostgreSQL 保存所有問卷、匯入回覆、工作權威狀態及 Snapshot；本機 Parquet／DuckDB 僅作匯入前驗證，運算由本機 Worker／EXE 執行。
+- 優先重用既有分析邏輯、Snapshot／AI Stage；避免新增同義模型或資料集專用平行核心。
+- 隔離 PostgreSQL 17.11 已驗證雙 Worker 原子領取、租約接手與舊租約發布拒絕；Worker 程序服務安裝尚未完成。
+- 發布須核對輸入版本、管線版本與工作所有權，避免過期 Worker 覆蓋新結果。
+- Render 目標：統計／文字／AI 分析頁讀取已發布結果，不執行重運算；問卷收集、權限、設定及工作排程仍保留必要讀寫。
+- 本機離線時沿用最後成功結果，新工作等待且不回退雲端重算，仍為待完成目標。
+- Worker 目標為主動向外連線，不公開本機服務埠；本機 CLI 不等於正式 Worker。
+- 模型訓練、預測及固定訓練切分仍延後；Windows GUI 與 one-folder EXE 已能列出 Supabase 問卷，依設定執行兩段分析並發布版本化結果；安裝包、簽章、正式連線與雲端驗收尚未完成。
+- 本機模型產物與實驗紀錄須版本管理及備份，不能當作可隨意刪除的快取。
+
+## Schema 與相容性
+
+- Django models 與 migration 定義 schema；目標 DB 實際套用狀態須另查，不能由檔案或歷史紀錄推定。
+- 只有模型狀態／schema 變更才建立 migration；方法與純邏輯修改不建立空 migration。
+- 不新增第二套 ORM schema 鏡像；共用資料合約以 Django models、migration 及分析輸入介面為準。
+- 保護 SurveyCategory、Survey.category、Answer.analysis_text／sentiment_score／analysis_version、ImprovementDispatch.is_read。
+- Survey.access_mode、Survey.AccessMode、FeedbackSubmission.source 已移除；不因舊程式或樣板恢復。
+- 上述保護與移除規則可依明確需求及協調好的遷移計畫變更；不能當作永久 DB 事實。
+- 不重複定義統計／文字 helper；維持既有 payload 與頁面消費端合約。
+- 評分 ordinal 不得誤標 continuous；計數 discrete；各分析報有效 N、缺失與排除原因。
+- 原生文字分類使用 DB KeywordCategory；JSON 是版本化 seed，非 runtime 自動載入。
+- 規則變更需檢查同步流程；實際同步、重建 Answer 快取均需任務授權。
+- 保留中文文字分析相容性；英文詞典覆蓋率不代表準確率，未知情緒不能當成中立。
+
+## 真實資料與發布
+
+- 主展示來源為 TripAdvisor；Amazon Beauty 僅保留次要相容性案例，授權衝突仍須查核。
+- 不生成、翻譯、改寫或補造正式評論；fixture 僅供隔離測試，不得進入正式問卷。
+- 外部正式資料須透過 mapping 建立一般 `Survey／Question／FeedbackSubmission／Answer`，與網站問卷共用排程、分析及發布流程；Parquet 直接分析只保留資料準備／相容性用途。
+- 資料版本須可追溯並驗證完整性；已驗證產物重用，下載與快取細節按需讀取 [外部資料交接](docs/external-dataset-import.md)。
+- 不全量轉 CSV、不讀 Pickle 或執行遠端資料集程式碼。
+- raw／clean／report／manifest 分開；限制 raw 存取，大檔受 Git 忽略，不任意刪除既有成果。
+- user_id 僅在受控處理中參與穩定去重；不進 clean、DB、UI 或 log；鍵不能依賴抽樣列序。
+- 區分完全重複與同鍵不同內容衝突；個別構面缺失依任務保留 null，不自動排除整列。
+- hotel_id 此版本每值僅一列，不能作飯店分組；值分布不能單獨證明真實世界語意。
+- clean 仍可能含個資；AI evidence／公開輸出需遮蔽，不宣稱完全匿名。
+- 情緒、關鍵字及 AI 結論須標示為分析結果；上傳者授權標記不等於完整權利保證。
+- 開發及驗證期間，真實付費 API 與正式發布須有任務授權。
+- 產品運行時，已由管理員啟用並設定範圍／額度的自動分析，可依設定呼叫 Gemini 及發布結果，不逐筆詢問。
+- 未啟用者使用 mock 或停在待處理；寄信與建立改善項目另行授權。
+
+## 命令用途與副作用
+
+以下只是用途索引，依當次任務選擇執行，不能視為初始化或 PR 必跑清單。
+
+| 命令／操作 | 用途與限制 |
+| --- | --- |
+| git status／git diff／git diff --check | 本機狀態、差異與空白檢查；不改分支歷史。 |
+| python manage.py check | Django 設定檢查；先確認 Python 依賴與設定載入副作用。 |
+| python manage.py test <target> | 只跑相關測試；可能建立／銷毀測試 DB，先確認隔離，禁止使用正式 DB。 |
+| python manage.py migrate --check | 查 migration 套用狀態，會存取所選 DB；不能當成離線檢查。 |
+| python manage.py makemigrations | 產生 migration 檔；僅模型狀態／schema 修改才需要。 |
+| python manage.py migrate | 修改所選 DB schema／資料；開發／正式 DB 須確認目標及授權，隔離測試 DB 可依測試流程套用。 |
+| seed_demo／其他 seed／ensure_superuser | 會寫資料／帳號；僅明確授權與已確認目標環境才執行。 |
+| seed_notification_test／通知與寄信命令 | 可能寫 DB 及實際寄信；查設定與副作用後依授權執行。 |
+| 匯入、重建分析、同步詞典 | 查相應指令的 preview／dry-run 行為；dry-run 不證明正式寫入冪等性。 |
+| 套件安裝、build.sh、部署命令 | 可能改環境、DB 或發布服務；不因讀文件而執行。 |
+
+- build.sh 不執行 seed_demo、管理員建立或一次性資料修復；仍會套用 migration，正式部署前須確認目標 DB、備份與回復方案。
+- 沿用已確認的 Python 環境並核對測試證據，不由測試檔存在推定通過；暫時環境事件記於交接文件。
+- 測試 DB 隔離不能確認就停止 DB 測試並回報；Django 啟動可能自動載入 .env。
+- 純文件修改只驗證連結／路徑、規則一致性與 git diff --check，不跑整套 Django 測試。
+
+## 按任務讀取索引
+
+| 任務 | 僅讀相關來源 |
+| --- | --- |
+| 匯入／本機資料 | [外部資料交接](docs/external-dataset-import.md)、[匯入實作](feedback/importing/)、[mapping](feedback/import_mappings/) |
+| 共用／背景分析 | [輸入契約](feedback/analysis_input.py)、[adapters](feedback/analysis_adapters.py)、[本機管線](feedback/background_analysis.py) |
+| 統計／文字 | [分析服務](feedback/local_service.py)、[文字管線](feedback/text_pipeline.py)、[詞典資料](feedback/data/)、[架構參考](docs/architecture.md) |
+| Snapshot／Gemini | [Snapshot](feedback/ai_snapshot_service.py)、[AI Stage](feedback/ai_stage_service.py)、[AI Report](feedback/ai_report_service.py)、[README](README.md) |
+| UI／權限／完整 URL | [架構與 UI 流程](docs/architecture.md)、[templates](templates/)、[feedback URLs](feedback/urls.py)、[accounts URLs](accounts/urls.py) |
+| 部署／依賴 | [README](README.md)、[render.yaml](render.yaml)、[build.sh](build.sh)、[設定](config/settings.py)、[依賴來源](requirements.txt) |
+| Schema／migration | [Django models](feedback/models.py)、[accounts models](accounts/models.py)、[feedback migrations](feedback/migrations/)、[accounts migrations](accounts/migrations/) |
+| 歷史 UI／遷移事件 | [CHANGELOG](docs/CHANGELOG.md)；只查相關日期或事件，不要求每回合全讀。 |
+
+## 歷史資訊與省上下文
+
+- 2026-05 UI 細節與 migration 事故已在 CHANGELOG／架構參考；歷史命令不構成現行授權。
+- 完整 URL、依賴版本及 migration 清單以程式來源為準，不在本檔複製；作用域 AGENTS 不作歷史倉庫。
+- 用 rg 局部定位後讀必要片段；不掃全 repo、不貼大型 log、完整評論或敏感原文。
+- 相同輸入、程式及環境且已有驗證證據者不重跑；有新差異或疑慮才補相關驗證。
+- 同一根因修正兩次仍失敗就回報原因、證據及阻礙，不無限重試。
+- Windows 文字讀取明確用 UTF-8，例如 Get-Content AGENTS.md -Encoding utf8。
+- 先區分終端解碼錯誤與檔案損壞；不能只因亂碼顯示就重寫檔案，不硬編碼工作路徑。

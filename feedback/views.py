@@ -4,6 +4,7 @@ from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
+from django.conf import settings
 from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Max, Q
@@ -70,7 +71,17 @@ from .notice_service import (
     resolve_notice_recipients,
     send_notice_batch,
 )
-from .service_client import service_client
+from . import local_service
+from .analysis_jobs import schedule_survey_analysis
+from .published_analysis import get_published_ai_pipeline_status, get_published_analysis_payload
+
+
+def analysis_visible_surveys():
+    return (
+        Survey.objects.filter(analysis_enabled=True, archived_at__isnull=True)
+        .filter(Q(is_active=True) | Q(dataset_import_batches__isnull=False))
+        .distinct()
+    )
 
 
 class ManagerRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
@@ -99,7 +110,7 @@ class DashboardBaseMixin(ManagerRequiredMixin):
         return {
             "dashboard_nav": self.dashboard_nav,
             "active_section": self.active_section,
-            "survey_list": Survey.objects.filter(is_active=True).order_by("title"),
+            "survey_list": analysis_visible_surveys().order_by("title"),
         }
 
 
@@ -142,7 +153,7 @@ class CustomerHomeView(CustomerRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        payload = service_client.get_customer_home(self.request.user)
+        payload = local_service.get_customer_home_payload(self.request.user)
         submission_rows = payload.get("submission_rows", [])
         for row in submission_rows:
             submission = row.get("submission", {})
@@ -184,7 +195,7 @@ class CustomerNotificationsView(CustomerRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context.update(service_client.get_customer_notifications(self.request.user))
+        context.update(local_service.get_customer_notifications_payload(self.request.user))
         context["notification_opt_in"] = self.request.user.notification_opt_in
         return context
 
@@ -211,9 +222,9 @@ class DashboardView(DashboardBaseMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context.update(self.get_dashboard_base_context())
-        context.update(service_client.get_dashboard())
+        context.update(local_service.get_dashboard_payload())
         context["ai_report_surveys"] = (
-            Survey.objects.filter(is_active=True)
+            analysis_visible_surveys()
             .annotate(
                 response_count=Count("submissions", distinct=True),
                 valid_response_count=Count(
@@ -229,19 +240,38 @@ class DashboardView(DashboardBaseMixin, TemplateView):
 
 class AIReportStatusView(ManagerRequiredMixin, View):
     def get(self, request, slug):
-        survey = get_object_or_404(Survey, slug=slug, is_active=True)
+        survey = get_object_or_404(analysis_visible_surveys(), slug=slug)
+        if settings.ANALYSIS_READ_PUBLISHED_ONLY:
+            return JsonResponse({"ok": True, **get_published_ai_pipeline_status(survey)})
         return JsonResponse({"ok": True, **get_report_status(survey)})
 
 
 class AIStagePipelineStatusView(ManagerRequiredMixin, View):
     def get(self, request, slug):
-        survey = get_object_or_404(Survey, slug=slug, is_active=True)
+        survey = get_object_or_404(analysis_visible_surveys(), slug=slug)
+        if settings.ANALYSIS_READ_PUBLISHED_ONLY:
+            return JsonResponse({"ok": True, **get_published_ai_pipeline_status(survey)})
         return JsonResponse({"ok": True, **get_pipeline_status(survey)})
+
+
+def _queue_background_analysis(survey):
+    job = schedule_survey_analysis(survey.pk, change="none")
+    return JsonResponse(
+        {
+            "ok": True,
+            "queued": True,
+            "job": {"id": job.pk, "status": job.status, "executor": job.executor},
+            **get_published_ai_pipeline_status(survey),
+        },
+        status=202,
+    )
 
 
 class AIReportSnapshotView(ManagerRequiredMixin, View):
     def post(self, request, slug):
         survey = get_object_or_404(Survey, slug=slug, is_active=True)
+        if settings.ANALYSIS_READ_PUBLISHED_ONLY:
+            return _queue_background_analysis(survey)
         try:
             result = build_or_reuse_snapshot(survey)
         except SnapshotError as exc:
@@ -287,6 +317,8 @@ class AIReportSnapshotView(ManagerRequiredMixin, View):
 class AIReportGenerateView(ManagerRequiredMixin, View):
     def post(self, request, slug, pk):
         survey = get_object_or_404(Survey, slug=slug, is_active=True)
+        if settings.ANALYSIS_READ_PUBLISHED_ONLY:
+            return _queue_background_analysis(survey)
         snapshot = get_object_or_404(
             SurveyAIReportSnapshot.objects.select_related("survey"),
             pk=pk,
@@ -305,14 +337,16 @@ class AIReportGenerateView(ManagerRequiredMixin, View):
 class AIStageGenerateView(ManagerRequiredMixin, View):
     def post(self, request, slug, pk, stage_type):
         survey = get_object_or_404(Survey, slug=slug, is_active=True)
+        allowed = {item.value for item in SurveyAIAnalysisStage.StageType}
+        if stage_type not in allowed:
+            raise Http404("不支援的 AI 分析階段。")
+        if settings.ANALYSIS_READ_PUBLISHED_ONLY:
+            return _queue_background_analysis(survey)
         snapshot = get_object_or_404(
             SurveyAIReportSnapshot.objects.select_related("survey"),
             pk=pk,
             survey=survey,
         )
-        allowed = {item.value for item in SurveyAIAnalysisStage.StageType}
-        if stage_type not in allowed:
-            raise Http404("不支援的 AI 分析階段。")
         if stage_type == SurveyAIAnalysisStage.StageType.TEXT:
             statistics = latest_stage_status(snapshot)[SurveyAIAnalysisStage.StageType.STATISTICS]
             if statistics["status"] != SurveyAIAnalysisStage.Status.SUCCEEDED or not statistics["is_current"]:
@@ -352,7 +386,7 @@ class SurveyManagerView(DashboardBaseMixin, TemplateView):
         category_id = self.request.GET.get("category", "")
 
         qs = (
-            Survey.objects
+            Survey.objects.filter(archived_at__isnull=True)
             .prefetch_related("questions")
             .select_related("category")
             .annotate(
@@ -492,8 +526,20 @@ class SurveyBuilderView(DashboardBaseMixin, DetailView):
 
         if action == "delete-question":
             question = get_object_or_404(Question, id=request.POST.get("question_id"), survey=self.object)
-            question.delete()
-            messages.success(request, "題目已從問卷中移除。")
+            if question.answers.exists():
+                question.is_active = False
+                question.save(update_fields=["is_active"])
+                messages.success(request, "題目已有歷史回答，已停用並保留資料。")
+            else:
+                question.delete()
+                messages.success(request, "尚無回答的題目已移除。")
+            return redirect("feedback:survey-builder", slug=self.object.slug)
+
+        if action == "restore-question":
+            question = get_object_or_404(Question, id=request.POST.get("question_id"), survey=self.object)
+            question.is_active = True
+            question.save(update_fields=["is_active"])
+            messages.success(request, "題目已恢復，會重新納入填答與分析。")
             return redirect("feedback:survey-builder", slug=self.object.slug)
 
         if action == "edit-question":
@@ -546,10 +592,13 @@ class SurveyDeleteView(DashboardBaseMixin, DeleteView):
         return Survey.objects.all()
 
     def form_valid(self, form):
-        survey_title = self.get_object().title
-        response = super().form_valid(form)
-        messages.success(self.request, f"問卷「{survey_title}」已刪除。")
-        return response
+        survey = self.get_object()
+        survey.is_active = False
+        survey.analysis_enabled = False
+        survey.archived_at = timezone.now()
+        survey.save(update_fields=("is_active", "analysis_enabled", "archived_at", "updated_at"))
+        messages.success(self.request, f"問卷「{survey.title}」已封存，歷史資料與分析版本均已保留。")
+        return HttpResponseRedirect(self.get_success_url())
 
 
 class StatsOverviewView(DashboardBaseMixin, TemplateView):
@@ -565,7 +614,7 @@ class StatsOverviewView(DashboardBaseMixin, TemplateView):
         context.update(self.get_dashboard_base_context())
         context["selected_survey"] = survey
         stats_surveys = (
-            Survey.objects.filter(is_active=True)
+            analysis_visible_surveys()
             .select_related("category")
             .annotate(
                 question_count=Count("questions", distinct=True),
@@ -585,7 +634,14 @@ class StatsOverviewView(DashboardBaseMixin, TemplateView):
         context["categories"] = SurveyCategory.objects.all()
         context["current_sort"] = sort
         context["current_category"] = category_id
-        payload = service_client.get_stats(selected_slug) if selected_slug else {"charts": [], "question_analysis": [], "inferential_analysis": []}
+        publication = None
+        if survey and settings.ANALYSIS_READ_PUBLISHED_ONLY:
+            publication = get_published_analysis_payload(survey)
+            payload = publication["statistics"]
+        else:
+            payload = local_service.get_stats_payload(selected_slug) if selected_slug else {"charts": [], "question_analysis": [], "inferential_analysis": []}
+        context["analysis_publication"] = publication
+        context["analysis_stage_fresh"] = publication["freshness"]["statistics"] if publication else None
         context["charts"] = payload.get("charts", [])
         context["question_analysis"] = payload.get("question_analysis", [])
         inferential = payload.get("inferential_analysis", [])
@@ -698,7 +754,7 @@ class TextAnalysisView(DashboardBaseMixin, TemplateView):
         context.update(self.get_dashboard_base_context())
         context["selected_survey"] = survey
         text_surveys = (
-            Survey.objects.filter(is_active=True)
+            analysis_visible_surveys()
             .select_related("category")
             .annotate(
                 question_count=Count("questions", distinct=True),
@@ -723,7 +779,14 @@ class TextAnalysisView(DashboardBaseMixin, TemplateView):
         context["categories"] = SurveyCategory.objects.all()
         context["current_sort"] = sort
         context["current_category"] = category_id
-        text_analysis_payload = service_client.get_text_analysis(selected_slug) if survey else {}
+        publication = None
+        if survey and settings.ANALYSIS_READ_PUBLISHED_ONLY:
+            publication = get_published_analysis_payload(survey)
+            text_analysis_payload = publication["text_analysis"]
+        else:
+            text_analysis_payload = local_service.get_text_analysis_payload(selected_slug) if survey else {}
+        context["analysis_publication"] = publication
+        context["analysis_stage_fresh"] = publication["freshness"]["text"] if publication else None
         context["keywords"] = text_analysis_payload.get("keywords", []) if survey else []
         context["analysis_summary"] = text_analysis_payload.get("summary", {}) if survey else {}
         context["category_sentiments"] = text_analysis_payload.get("category_sentiments", []) if survey else []
@@ -878,11 +941,11 @@ class SurveyDetailView(DetailView):
         if not request.user.is_authenticated:
             messages.warning(request, "這份問卷需要先登入後才能填答。")
             return redirect(f"{reverse('accounts:login')}?next={request.path}")
-        if not self.object.is_active:
+        if not self.object.accepts_responses:
             return self.render_to_response(
                 self.get_context_data(survey_notice="這份問卷目前未開放填答。", survey_notice_type="error")
             )
-        if not self.object.questions.exists():
+        if not self.object.questions.filter(is_active=True).exists():
             return self.render_to_response(
                 self.get_context_data(survey_notice="這份問卷目前沒有任何題目。", survey_notice_type="warning")
             )
@@ -905,6 +968,7 @@ class SurveyDetailView(DetailView):
             }
         context["respondent_form"] = kwargs.get("respondent_form") or RespondentMetaForm(prefix="meta", initial=initial)
         context["form"] = kwargs.get("form") or SurveyFormBuilder(survey=self.object)
+        context["active_question_count"] = self.object.questions.filter(is_active=True).count()
         return context
 
     def post(self, request, *args, **kwargs):
@@ -920,16 +984,21 @@ class SurveyDetailView(DetailView):
             respondent_name = request.user.get_full_name() if request.user.is_authenticated else ""
             respondent_email = request.user.email if request.user.is_authenticated else ""
 
-            submission_result = service_client.submit_survey(
+            submission_result = local_service.submit_survey_payload(
                 self.object,
                 user=request.user if request.user.is_authenticated else None,
                 respondent_name=respondent_name,
                 respondent_email=respondent_email,
                 consent_follow_up=consent_follow_up,
                 answers={key: value for key, value in form.cleaned_data.items()},
+                idempotency_key=respondent_form.cleaned_data["idempotency_key"],
             )
 
-            if submission_result["thank_you_email_enabled"] and submission_result["respondent_email"]:
+            if (
+                not submission_result["reused"]
+                and submission_result["thank_you_email_enabled"]
+                and submission_result["respondent_email"]
+            ):
                 send_mail(
                     subject=f"感謝填寫 {submission_result['survey_title']}",
                     message="我們已收到你的回覆。若後續有對應的改善通知，將依你的偏好主動提供最新進度。",

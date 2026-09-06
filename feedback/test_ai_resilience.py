@@ -219,14 +219,17 @@ class GenerationFallbackTests(AIReportTestCase):
         self.assertEqual(metrics[0]["finish_reason"], "STOP")
 
     @patch("feedback.ai_report_service.create_gemini_client")
-    def test_timeout_retries_once_with_compact_profile(self, client_factory):
+    def test_timeout_does_not_blindly_retry_when_provider_result_is_uncertain(self, client_factory):
         snapshot = self.make_snapshot()
         client = client_factory.return_value
         client.models.generate_content.side_effect = [TimeoutError(), self._successful_response()]
-        result = generate_report(snapshot)
-        self.assertEqual(client.models.generate_content.call_count, 2)
-        self.assertEqual(result.ai_report["_generation"]["profile"], COMPACT_PROFILE)
-        self.assertEqual(result.source_snapshot["generation_metrics"][1]["retry_count"], 1)
+        with self.assertRaises(AIReportError) as raised:
+            generate_report(snapshot)
+        self.assertEqual(raised.exception.error_code, "timeout")
+        self.assertEqual(client.models.generate_content.call_count, 1)
+        snapshot.refresh_from_db()
+        self.assertEqual(snapshot.status, SurveyAIReportSnapshot.Status.FAILED)
+        self.assertEqual(len(snapshot.source_snapshot["generation_metrics"]), 1)
 
     @patch("feedback.ai_report_service.time.sleep")
     @patch("feedback.ai_report_service.create_gemini_client")
@@ -285,7 +288,7 @@ class GenerationFallbackTests(AIReportTestCase):
         self.assertEqual(serialized["evidence_coverage"]["total"], 79)
 
     @patch("feedback.ai_report_service.create_gemini_client")
-    def test_compact_failure_preserves_previous_successful_report(self, client_factory):
+    def test_uncertain_timeout_preserves_previous_successful_report_without_retry(self, client_factory):
         self.add_responses(count=3)
         current_fingerprint = calculate_data_fingerprint(self.survey).value
         previous = self.make_snapshot(status=SurveyAIReportSnapshot.Status.SUCCEEDED, fingerprint="1" * 64)
@@ -297,14 +300,15 @@ class GenerationFallbackTests(AIReportTestCase):
         client.models.generate_content.side_effect = [TimeoutError(), ProviderFailure(503)]
         with self.assertRaises(AIReportError) as raised:
             generate_report(current)
-        self.assertEqual(raised.exception.error_code, "server_unavailable")
+        self.assertEqual(raised.exception.error_code, "timeout")
+        self.assertEqual(client.models.generate_content.call_count, 1)
         previous.refresh_from_db()
         current.refresh_from_db()
         self.assertEqual(previous.status, SurveyAIReportSnapshot.Status.SUCCEEDED)
         self.assertEqual(current.status, SurveyAIReportSnapshot.Status.FAILED)
         status = get_report_status(self.survey)
         self.assertEqual(status["report"]["snapshot_id"], previous.pk)
-        self.assertEqual(status["freshness"]["latest_error_code"], "server_unavailable")
+        self.assertEqual(status["freshness"]["latest_error_code"], "timeout")
         self.assertTrue(status["freshness"]["latest_analysis_incomplete"])
 
     @patch("feedback.ai_report_service.create_gemini_client")

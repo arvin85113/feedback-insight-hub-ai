@@ -247,7 +247,11 @@ def calculate_data_fingerprint(survey, *, include_improvements=True):
     started = time.perf_counter()
     chunk_size = settings.AI_REPORT_FINGERPRINT_CHUNK_SIZE
     hasher = hashlib.sha256()
-    scope = FeedbackSubmission.objects.filter(survey=survey).aggregate(
+    scope = FeedbackSubmission.objects.filter(
+        survey=survey,
+        is_complete=True,
+        voided_at__isnull=True,
+    ).aggregate(
         response_count=Count("id", distinct=True),
         valid_response_count=Count(
             "id",
@@ -266,6 +270,8 @@ def calculate_data_fingerprint(survey, *, include_improvements=True):
             survey.description,
             survey.category_id,
             survey.is_active,
+            survey.analysis_enabled,
+            survey.archived_at,
             survey.improvement_tracking_enabled,
             survey.updated_at,
             ANALYSIS_VERSION,
@@ -276,10 +282,11 @@ def calculate_data_fingerprint(survey, *, include_improvements=True):
     streams = [
         (
             "question",
-            Question.objects.filter(survey=survey)
+            Question.objects.filter(survey=survey, is_active=True)
             .order_by("id")
             .values_list(
                 "id",
+                "code",
                 "title",
                 "help_text",
                 "kind",
@@ -292,13 +299,22 @@ def calculate_data_fingerprint(survey, *, include_improvements=True):
         ),
         (
             "submission",
-            FeedbackSubmission.objects.filter(survey=survey)
+            FeedbackSubmission.objects.filter(
+                survey=survey,
+                is_complete=True,
+                voided_at__isnull=True,
+            )
             .order_by("id")
             .values_list("id", "submitted_at"),
         ),
         (
             "answer",
-            Answer.objects.filter(question__survey=survey)
+            Answer.objects.filter(
+                question__survey=survey,
+                question__is_active=True,
+                submission__is_complete=True,
+                submission__voided_at__isnull=True,
+            )
             .order_by("id")
             .values_list(
                 "id",
@@ -408,9 +424,18 @@ def _sanitize_distribution(rows, caveats, label):
 
 
 def _build_statistics_snapshot(survey, payload, evidence_catalog, caveats):
+    return build_statistics_snapshot(
+        list(survey.questions.filter(is_active=True).order_by("order", "id")),
+        payload,
+        evidence_catalog,
+        caveats,
+    )
+
+
+def build_statistics_snapshot(questions, payload, evidence_catalog, caveats):
     question_refs = {
         question.pk: f"q{index}"
-        for index, question in enumerate(survey.questions.order_by("order", "id"), start=1)
+        for index, question in enumerate(questions, start=1)
     }
     descriptive_results = []
     categorical_distributions = []
@@ -520,6 +545,8 @@ def _build_statistics_snapshot(survey, payload, evidence_catalog, caveats):
                 "is_significant",
                 "warning",
                 "insight",
+                "valid_n",
+                "excluded_n",
             }
         }
         safe_result["test_ref"] = f"test-{index}"
@@ -554,7 +581,7 @@ def _build_statistics_snapshot(survey, payload, evidence_catalog, caveats):
                         if value
                     ),
                     value=safe_result[key],
-                    sample_size=sum(int(group.get("count") or 0) for group in groups) or None,
+                    sample_size=result.get("valid_n") or sum(int(group.get("count") or 0) for group in groups) or None,
                     test_ref=f"test-{index}",
                     metric_type=key,
                     method_key=safe_result.get("method_key"),
@@ -665,7 +692,12 @@ def _build_anonymous_snapshot(survey, fingerprint):
 
     trend_start = generated_at - timedelta(days=6)
     trend_rows = (
-        FeedbackSubmission.objects.filter(survey=survey, submitted_at__gte=trend_start)
+        FeedbackSubmission.objects.filter(
+            survey=survey,
+            is_complete=True,
+            voided_at__isnull=True,
+            submitted_at__gte=trend_start,
+        )
         .annotate(day=TruncDate("submitted_at"))
         .values("day")
         .annotate(total=Count("id"))

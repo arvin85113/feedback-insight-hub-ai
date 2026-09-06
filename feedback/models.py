@@ -9,6 +9,7 @@ from django.db import models
 from django.db.models import Count
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.text import slugify
 
 
 class SurveyCategory(models.Model):
@@ -39,6 +40,8 @@ class Survey(models.Model):
     thank_you_email_enabled = models.BooleanField(default=True)
     improvement_tracking_enabled = models.BooleanField(default=True)
     is_active = models.BooleanField(default=True)
+    analysis_enabled = models.BooleanField(default=True)
+    archived_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -50,6 +53,10 @@ class Survey(models.Model):
 
     def get_absolute_url(self):
         return reverse("feedback:survey-detail", args=[self.slug])
+
+    @property
+    def accepts_responses(self):
+        return self.is_active and self.archived_at is None
 
 
 class Question(models.Model):
@@ -70,6 +77,7 @@ class Question(models.Model):
         TEXT = "text", "文字"
 
     survey = models.ForeignKey(Survey, on_delete=models.CASCADE, related_name="questions")
+    code = models.SlugField(max_length=80)
     title = models.CharField(max_length=255)
     help_text = models.CharField(max_length=255, blank=True)
     kind = models.CharField(max_length=20, choices=Kind.choices)
@@ -77,17 +85,50 @@ class Question(models.Model):
     options_text = models.TextField(blank=True, help_text="每行一個選項，供單選或多選題使用。")
     is_required = models.BooleanField(default=True)
     enable_keyword_tracking = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
     order = models.PositiveIntegerField(default=1)
 
     class Meta:
         ordering = ["order", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=("survey", "code"), name="fb_question_survey_code_uniq"),
+        ]
 
     def __str__(self):
         return f"{self.survey.title} - {self.title}"
 
+    def clean(self):
+        super().clean()
+        allowed_types = {
+            self.Kind.SHORT_TEXT: {self.DataType.TEXT},
+            self.Kind.LONG_TEXT: {self.DataType.TEXT},
+            self.Kind.SINGLE_CHOICE: {self.DataType.NOMINAL, self.DataType.ORDINAL},
+            self.Kind.MULTIPLE_CHOICE: {self.DataType.NOMINAL},
+            self.Kind.INTEGER: {self.DataType.DISCRETE},
+            self.Kind.DECIMAL: {self.DataType.CONTINUOUS},
+            self.Kind.SCALE: {self.DataType.ORDINAL},
+        }
+        if self.kind in allowed_types and self.data_type not in allowed_types[self.kind]:
+            raise ValidationError(
+                {"data_type": f"{self.get_kind_display()} 不支援此資料型態。"}
+            )
+        if self.kind in {self.Kind.SINGLE_CHOICE, self.Kind.MULTIPLE_CHOICE} and not self.options:
+            raise ValidationError({"options_text": "單選與多選題至少需要一個選項。"})
+
     @property
     def options(self):
         return [line.strip() for line in self.options_text.splitlines() if line.strip()]
+
+    def save(self, *args, **kwargs):
+        if not self.code:
+            base = slugify(self.title)[:64] or "question"
+            code = base
+            suffix = 2
+            while type(self).objects.filter(survey_id=self.survey_id, code=code).exclude(pk=self.pk).exists():
+                code = f"{base[:70]}-{suffix}"
+                suffix += 1
+            self.code = code
+        return super().save(*args, **kwargs)
 
 
 class FeedbackSubmission(models.Model):
@@ -102,10 +143,17 @@ class FeedbackSubmission(models.Model):
     respondent_name = models.CharField(max_length=120, blank=True)
     respondent_email = models.EmailField(blank=True)
     consent_follow_up = models.BooleanField(default=False)
+    idempotency_key = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     submitted_at = models.DateTimeField(auto_now_add=True)
+    ingested_at = models.DateTimeField(auto_now_add=True)
+    is_complete = models.BooleanField(default=True)
+    voided_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-submitted_at"]
+        indexes = [
+            models.Index(fields=("survey", "is_complete", "voided_at", "submitted_at"), name="fb_sub_analysis_idx"),
+        ]
 
     def __str__(self):
         return f"{self.survey.title} @ {self.submitted_at:%Y-%m-%d %H:%M}"
@@ -117,6 +165,84 @@ class FeedbackSubmission(models.Model):
         if self.user:
             return self.user.get_full_name() or self.user.username
         return "匿名填答者"
+
+
+class DatasetImportBatch(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "pending", "等待匯入"
+        RUNNING = "running", "匯入中"
+        COMPLETED = "completed", "已完成"
+        FAILED = "failed", "失敗"
+
+    survey = models.ForeignKey(
+        Survey,
+        on_delete=models.CASCADE,
+        related_name="dataset_import_batches",
+    )
+    source_name = models.CharField(max_length=160)
+    source_version = models.CharField(max_length=100)
+    source_url = models.URLField(max_length=500, blank=True)
+    license_name = models.CharField(max_length=120, blank=True)
+    input_file_sha256 = models.CharField(max_length=64)
+    mapping_version = models.CharField(max_length=64)
+    sampling_method = models.CharField(max_length=80, default="reservoir_without_replacement")
+    random_seed = models.IntegerField(default=42, null=True, blank=True)
+    requested_limit = models.PositiveIntegerField(null=True, blank=True)
+    read_count = models.PositiveIntegerField(default=0)
+    imported_count = models.PositiveIntegerField(default=0)
+    skipped_count = models.PositiveIntegerField(default=0)
+    duplicate_count = models.PositiveIntegerField(default=0)
+    conflict_count = models.PositiveIntegerField(default=0)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING)
+    summary = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ("-created_at", "-id")
+        indexes = [
+            models.Index(fields=("survey", "-created_at"), name="fb_import_survey_idx"),
+            models.Index(fields=("source_name", "source_version"), name="fb_import_source_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.source_name} {self.source_version} / {self.survey}"
+
+
+class ImportedSubmissionSource(models.Model):
+    submission = models.OneToOneField(
+        FeedbackSubmission,
+        on_delete=models.CASCADE,
+        related_name="imported_source",
+    )
+    batch = models.ForeignKey(
+        DatasetImportBatch,
+        on_delete=models.PROTECT,
+        related_name="submission_sources",
+    )
+    source_namespace = models.CharField(max_length=160)
+    source_record_key = models.CharField(max_length=64)
+    content_sha256 = models.CharField(max_length=64)
+    source_version = models.CharField(max_length=100)
+    source_item_id = models.CharField(max_length=255, blank=True)
+    source_timestamp = models.DateTimeField(null=True, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("source_namespace", "source_record_key"),
+                name="fb_import_source_record_uniq",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=("batch", "created_at"), name="fb_import_batch_idx"),
+            models.Index(fields=("source_namespace", "source_version"), name="fb_import_version_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.batch.source_name} / {self.submission_id}"
 
 
 class Answer(models.Model):
@@ -385,6 +511,118 @@ class SurveyAIAnalysisStage(models.Model):
         return super().save(*args, **kwargs)
 
 
+class SurveyAnalysisState(models.Model):
+    """Small, authoritative version and publication pointer for one survey."""
+
+    survey = models.OneToOneField(
+        Survey,
+        on_delete=models.CASCADE,
+        related_name="analysis_state",
+    )
+    input_version = models.PositiveBigIntegerField(default=0)
+    config_version = models.PositiveBigIntegerField(default=0)
+    pipeline_version = models.CharField(max_length=64, blank=True)
+    published_snapshot = models.ForeignKey(
+        SurveyAIReportSnapshot,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="published_state_rows",
+    )
+    published_ai_stage = models.ForeignKey(
+        SurveyAIAnalysisStage,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="published_ai_state_rows",
+    )
+    published_display_payload = models.JSONField(default=dict, blank=True)
+    published_ai_payload = models.JSONField(default=dict, blank=True)
+    publication_manifest = models.JSONField(default=dict, blank=True)
+    published_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "feedback_survey_analysis_states"
+
+    def __str__(self):
+        return f"{self.survey} / input={self.input_version} / config={self.config_version}"
+
+
+class AnalysisJob(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "pending", "等待處理"
+        RUNNING = "running", "處理中"
+        SUCCEEDED = "succeeded", "成功"
+        FAILED = "failed", "失敗"
+        CANCELLED = "cancelled", "已取消"
+
+    class SourceKind(models.TextChoices):
+        ANSWERS = "answers", "問卷回覆"
+        EXTERNAL = "external", "外部資料表"
+
+    class Executor(models.TextChoices):
+        DETERMINISTIC = "deterministic", "統計與文字"
+        AI = "ai", "AI 綜合分析"
+
+    survey = models.ForeignKey(
+        Survey,
+        on_delete=models.CASCADE,
+        related_name="analysis_jobs",
+    )
+    source_kind = models.CharField(
+        max_length=16,
+        choices=SourceKind.choices,
+        default=SourceKind.ANSWERS,
+    )
+    source_ref = models.CharField(max_length=255, blank=True)
+    source_version = models.CharField(max_length=255, blank=True)
+    executor = models.CharField(
+        max_length=16,
+        choices=Executor.choices,
+        default=Executor.DETERMINISTIC,
+    )
+    input_version = models.PositiveBigIntegerField()
+    config_version = models.PositiveBigIntegerField()
+    pipeline_version = models.CharField(max_length=64)
+    input_fingerprint = models.CharField(max_length=64, blank=True)
+    requested_stages = models.JSONField(default=list)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING)
+    worker_id = models.CharField(max_length=128, blank=True)
+    lease_token = models.UUIDField(null=True, blank=True, editable=False)
+    lease_expires_at = models.DateTimeField(null=True, blank=True)
+    heartbeat_at = models.DateTimeField(null=True, blank=True)
+    attempt_count = models.PositiveIntegerField(default=0)
+    max_attempts = models.PositiveIntegerField(default=3)
+    cancel_requested_at = models.DateTimeField(null=True, blank=True)
+    error_code = models.CharField(max_length=64, blank=True)
+    result_manifest = models.JSONField(default=dict, blank=True)
+    available_at = models.DateTimeField(default=timezone.now)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "feedback_analysis_jobs"
+        ordering = ("created_at", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("survey", "source_kind", "source_ref", "executor"),
+                condition=models.Q(status="pending"),
+                name="fb_job_one_pending_source",
+            )
+        ]
+        indexes = [
+            models.Index(fields=("status", "available_at", "created_at"), name="fb_job_claim_idx"),
+            models.Index(fields=("survey", "status", "-created_at"), name="fb_job_survey_idx"),
+            models.Index(fields=("status", "lease_expires_at"), name="fb_job_lease_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.survey} / {self.source_kind} / {self.status}"
+
+
 class ImprovementNotice(models.Model):
     class AudienceType(models.TextChoices):
         GLOBAL = "global", "所有符合通知條件的顧客"
@@ -537,7 +775,10 @@ def _resolve_keyword_category(keyword, *, count, rules):
 def keyword_summary(survey):
     answer_pairs = Answer.objects.filter(
         question__survey=survey,
+        question__is_active=True,
         question__enable_keyword_tracking=True,
+        submission__is_complete=True,
+        submission__voided_at__isnull=True,
     ).values_list("analysis_text", "value")
 
     counts = Counter()
@@ -560,8 +801,12 @@ def keyword_summary(survey):
 
 def chart_summary(survey):
     rows = []
-    for question in survey.questions.all():
-        answers = Answer.objects.filter(question=question)
+    for question in survey.questions.filter(is_active=True):
+        answers = Answer.objects.filter(
+            question=question,
+            submission__is_complete=True,
+            submission__voided_at__isnull=True,
+        )
         if question.kind in {Question.Kind.INTEGER, Question.Kind.DECIMAL, Question.Kind.SCALE}:
             numeric_values = []
             for answer in answers:
@@ -603,7 +848,10 @@ def recommend_analysis(question):
 def text_analysis_summary(survey):
     answers = Answer.objects.filter(
         question__survey=survey,
+        question__is_active=True,
         question__enable_keyword_tracking=True,
+        submission__is_complete=True,
+        submission__voided_at__isnull=True,
     )
     total_answers = answers.count()
     analyzed_answers = answers.exclude(analysis_text__isnull=True).exclude(analysis_text="")
@@ -622,7 +870,10 @@ def text_analysis_summary(survey):
 def category_sentiment_summary(survey):
     answers = Answer.objects.filter(
         question__survey=survey,
+        question__is_active=True,
         question__enable_keyword_tracking=True,
+        submission__is_complete=True,
+        submission__voided_at__isnull=True,
     ).values_list("analysis_text", "value", "sentiment_score")
     all_rules = list(survey.keyword_categories.all())
     answer_tokens = []

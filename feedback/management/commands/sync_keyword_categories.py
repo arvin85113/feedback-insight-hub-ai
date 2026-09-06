@@ -2,7 +2,9 @@ import json
 from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError
+from django.db import transaction
 
+from feedback.analysis_jobs import schedule_survey_analysis, suppress_analysis_scheduling
 from feedback.models import KeywordCategory, Survey
 
 
@@ -49,21 +51,22 @@ class Command(BaseCommand):
         if not survey:
             raise CommandError(f"找不到問卷 slug: {survey_slug}")
 
-        created_or_updated = 0
-        for keyword, category in mappings.items():
-            if not keyword or not category:
-                continue
-            created_or_updated += 1
-            if options["dry_run"]:
-                continue
-            KeywordCategory.objects.update_or_create(
-                survey=survey,
-                keyword=str(keyword).strip(),
-                defaults={
-                    "category": str(category).strip(),
-                    "threshold": threshold,
-                },
-            )
+        valid_mappings = [
+            (str(keyword).strip(), str(category).strip())
+            for keyword, category in mappings.items()
+            if str(keyword).strip() and str(category).strip()
+        ]
+        created_or_updated = len(valid_mappings)
+        if not options["dry_run"]:
+            with transaction.atomic():
+                with suppress_analysis_scheduling():
+                    for keyword, category in valid_mappings:
+                        KeywordCategory.objects.update_or_create(
+                            survey=survey,
+                            keyword=keyword,
+                            defaults={"category": category, "threshold": threshold},
+                        )
+                schedule_survey_analysis(survey.pk, change="config")
 
         mode = "DRY-RUN" if options["dry_run"] else "APPLY"
         self.stdout.write(

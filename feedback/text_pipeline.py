@@ -174,19 +174,20 @@ def build_analysis_text(value):
     return " ".join(tokens) if tokens else None
 
 
-def estimate_sentiment_score(text):
+def estimate_sentiment_score(text, *, profile=None):
     normalized = (text or "").lower()
-    raw_tokens = [token.strip() for token in _jieba_tokenize(normalized) if token and token.strip()]
+    raw_tokens = (re.findall(r"[a-z]+(?:'[a-z]+)?", normalized) if profile is not None else
+                  [token.strip() for token in _jieba_tokenize(normalized) if token and token.strip()])
     if not raw_tokens:
         return None
 
     # Sentiment should prefer original wording to avoid losing polarity
     # when business-oriented synonym mapping normalizes words (e.g. 偏高 -> 價格).
     tokens = raw_tokens
-    positive_words = load_positive_words()
-    negative_words = load_negative_words()
-    negation_words = load_negation_words()
-    intensifiers = load_intensifiers()
+    positive_words = set(profile["positive"]) if profile is not None else load_positive_words()
+    negative_words = set(profile["negative"]) if profile is not None else load_negative_words()
+    negation_words = set(profile["negation"]) if profile is not None else load_negation_words()
+    intensifiers = profile["intensifiers"] if profile is not None else load_intensifiers()
 
     score_sum = 0.0
     sentiment_hits = 0
@@ -210,6 +211,8 @@ def estimate_sentiment_score(text):
 
     # Fallback phrase-level detection for terms that might not be segmented as expected.
     if sentiment_hits == 0:
+        if profile is not None:
+            return None  # Unknown coverage is not neutral; do not substring-match English.
         positive_phrase_hits = sum(1 for term in positive_words if len(term) >= 2 and term in normalized)
         negative_phrase_hits = sum(1 for term in negative_words if len(term) >= 2 and term in normalized)
         if positive_phrase_hits == 0 and negative_phrase_hits == 0:

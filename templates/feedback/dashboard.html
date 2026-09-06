@@ -642,7 +642,10 @@
             clearError();
         }
         updateButton.hidden = !freshness.has_enough_data || Boolean(data.report && freshness.is_current);
-        updateButton.textContent = data.report ? '更新 AI 報告' : '產生第一份報告';
+        if (data.background_mode && !data.auto_ai_enabled) updateButton.hidden = true;
+        updateButton.textContent = data.background_mode
+            ? '排入背景分析'
+            : data.report ? '更新 AI 報告' : '產生第一份報告';
     }
 
     function hasCurrentSuccessfulPipeline(data) {
@@ -689,6 +692,10 @@
         setBusy(true, '正在更新最新資料');
         try {
             const snapshotData = await requestJSON(state.selected.dataset.snapshotUrl, {method: 'POST'});
+            if (snapshotData.queued) {
+                renderStatus(snapshotData);
+                return;
+            }
             const stages = [
                 ['statistics', 'AI 正在分析統計資料'],
                 ['text', 'AI 正在整理文字洞察'],

@@ -1,0 +1,19 @@
+{
+  "version": "english-dictionary-v1",
+  "limitations": "Small manually specified English lexicon; coverage is not accuracy. No sarcasm or aspect-specific sentiment model.",
+  "positive": ["good", "great", "excellent", "wonderful", "amazing", "comfortable", "clean", "friendly", "helpful", "pleasant", "fantastic", "perfect", "lovely", "quiet", "spacious", "delicious", "recommend", "enjoyed", "beautiful", "convenient"],
+  "negative": ["bad", "poor", "terrible", "awful", "dirty", "noisy", "rude", "uncomfortable", "disappointing", "disappointed", "expensive", "broken", "worst", "horrible", "smelly", "unhelpful", "overpriced", "filthy"],
+  "negation": ["not", "no", "never", "hardly", "wasn't", "weren't", "isn't", "aren't", "don't", "didn't"],
+  "intensifiers": {"very": 1.2, "extremely": 1.6, "really": 1.2, "slightly": 0.8},
+  "stopwords": ["the", "a", "an", "and", "or", "but", "to", "of", "in", "on", "at", "for", "with", "from", "by", "as", "is", "was", "were", "are", "be", "been", "being", "this", "that", "it", "its", "we", "our", "us", "i", "my", "me", "you", "your", "they", "their", "them", "he", "she", "his", "her", "have", "had", "has", "do", "did", "so", "than", "then", "there", "here", "would", "could", "will", "can", "all", "some", "any", "also", "just", "about", "which", "when", "what", "if", "one", "two", "out", "up", "get", "got"],
+  "categories": {
+    "服務": ["service", "staff", "reception", "receptionist", "concierge", "checkin", "checkout", "friendly", "helpful", "rude", "unhelpful"],
+    "客房": ["room", "rooms", "bed", "beds", "bathroom", "shower", "spacious", "comfortable", "uncomfortable"],
+    "清潔": ["clean", "dirty", "cleanliness", "filthy", "smelly", "housekeeping"],
+    "睡眠": ["sleep", "quiet", "noisy", "noise", "pillow", "pillows"],
+    "餐飲": ["breakfast", "restaurant", "food", "dinner", "coffee", "delicious"],
+    "地點": ["location", "transport", "station", "airport", "central", "convenient"],
+    "價值": ["price", "value", "expensive", "overpriced", "cost"],
+    "設施": ["pool", "wifi", "internet", "gym", "parking", "elevator", "lift"]
+  }
+}
