@@ -26,15 +26,16 @@
 <section class="manager-panel ai-operations-panel" data-ai-operations>
     <div class="panel-head ai-operations-head">
         <div>
-            <p class="section-kicker">Gemini Operations</p>
+            <p class="section-kicker">Published Analysis</p>
             <h2>AI 營運分析</h2>
+            <p class="ai-operations-description">本頁只讀取 Supabase 已發布結果；統計、文字洞察與 Gemini 皆由本機工作台執行。</p>
         </div>
         <div class="ai-report-actions">
-            <button type="button" class="button button-primary" data-ai-update hidden>產生第一份報告</button>
+            <span class="ai-readonly-badge">網站唯讀展示</span>
+            <button type="button" class="button button-ghost" data-ai-refresh hidden>重新讀取發布狀態</button>
         </div>
     </div>
 
-    <form hidden>{% csrf_token %}</form>
     <div class="ai-survey-selector" role="group" aria-label="選擇 AI 分析問卷">
         {% for survey in ai_report_surveys %}
             <button
@@ -43,7 +44,7 @@
                 data-ai-survey
                 data-survey-slug="{{ survey.slug }}"
                 data-status-url="{% url 'feedback:ai-stage-status' survey.slug %}"
-                data-snapshot-url="{% url 'feedback:ai-report-snapshot' survey.slug %}"
+                data-valid-response-count="{{ survey.valid_response_count }}"
                 aria-pressed="false"
             >
                 <span>{{ survey.title }}</span>
@@ -60,6 +61,7 @@
         {% endfor %}
     </div>
 
+    <div class="ai-workflow-status" data-ai-workflow-status hidden aria-live="polite"></div>
     <div class="ai-stage-status-list" data-ai-stage-list hidden></div>
     <div class="ai-report-progress" data-ai-progress hidden aria-live="polite">
         <span class="ai-report-spinner" aria-hidden="true"></span>
@@ -69,7 +71,7 @@
     <div class="ai-report-workspace" data-ai-workspace>
         <div class="ai-report-empty" data-ai-empty>
             <h3>選擇一份問卷</h3>
-            <p>系統會先讀取該問卷已保存的 AI 報告，不會混合其他問卷資料。</p>
+            <p>系統只會讀取該問卷由本機工作台發布的結果，不會在網站執行分析。</p>
         </div>
         <div data-ai-report hidden></div>
     </div>
@@ -230,14 +232,14 @@
     if (!root) return;
 
     const surveyButtons = Array.from(root.querySelectorAll('[data-ai-survey]'));
-    const updateButton = root.querySelector('[data-ai-update]');
+    const refreshButton = root.querySelector('[data-ai-refresh]');
     const progress = root.querySelector('[data-ai-progress]');
     const progressText = root.querySelector('[data-ai-progress-text]');
+    const workflowStatus = root.querySelector('[data-ai-workflow-status]');
     const stageList = root.querySelector('[data-ai-stage-list]');
     const errorBox = root.querySelector('[data-ai-error]');
     const empty = root.querySelector('[data-ai-empty]');
     const reportRoot = root.querySelector('[data-ai-report]');
-    const csrf = root.querySelector('[name="csrfmiddlewaretoken"]')?.value || '';
     const state = {selected: null, busy: false, requestId: 0};
 
     function element(tag, className, text) {
@@ -250,7 +252,7 @@
     function setBusy(busy, message = '') {
         state.busy = busy;
         surveyButtons.forEach((button) => { button.disabled = busy; });
-        updateButton.disabled = busy;
+        refreshButton.disabled = busy;
         progress.hidden = !message;
         progressText.textContent = message;
         root.setAttribute('aria-busy', busy ? 'true' : 'false');
@@ -272,7 +274,6 @@
             ...options,
             headers: {
                 'X-Requested-With': 'XMLHttpRequest',
-                ...(options.method === 'POST' ? {'X-CSRFToken': csrf} : {}),
                 ...(options.headers || {}),
             },
         });
@@ -292,6 +293,16 @@
             year: 'numeric', month: '2-digit', day: '2-digit',
             hour: '2-digit', minute: '2-digit',
         }).format(new Date(value));
+    }
+
+    function currentValidResponseCount(data) {
+        const selectorCount = Number(state.selected?.dataset.validResponseCount);
+        if (Number.isFinite(selectorCount)) return selectorCount;
+        return Number(data.survey?.valid_response_count || 0);
+    }
+
+    function hasEnoughVisibleData(data) {
+        return currentValidResponseCount(data) >= Number(data.freshness?.minimum_responses || 0);
     }
 
     function compactNumber(value) {
@@ -499,7 +510,7 @@
         container.append(section);
     }
 
-    function renderReport(report, freshness) {
+    function renderReport(report, freshness, publication = {}) {
         reportRoot.replaceChildren();
         const meta = element('div', 'ai-report-meta');
         const status = freshness.is_current ? '目前為最新資料' : '最新資料尚未完成分析';
@@ -512,6 +523,7 @@
             ['分析模式', report.report_source === 'staged' ? '三階段分析' : report.generation_profile === 'compact' ? '精簡分析模式' : '標準分析模式'],
             ['狀態', status],
             ['生成時間', formatDate(report.generated_at)],
+            ['發布時間', formatDate(publication.published_at)],
         ].forEach(([label, value]) => {
             const item = element('div', 'ai-report-meta-item');
             item.append(element('span', '', label), element('strong', '', value));
@@ -599,29 +611,86 @@
         reportRoot.hidden = false;
     }
 
-    function renderStages(stages) {
+    function stagePresentation(key, stage, data) {
+        if (stage.is_current) return {label: '最新已發布', state: 'current'};
+        const job = data.workflow?.latest_job || {};
+        const expectedExecutor = key === 'synthesis' ? 'ai' : 'deterministic';
+        if (job.executor === expectedExecutor && job.status === 'running') {
+            return {label: '本機處理中', state: 'running'};
+        }
+        if (job.executor === expectedExecutor && job.status === 'pending') {
+            return {label: '等待本機接手', state: 'waiting'};
+        }
+        if (job.executor === expectedExecutor && job.status === 'failed') {
+            return {label: '上次處理失敗', state: 'failed'};
+        }
+        if (stage.status === 'succeeded') return {label: '上一版本', state: 'stale'};
+        return {label: '等待本機發布', state: 'waiting'};
+    }
+
+    function renderStages(stages, data) {
         const labels = {statistics: '統計分析', text: '文字洞察', synthesis: '綜合營運決策'};
-        const statusLabels = {
-            not_started: '尚未開始', generating: '產生中', succeeded: '已完成', failed: '失敗'
-        };
+        const manifest = data.publication?.versions?.published || {};
         stageList.replaceChildren();
         Object.entries(labels).forEach(([key, label]) => {
             const stage = (stages || {})[key] || {status: 'not_started'};
-            const item = element('div', `ai-stage-status ai-stage-${stage.status}`);
+            const presentation = stagePresentation(key, stage, data);
+            const manifestKey = key === 'synthesis' ? 'ai' : key;
+            const publishedAt = manifest[manifestKey]?.published_at;
+            const item = element('div', `ai-stage-status ai-stage-${presentation.state}`);
             item.append(
                 element('strong', '', label),
-                element('span', '', `${statusLabels[stage.status] || stage.status}${stage.cache_hit ? '（快取）' : ''}`)
+                element('span', '', publishedAt ? `${presentation.label} · ${formatDate(publishedAt)}` : presentation.label)
             );
             stageList.append(item);
         });
         stageList.hidden = false;
     }
 
+    function renderWorkflowStatus(data) {
+        const freshness = data.freshness || {};
+        const job = data.workflow?.latest_job || {};
+        const hasEnoughData = hasEnoughVisibleData(data);
+        let stateName = 'waiting';
+        let message = '尚未收到本機工作台發布的分析結果。';
+        if (freshness.is_current) {
+            stateName = 'current';
+            message = '最新統計、文字洞察與 Gemini 報告均已由本機工作台發布。';
+        } else if (!hasEnoughData) {
+            stateName = 'insufficient';
+            message = `至少需要 ${freshness.minimum_responses} 份有效回覆，目前有 ${currentValidResponseCount(data)} 份。`;
+        } else if (job.status === 'running') {
+            stateName = 'running';
+            message = job.executor === 'ai'
+                ? '本機工作台正在產生 Gemini 綜合分析；網站暫時保留上一版成功報告。'
+                : '本機工作台正在更新統計與文字洞察；網站暫時保留上一版成功結果。';
+        } else if (job.status === 'pending') {
+            message = job.executor === 'ai'
+                ? '統計與文字結果已備妥，等待本機工作台執行 Gemini。'
+                : '分析工作已排入，等待本機工作台連線接手。';
+        } else if (job.status === 'failed') {
+            stateName = 'failed';
+            message = '本機分析上次執行失敗；網站保留上一版成功結果，請由本機工作台重試。';
+        } else if (freshness.base_is_current) {
+            message = '最新統計與文字洞察已發布，等待本機工作台完成 Gemini 分析。';
+        } else {
+            message = '資料或分析設定已有新版，等待本機工作台更新；網站不會自行運算。';
+        }
+        workflowStatus.className = `ai-workflow-status ai-workflow-${stateName}`;
+        workflowStatus.replaceChildren(
+            element('strong', '', stateName === 'current' ? '最新版本' : '工作流狀態'),
+            element('span', '', message)
+        );
+        workflowStatus.hidden = false;
+    }
+
     function renderStatus(data) {
         const freshness = data.freshness;
-        renderStages(data.stages);
+        const hasEnoughData = hasEnoughVisibleData(data);
+        renderWorkflowStatus(data);
+        renderStages(data.stages, data);
         if (data.report) {
-            renderReport(data.report, freshness);
+            renderReport(data.report, freshness, data.publication);
         } else {
             reportRoot.hidden = true;
             reportRoot.replaceChildren();
@@ -629,36 +698,21 @@
                 element('h3', '', freshness.has_enough_data ? '尚無 AI 分析報告' : '資料不足'),
                 element(
                     'p', '',
-                    freshness.has_enough_data
-                        ? '可以建立這份問卷的第一份匿名分析報告。'
-                        : `至少需要 ${freshness.minimum_responses} 份有效回覆，目前有 ${data.survey.valid_response_count} 份。`
+                    hasEnoughData
+                        ? freshness.base_is_current
+                            ? '統計與文字洞察已發布，等待本機工作台完成 Gemini 報告。'
+                            : '等待本機工作台建立並發布第一份分析報告。'
+                        : `至少需要 ${freshness.minimum_responses} 份有效回覆，目前有 ${currentValidResponseCount(data)} 份。`
                 )
             );
             empty.hidden = false;
         }
         if (freshness.latest_ai_status === 'failed' && freshness.latest_error_message) {
-            showError(`${freshness.latest_error_message} 最新資料尚未完成 AI 分析，可手動重試。`);
+            showError(`${freshness.latest_error_message} 請在本機工作台重試。`);
         } else {
             clearError();
         }
-        updateButton.hidden = !freshness.has_enough_data || Boolean(data.report && freshness.is_current);
-        if (data.background_mode && !data.auto_ai_enabled) updateButton.hidden = true;
-        updateButton.textContent = data.background_mode
-            ? '排入背景分析'
-            : data.report ? '更新 AI 報告' : '產生第一份報告';
-    }
-
-    function hasCurrentSuccessfulPipeline(data) {
-        const requiredStages = ['statistics', 'text', 'synthesis'];
-        return Boolean(
-            data?.report
-            && data?.freshness?.is_current
-            && data.freshness.latest_ai_status === 'succeeded'
-            && requiredStages.every((stageType) => {
-                const stage = data.stages?.[stageType];
-                return stage?.status === 'succeeded' && stage.is_current;
-            })
-        );
+        refreshButton.hidden = false;
     }
 
     async function selectSurvey(button) {
@@ -670,7 +724,7 @@
             item.classList.toggle('ai-survey-button-active', active);
             item.setAttribute('aria-pressed', active ? 'true' : 'false');
         });
-        updateButton.hidden = true;
+        refreshButton.hidden = true;
         clearError();
         reportRoot.hidden = true;
         empty.replaceChildren(element('h3', '', '讀取已保存報告'), element('p', '', '正在檢查目前資料版本。'));
@@ -680,62 +734,33 @@
             const data = await requestJSON(button.dataset.statusUrl);
             if (requestId === state.requestId) renderStatus(data);
         } catch (error) {
-            if (requestId === state.requestId) showError(error.message);
+            if (requestId === state.requestId) {
+                showError(error.message);
+                refreshButton.hidden = false;
+            }
         } finally {
             if (requestId === state.requestId) setBusy(false);
         }
     }
 
-    async function updateReport() {
+    async function refreshStatus() {
         if (!state.selected || state.busy) return;
+        const requestId = ++state.requestId;
         clearError();
-        setBusy(true, '正在更新最新資料');
+        setBusy(true, '正在讀取 Supabase 最新發布狀態');
         try {
-            const snapshotData = await requestJSON(state.selected.dataset.snapshotUrl, {method: 'POST'});
-            if (snapshotData.queued) {
-                renderStatus(snapshotData);
-                return;
-            }
-            const stages = [
-                ['statistics', 'AI 正在分析統計資料'],
-                ['text', 'AI 正在整理文字洞察'],
-                ['synthesis', 'AI 正在產生營運摘要與改善草稿'],
-            ];
-            for (const [stageType, message] of stages) {
-                setBusy(true, message);
-                const reportData = await requestJSON(
-                    snapshotData.snapshot.stage_urls[stageType],
-                    {method: 'POST'}
-                );
-                renderStatus(reportData);
-            }
+            const data = await requestJSON(state.selected.dataset.statusUrl);
+            if (requestId === state.requestId) renderStatus(data);
         } catch (error) {
-            let recovered = false;
-            try {
-                const current = await requestJSON(state.selected.dataset.statusUrl);
-                renderStatus(current);
-                recovered = hasCurrentSuccessfulPipeline(current);
-            } catch (_) {
-                // Keep the currently rendered successful report if status refresh also fails.
-            }
-            if (recovered) {
-                clearError();
-            } else {
-                showError(`${error.message} 最新資料尚未完成 AI 分析，可手動重試。`);
-            }
+            if (requestId === state.requestId) showError(`${error.message} 已顯示的成功報告不受影響。`);
         } finally {
-            setBusy(false);
+            if (requestId === state.requestId) setBusy(false);
         }
     }
 
-    async function selectSurveyAfterBusy() {
-        const button = state.selected;
-        const data = await requestJSON(button.dataset.statusUrl);
-        renderStatus(data);
-    }
-
     surveyButtons.forEach((button) => button.addEventListener('click', () => selectSurvey(button)));
-    updateButton.addEventListener('click', updateReport);
+    refreshButton.addEventListener('click', refreshStatus);
+    if (surveyButtons.length) selectSurvey(surveyButtons[0]);
 })();
 </script>
 {% endblock %}

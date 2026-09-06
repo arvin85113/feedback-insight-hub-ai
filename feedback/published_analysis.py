@@ -94,6 +94,7 @@ def get_published_ai_pipeline_status(survey):
     response_count = int(meta.get("response_count") or 0)
     latest_job = publication.get("latest_job") or {}
     ai_job_status = latest_job.get("status") if latest_job.get("executor") == AnalysisJob.Executor.AI else None
+    base_is_current = bool(freshness["statistics"] and freshness["text"])
     current_ai = bool(ai and freshness["ai"])
     has_enough_data = response_count >= settings.AI_REPORT_MIN_RESPONSES
     stages = {
@@ -150,7 +151,8 @@ def get_published_ai_pipeline_status(survey):
         },
         "freshness": {
             "is_current": current_ai,
-            "has_new_data": bool(ai and not current_ai),
+            "base_is_current": base_is_current,
+            "has_new_data": has_enough_data and not current_ai,
             "has_enough_data": has_enough_data,
             "latest_analysis_incomplete": has_enough_data and not current_ai,
             "latest_ai_status": "succeeded" if current_ai else ai_job_status or "not_started",
@@ -163,6 +165,11 @@ def get_published_ai_pipeline_status(survey):
         "report": report,
         "background_mode": True,
         "auto_ai_enabled": settings.ANALYSIS_AUTO_AI_ENABLED,
+        "workflow": {
+            "mode": "local_worker",
+            "website_role": "published_read_only",
+            "latest_job": latest_job,
+        },
         "publication": {
             "snapshot_id": publication.get("snapshot_id"),
             "published_at": publication.get("published_at"),

@@ -114,9 +114,25 @@ class PublishedAnalysisReadTests(TestCase):
         with self.assertNumQueries(2):
             payload = get_published_ai_pipeline_status(self.survey)
         self.assertEqual(payload["survey"]["valid_response_count"], 4)
+        self.assertTrue(payload["freshness"]["base_is_current"])
         self.assertFalse(payload["freshness"]["is_current"])
+        self.assertEqual(payload["workflow"]["mode"], "local_worker")
+        self.assertEqual(payload["workflow"]["website_role"], "published_read_only")
         self.assertEqual(payload["report"]["content"]["executive_summary"], "Published AI summary")
         self.assertNotIn("must-not-be-returned", repr(payload))
+
+    def test_dashboard_ai_module_only_reads_published_results(self):
+        self.client.force_login(self.manager)
+
+        response = self.client.get(reverse("feedback:dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "網站唯讀展示")
+        self.assertContains(response, "重新讀取發布狀態")
+        self.assertContains(response, "data-ai-refresh")
+        self.assertNotContains(response, "data-ai-update")
+        self.assertNotContains(response, "data-snapshot-url")
+        self.assertNotContains(response, "產生第一份報告")
 
     def test_stale_ai_keeps_its_own_snapshot_metadata(self):
         newer_snapshot = SurveyAIReportSnapshot.objects.create(
