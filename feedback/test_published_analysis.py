@@ -133,6 +133,8 @@ class PublishedAnalysisReadTests(TestCase):
         self.assertNotContains(response, "data-ai-update")
         self.assertNotContains(response, "data-snapshot-url")
         self.assertNotContains(response, "產生第一份報告")
+        self.assertNotContains(response, "報告已過期，請重新產生後再帶入")
+        self.assertContains(response, "此為 AI 建議草稿，尚未建立改善追蹤項目")
 
     def test_stale_ai_keeps_its_own_snapshot_metadata(self):
         newer_snapshot = SurveyAIReportSnapshot.objects.create(

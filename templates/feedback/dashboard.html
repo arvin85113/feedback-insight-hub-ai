@@ -591,7 +591,13 @@
                     link.href = url;
                     card.append(link);
                 } else if (report.report_source === 'staged') {
-                    card.append(element('span', 'muted-text ai-card-action', '報告已過期，請重新產生後再帶入。'));
+                    card.append(element(
+                        'span',
+                        'muted-text ai-card-action',
+                        freshness.is_current
+                            ? '此為 AI 建議草稿，尚未建立改善追蹤項目。'
+                            : '此草稿屬上一版分析，待本機更新後再評估是否建立改善項目。'
+                    ));
                 }
                 grid.append(card);
             });
