@@ -1023,9 +1023,10 @@ class SurveySubmitSuccessView(TemplateView):
     template_name = "feedback/survey_success.html"
 
 
-class ImprovementCreateView(ManagerRequiredMixin, CreateView):
+class ImprovementCreateView(DashboardBaseMixin, CreateView):
     template_name = "feedback/improvement_form.html"
     form_class = ImprovementUpdateForm
+    active_section = "feedback:improvement-list"
 
     def dispatch(self, request, *args, **kwargs):
         self.survey = get_object_or_404(Survey, slug=kwargs["slug"])
@@ -1047,6 +1048,7 @@ class ImprovementCreateView(ManagerRequiredMixin, CreateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        context.update(self.get_dashboard_base_context())
         context["survey"] = self.survey
         context["source_keyword"] = self.request.GET.get("keyword", "")
         context["source_category"] = self.request.GET.get("category", "")
@@ -1409,7 +1411,7 @@ class AIImprovementDraftCreateView(ImprovementCreateView):
         return super().form_valid(form)
 
     def get_context_data(self, **kwargs):
-        context = CreateView.get_context_data(self, **kwargs)
+        context = super().get_context_data(**kwargs)
         serialized_draft = serialize_ai_report_content(
             {"improvement_drafts": [self.ai_draft]},
             self.snapshot.source_snapshot,
@@ -1512,7 +1514,7 @@ class AIStageImprovementDraftCreateView(ImprovementCreateView):
         }
 
     def get_context_data(self, **kwargs):
-        context = CreateView.get_context_data(self, **kwargs)
+        context = super().get_context_data(**kwargs)
         upstream_ids = self.source_stage.input_manifest.get("upstream_stage_ids", {})
         upstream = {
             row.stage_type: row

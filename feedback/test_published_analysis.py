@@ -203,6 +203,10 @@ class PublishedAnalysisReadTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Published draft")
+        self.assertContains(response, "營運總覽")
+        self.assertContains(response, "改善追蹤")
+        self.assertEqual(response.context["active_section"], "feedback:improvement-list")
+        self.assertEqual(len(response.context["dashboard_nav"]), 6)
 
     def test_dashboard_ai_module_only_reads_published_results(self):
         self.client.force_login(self.manager)
