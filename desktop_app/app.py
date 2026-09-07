@@ -109,7 +109,7 @@ class FeedbackInsightDesktop:
         with dpg.window(tag="main_window", label="Feedback Insight Hub｜本機分析工作台"):
             dpg.add_text("問卷分析工作台", color=(23, 32, 51))
             dpg.add_text(
-                "資料以網站資料庫為準；第一段更新統計與文字，第二段由 Gemini 產生解析，兩段分別發布供網站顯示。",
+                "問卷與工作狀態以網站資料庫為準；大型外部資料可使用本機固定版本。第一段更新統計與文字，第二段由 Gemini 產生解析。",
                 color=(93, 102, 122), wrap=1080,
             )
             dpg.add_spacer(height=8)
