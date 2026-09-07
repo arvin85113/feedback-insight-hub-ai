@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from django.conf import settings
+from django.urls import reverse
 
-from .models import AnalysisJob, SurveyAnalysisState
+from .models import AnalysisJob, ImprovementUpdate, SurveyAnalysisState
 
 
 def _stage_is_current(state, manifest_key):
@@ -14,6 +15,70 @@ def _stage_is_current(state, manifest_key):
         and item.get("config_version") == state.config_version
         and item.get("pipeline_version") == state.pipeline_version
     )
+
+
+def is_published_ai_stage_current(stage):
+    """Check a published stage from authoritative pointers without scanning answers."""
+
+    state = (
+        SurveyAnalysisState.objects.only(
+            "input_version",
+            "config_version",
+            "pipeline_version",
+            "published_snapshot_id",
+            "published_ai_stage_id",
+            "publication_manifest",
+        )
+        .filter(survey_id=stage.snapshot.survey_id)
+        .first()
+    )
+    if state is None or state.published_snapshot_id != stage.snapshot_id or state.published_ai_stage_id != stage.pk:
+        return False
+    manifest = (state.publication_manifest or {}).get("ai") or {}
+    return bool(
+        _stage_is_current(state, "ai")
+        and manifest.get("snapshot_id") == stage.snapshot_id
+        and manifest.get("stage_id") == stage.pk
+    )
+
+
+def _published_draft_states(survey, ai, *, current_ai):
+    """Build at most ten manager action links from the bounded published payload."""
+
+    if not current_ai or not isinstance(ai, dict):
+        return {}
+    stage_id = ai.get("stage_id")
+    draft_ids = [
+        str(row.get("draft_id"))
+        for row in list(ai.get("improvement_drafts") or [])[:10]
+        if isinstance(row, dict) and row.get("draft_id")
+    ]
+    if not stage_id or not draft_ids:
+        return {}
+    imported = {
+        row.source_ai_draft_id: row.pk
+        for row in ImprovementUpdate.objects.filter(
+            source_ai_analysis_stage_id=stage_id,
+            source_ai_draft_id__in=draft_ids,
+        ).only("id", "source_ai_draft_id")
+    }
+    states = {}
+    for draft_id in draft_ids:
+        improvement_id = imported.get(draft_id)
+        if improvement_id:
+            states[draft_id] = {
+                "imported": True,
+                "url": f"{reverse('feedback:improvement-list')}?survey={survey.slug}#improvement-{improvement_id}",
+            }
+        else:
+            states[draft_id] = {
+                "imported": False,
+                "url": reverse(
+                    "feedback:ai-stage-improvement-draft",
+                    args=[survey.slug, stage_id, draft_id],
+                ),
+            }
+    return states
 
 
 def get_published_analysis_payload(survey):
@@ -122,6 +187,7 @@ def get_published_ai_pipeline_status(survey):
     }
     report = None
     if ai:
+        draft_states = _published_draft_states(survey, ai, current_ai=current_ai)
         report = {
             "snapshot_id": ai_meta.get("snapshot_id"),
             "survey_slug": survey.slug,
@@ -139,7 +205,7 @@ def get_published_ai_pipeline_status(survey):
             "report_source": "staged",
             "evidence_coverage": {},
             "content": ai,
-            "draft_states": {},
+            "draft_states": draft_states,
             "draft_urls": {},
         }
     return {

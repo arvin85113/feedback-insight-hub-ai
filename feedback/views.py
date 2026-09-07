@@ -73,7 +73,11 @@ from .notice_service import (
 )
 from . import local_service
 from .analysis_jobs import schedule_survey_analysis
-from .published_analysis import get_published_ai_pipeline_status, get_published_analysis_payload
+from .published_analysis import (
+    get_published_ai_pipeline_status,
+    get_published_analysis_payload,
+    is_published_ai_stage_current,
+)
 
 
 def analysis_visible_surveys():
@@ -1440,7 +1444,11 @@ class AIStageImprovementDraftCreateView(ImprovementCreateView):
             stage_type=SurveyAIAnalysisStage.StageType.SYNTHESIS,
             status=SurveyAIAnalysisStage.Status.SUCCEEDED,
         )
-        if not is_stage_current(self.source_stage):
+        if settings.ANALYSIS_READ_PUBLISHED_ONLY:
+            stage_is_current = is_published_ai_stage_current(self.source_stage)
+        else:
+            stage_is_current = is_stage_current(self.source_stage)
+        if not stage_is_current:
             return False
         drafts = (self.source_stage.output_json or {}).get("improvement_drafts", [])
         draft_id = str(self.kwargs["draft_id"])
