@@ -136,6 +136,38 @@ class PublicHomeTests(TestCase):
         self.assertNotIn(".manager-main", homepage_css)
 
 
+class DashboardSurveySummaryTests(TestCase):
+    def test_analysis_survey_counts_do_not_join_the_answer_table(self):
+        from django.utils import timezone
+
+        from .views import analysis_report_surveys
+
+        survey = Survey.objects.create(title="大型匯入問卷", slug="large-import-survey")
+        question = Question.objects.create(
+            survey=survey,
+            code="rating",
+            title="整體評分",
+            kind=Question.Kind.SCALE,
+            data_type=Question.DataType.ORDINAL,
+        )
+        complete = FeedbackSubmission.objects.create(survey=survey)
+        incomplete = FeedbackSubmission.objects.create(survey=survey, is_complete=False)
+        voided = FeedbackSubmission.objects.create(survey=survey, voided_at=timezone.now())
+        Answer.objects.bulk_create(
+            [
+                Answer(submission=complete, question=question, value="5"),
+                Answer(submission=incomplete, question=question, value="4"),
+                Answer(submission=voided, question=question, value="3"),
+            ]
+        )
+
+        queryset = analysis_report_surveys().filter(pk=survey.pk)
+        self.assertNotIn("feedback_answer", str(queryset.query).lower())
+        result = queryset.get()
+        self.assertEqual(result.response_count, 3)
+        self.assertEqual(result.valid_response_count, 1)
+
+
 class EvidenceDisplaySemanticsTests(TestCase):
     def test_coverage_message_distinguishes_complete_and_partial_analysis(self):
         complete = build_evidence_coverage(79, 79)

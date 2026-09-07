@@ -92,11 +92,13 @@ def analysis_report_surveys():
     return (
         analysis_visible_surveys()
         .annotate(
-            response_count=Count("submissions", distinct=True),
+            response_count=Count("submissions"),
             valid_response_count=Count(
                 "submissions",
-                filter=Q(submissions__answers__value__gt=""),
-                distinct=True,
+                filter=Q(
+                    submissions__is_complete=True,
+                    submissions__voided_at__isnull=True,
+                ),
             ),
         )
         .order_by("title")
