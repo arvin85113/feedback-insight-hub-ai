@@ -1,15 +1,19 @@
-# Feedback Insight Hub
+# 回饋洞察 AI 平台
 
-Feedback Insight Hub 是一套將問卷與外部回饋資料轉換為可追溯營運洞察的系統。網站負責問卷、權限、資料收集與結果展示；Windows 本機工作台負責統計、文字分析及經管理者啟用的 Gemini 解析。
+**Feedback Insight Hub**
 
-系統的原則是：**資料與歷史結果保存在 Supabase PostgreSQL，重運算留在本機，Render 網站只讀已發布結果。**
+將顧客回饋轉換為有資料依據、可追溯的營運洞察與改善行動。
+
+回饋洞察 AI 平台整合問卷收集、外部資料匯入、統計分析、文字洞察、Gemini 解析與改善追蹤，協助管理者從回饋中找出問題、查看分析依據，再決定改善措施。
+
+網站負責問卷、權限、資料收集與結果展示；Windows 本機工作台負責統計、文字分析及經管理者啟用的 Gemini 解析。資料與歷史結果保存在 Supabase PostgreSQL，Render 上的分析頁讀取已發布結果。
 
 ## 目前功能
 
 - 登入制問卷建立、題目設定、逐題填答與回覆管理。
 - 管理者工作區：營運總覽、營運分析、問卷管理、統計分析、文字洞察、改善追蹤與通知中心。
 - 通用外部資料匯入 mapping；外部資料會建立標準的 `Survey`、`Question`、`FeedbackSubmission` 與 `Answer`，和網站填答使用同一條後續分析流程。
-- 依題目資料型態產生描述統計、分布與適用的推論分析；序位評分以 ordinal 處理，不會誤用平均數比較。
+- 依題目資料型態產生描述統計、分布與適用的推論分析；目前序位評分的推論分析採秩次檢定或 Spearman 相關，平均數比較限於符合條件的連續型結果。
 - 字典式文字分析：關鍵字、分類、情緒與涵蓋率均標示為分析結果，而非原始標籤。
 - 本機工作台可查看各問卷的資料筆數、最新資料時間、統計／文字版本、Gemini 版本與待更新狀態；可手動更新或依設定於開啟時處理。
 - 統計／文字結果與 AI 結果分段發布。Gemini 失敗不會覆蓋已成功發布的統計／文字結果。
@@ -53,16 +57,16 @@ flowchart LR
 - `SurveyAnalysisState` 保存每份問卷的輸入／設定版本與目前發布指標。
 - `AnalysisJob` 將「統計與文字」及「AI synthesis」分為獨立工作，支援合併、取消、有限重試、租約與心跳。
 - 工作完成時會再次核對版本與租約，防止過期 Worker 覆蓋較新的結果。
-- Snapshot 與 AI Stage 以 revision 保存。歷史結果不會因發布新結果而被覆寫，可供後續比較。
+- Snapshot 保存分析快照，AI Stage 另以 revision 記錄各次執行。發布新結果會更新目前指標並保留舊結果；歷史結果留存不等於已具備完整回測或原始資料修訂重建功能。
 - SQLite 適合一般純計算測試；原子領取、租約接手與過期 Worker 發布行為須在隔離 PostgreSQL 驗證。
 
 ## 資料保護與使用界線
 
 - 不將 API key、資料庫密碼或 `.env` 提交 Git、寫入 log 或打包至 EXE。
-- 外部資料的原始 `user_id` 僅在受控去重流程中使用；不得出現在清理產物、UI 或 log。
+- 外部資料的原始 `user_id` 僅在受控去重流程中使用；不得出現在清理產物、資料庫、UI 或 log。清理後評論仍可能含個資，不能視為完全匿名。
 - 正式評論不可由 AI 或人工生成、翻譯、改寫或補造。測試 fixture 不得混入正式分析。
 - 傳給 Gemini 的文字證據需經遮蔽，並限制筆數、單筆長度與總長度。AI evidence 與公開輸出也需避免個資。
-- Gemini 的情緒、關鍵字、洞察與改善建議均屬分析結果，須由管理者審閱；相關性與群組差異不代表因果關係。
+- 詞典產生的情緒、關鍵字，以及 Gemini 的洞察與改善建議均屬分析結果，須由管理者審閱；詞典涵蓋率不代表準確率，相關性與群組差異不代表因果關係。
 
 ## 本機開發
 
@@ -72,9 +76,7 @@ flowchart LR
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-Copy-Item .env.example .env
-python manage.py migrate
-python manage.py runserver
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 ```
 
 必要環境變數依部署角色設定：
@@ -93,6 +95,15 @@ GEMINI_MODEL=gemini-2.5-flash
 - 未設定 `DATABASE_URL` 時，開發環境可使用 SQLite；需要與網站共用資料時，設定受控的 PostgreSQL／Supabase 連線。
 - `GOOGLE_API_KEY` 只應存在於執行 Gemini 的本機環境。Render 不應設定這個值。
 - 請以既有管理流程建立 Manager 帳號；範例或 seed 資料不是標準啟動步驟。
+
+編輯 `.env` 並確認資料庫目標後，再初始化及啟動網站：
+
+```powershell
+python manage.py migrate
+python manage.py runserver
+```
+
+開啟 `http://127.0.0.1:8000/`。本機網站若要使用與 Render 相同的分析展示流程，設定 `ANALYSIS_READ_PUBLISHED_ONLY=true`，並由本機工作台處理分析工作。
 
 ## Windows 本機工作台與 EXE
 
@@ -114,6 +125,10 @@ GEMINI_MODEL=gemini-2.5-flash
 ```
 
 封裝不包含 `.env`、憑證、完整 Parquet 或其他大型資料產物。正式安裝包、簽章與長駐 Worker 服務仍待完成。
+
+一般封裝輸出為 `dist/FeedbackInsightHub/FeedbackInsightHub.exe`，診斷版為 `dist/FeedbackInsightHubDiagnostic/FeedbackInsightHubDiagnostic.exe`；啟動時須保留各自完整資料夾。
+
+EXE 使用外部設定連接與網站相同的 Supabase。既有程序環境變數優先，其次讀取第一個存在的設定檔：`FEEDBACK_HUB_ENV_FILE` 指定路徑、EXE 同層 `.env`、`%LOCALAPPDATA%\FeedbackInsightHub\.env`。專案目錄內的開發封裝也可沿用專案根目錄 `.env`。設定 `DATABASE_URL`（或 `FEEDBACK_HUB_DATABASE_URL`）及選用的 `GOOGLE_API_KEY`；封裝版問卷工作流程要求 PostgreSQL。
 
 ## Render 部署
 
@@ -148,7 +163,7 @@ static/ templates/                Django 前端資產與樣板
 
 - 已具備本機 GUI 與 one-folder EXE 流程，但正式安裝、簽章、長駐服務與完整雲端端到端驗收尚未完成。
 - 真實 Gemini 呼叫仍受 API 額度、網路、模型延遲與供應商行為影響；不確定狀態不會盲目重呼。
-- 多組織／owner 層級的資料隔離、改善項目完整狀態歷程，以及通知寄送前預覽仍待擴充。
+- Manager 目前共用可見問卷，多組織／owner 層級資料隔離仍待實作。通知已有預覽入口，完整改善成效比較與歷史分析版本介面仍需另行規劃與驗證。
 - 預測模型訓練、固定資料切分與 EXE 的模型管理介面尚未實作。
 
 ## 相關文件
