@@ -146,12 +146,22 @@ def _survey_catalog_rows(queryset):
             )
         )
     }
+    published_counts = {
+        row["survey_id"]: row["published_snapshot__response_count"]
+        for row in SurveyAnalysisState.objects.filter(
+            survey_id__in=survey_ids,
+            published_snapshot__isnull=False,
+        ).values("survey_id", "published_snapshot__response_count")
+    }
     for survey in surveys:
         question_row = question_counts.get(survey.pk, {})
         submission_row = submission_counts.get(survey.pk, {})
         survey.question_count = question_row.get("question_count", 0)
         survey.text_question_count = question_row.get("text_question_count", 0)
-        survey.response_count = submission_row.get("response_count", 0)
+        survey.response_count = published_counts.get(
+            survey.pk,
+            submission_row.get("response_count", 0),
+        )
         survey.latest_submission_at = submission_row.get("latest_submission_at")
     return surveys
 

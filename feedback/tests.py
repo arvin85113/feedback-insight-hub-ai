@@ -168,7 +168,7 @@ class DashboardSurveySummaryTests(TestCase):
         self.assertEqual(result.valid_response_count, 1)
 
     def test_analysis_selector_uses_count_of_the_displayed_published_snapshot(self):
-        from .views import analysis_report_surveys
+        from .views import _survey_catalog_rows, analysis_report_surveys
         from .models import SurveyAnalysisState, SurveyAIReportSnapshot
 
         survey = Survey.objects.create(title="外部完整資料", slug="external-full-data")
@@ -188,6 +188,8 @@ class DashboardSurveySummaryTests(TestCase):
 
         self.assertEqual(result.response_count, 0)
         self.assertEqual(result.valid_response_count, 201295)
+        catalog_result = _survey_catalog_rows(Survey.objects.filter(pk=survey.pk))[0]
+        self.assertEqual(catalog_result.response_count, 201295)
 
     def test_survey_catalog_counts_are_aggregated_without_cross_join(self):
         from django.db import connection
