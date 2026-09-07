@@ -206,12 +206,22 @@ class PublishedAnalysisReadTests(TestCase):
         self.assertContains(response, "營運總覽")
         self.assertContains(response, "改善追蹤")
         self.assertEqual(response.context["active_section"], "feedback:improvement-list")
-        self.assertEqual(len(response.context["dashboard_nav"]), 6)
+        self.assertEqual(len(response.context["dashboard_nav"]), 7)
 
-    def test_dashboard_ai_module_only_reads_published_results(self):
+    def test_dashboard_links_to_dedicated_analysis_page(self):
         self.client.force_login(self.manager)
 
         response = self.client.get(reverse("feedback:dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "開啟營運分析")
+        self.assertContains(response, reverse("feedback:analysis-operations"))
+        self.assertNotContains(response, "data-ai-operations")
+
+    def test_dedicated_analysis_page_only_reads_published_results(self):
+        self.client.force_login(self.manager)
+
+        response = self.client.get(reverse("feedback:analysis-operations"))
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "網站唯讀展示")
@@ -222,6 +232,11 @@ class PublishedAnalysisReadTests(TestCase):
         self.assertNotContains(response, "產生第一份報告")
         self.assertNotContains(response, "報告已過期，請重新產生後再帶入")
         self.assertContains(response, "此為 AI 建議草稿，尚未建立改善追蹤項目")
+        self.assertEqual(response.context["active_section"], "feedback:analysis-operations")
+        self.assertEqual(
+            [route for route, _, _ in response.context["dashboard_nav"][:3]],
+            ["feedback:dashboard", "feedback:analysis-operations", "feedback:survey-manager"],
+        )
 
     def test_stale_ai_keeps_its_own_snapshot_metadata(self):
         newer_snapshot = SurveyAIReportSnapshot.objects.create(

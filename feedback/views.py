@@ -88,6 +88,21 @@ def analysis_visible_surveys():
     )
 
 
+def analysis_report_surveys():
+    return (
+        analysis_visible_surveys()
+        .annotate(
+            response_count=Count("submissions", distinct=True),
+            valid_response_count=Count(
+                "submissions",
+                filter=Q(submissions__answers__value__gt=""),
+                distinct=True,
+            ),
+        )
+        .order_by("title")
+    )
+
+
 class ManagerRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
     def test_func(self):
         return self.request.user.is_authenticated and self.request.user.is_manager
@@ -101,6 +116,7 @@ class CustomerRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
 class DashboardBaseMixin(ManagerRequiredMixin):
     dashboard_nav = [
         ("feedback:dashboard", "營運總覽", "grid"),
+        ("feedback:analysis-operations", "營運分析", "spark"),
         ("feedback:survey-manager", "問卷管理", "clipboard"),
         ("feedback:stats-overview", "統計分析", "chart"),
         ("feedback:text-analysis", "文字洞察", "message"),
@@ -220,25 +236,25 @@ class MarkNoticeReadView(CustomerRequiredMixin, View):
 
 
 class DashboardView(DashboardBaseMixin, TemplateView):
-    template_name = "feedback/dashboard.html"
+    template_name = "feedback/dashboard_overview.html"
     active_section = "feedback:dashboard"
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context.update(self.get_dashboard_base_context())
         context.update(local_service.get_dashboard_payload())
-        context["ai_report_surveys"] = (
-            analysis_visible_surveys()
-            .annotate(
-                response_count=Count("submissions", distinct=True),
-                valid_response_count=Count(
-                    "submissions",
-                    filter=Q(submissions__answers__value__gt=""),
-                    distinct=True,
-                ),
-            )
-            .order_by("title")
-        )
+        context["ai_report_surveys"] = analysis_report_surveys()
+        return context
+
+
+class AnalysisOperationsView(DashboardBaseMixin, TemplateView):
+    template_name = "feedback/analysis_operations.html"
+    active_section = "feedback:analysis-operations"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update(self.get_dashboard_base_context())
+        context["ai_report_surveys"] = analysis_report_surveys()
         return context
 
 

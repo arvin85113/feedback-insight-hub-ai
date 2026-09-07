@@ -8,6 +8,7 @@ from .views import (
     AIReportStatusView,
     AIStageGenerateView,
     AIStagePipelineStatusView,
+    AnalysisOperationsView,
     CustomerHomeView,
     CustomerNotificationsView,
     DashboardView,
@@ -50,6 +51,7 @@ urlpatterns = [
     path("app/notifications/", CustomerNotificationsView.as_view(), name="customer-notifications"),
     path("app/notifications/<int:pk>/read/", MarkNoticeReadView.as_view(), name="notice-mark-read"),
     path("dashboard/", DashboardView.as_view(), name="dashboard"),
+    path("dashboard/analysis/", AnalysisOperationsView.as_view(), name="analysis-operations"),
     path("dashboard/ai-reports/<slug:slug>/", AIReportStatusView.as_view(), name="ai-report-status"),
     path(
         "dashboard/ai-reports/<slug:slug>/stages/",

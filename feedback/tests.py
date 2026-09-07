@@ -463,7 +463,7 @@ class DashboardSurveySelectionTests(AIReportTestCase):
         Survey.objects.create(title="停用問卷", slug="inactive", is_active=False)
         self.client.force_login(self.manager)
         with patch("feedback.views.local_service.get_dashboard_payload", return_value={}):
-            response = self.client.get(reverse("feedback:dashboard"))
+            response = self.client.get(reverse("feedback:analysis-operations"))
         self.assertContains(response, "服務體驗")
         self.assertContains(response, "資料不足")
         self.assertContains(response, "已有資料")

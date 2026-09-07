@@ -1,0 +1,22 @@
+{% extends "feedback/dashboard.html" %}
+
+{% block dashboard_analysis_section %}
+<section class="manager-panel dashboard-analysis-summary">
+    <div class="panel-head">
+        <div>
+            <p class="section-kicker">Published Analysis</p>
+            <h2>營運分析</h2>
+        </div>
+        <a class="button button-primary" href="{% url 'feedback:analysis-operations' %}">開啟營運分析</a>
+    </div>
+    <p class="muted-text">
+        查看各問卷已發布的統計、文字洞察與 Gemini 綜合報告；所有運算由本機工作台完成，網站只負責快速展示。
+    </p>
+    <div class="dashboard-analysis-facts">
+        <span><strong>{{ ai_report_surveys|length }}</strong> 份可分析問卷</span>
+        <span>版本狀態與歷次結果集中於獨立頁面</span>
+    </div>
+</section>
+{% endblock %}
+
+{% block dashboard_analysis_script %}{% endblock %}

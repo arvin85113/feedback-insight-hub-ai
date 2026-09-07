@@ -3,6 +3,7 @@
 {% block title %}營運總覽 | FeedBack IQ{% endblock %}
 
 {% block dashboard_content %}
+{% block dashboard_page_header %}
 <section class="manager-header manager-header-inline">
     <div>
         <p class="section-kicker">Manager Workspace</p>
@@ -12,7 +13,9 @@
         </p>
     </div>
 </section>
+{% endblock %}
 
+{% block dashboard_metrics %}
 <section class="manager-metric-grid">
     {% for metric in metrics %}
         <article class="manager-metric-card">
@@ -22,7 +25,9 @@
         </article>
     {% endfor %}
 </section>
+{% endblock %}
 
+{% block dashboard_analysis_section %}
 <section class="manager-panel ai-operations-panel" data-ai-operations>
     <div class="panel-head ai-operations-head">
         <div>
@@ -76,7 +81,9 @@
         <div data-ai-report hidden></div>
     </div>
 </section>
+{% endblock %}
 
+{% block dashboard_support_content %}
 <section class="manager-content-grid dashboard-support-grid">
     <article class="manager-panel">
         <div class="panel-head">
@@ -225,7 +232,9 @@
         </div>
     </article>
 </section>
+{% endblock %}
 
+{% block dashboard_analysis_script %}
 <script>
 (() => {
     const root = document.querySelector('[data-ai-operations]');
@@ -769,4 +778,5 @@
     if (surveyButtons.length) selectSurvey(surveyButtons[0]);
 })();
 </script>
+{% endblock %}
 {% endblock %}
