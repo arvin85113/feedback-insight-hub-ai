@@ -167,6 +167,46 @@ class DashboardSurveySummaryTests(TestCase):
         self.assertEqual(result.response_count, 3)
         self.assertEqual(result.valid_response_count, 1)
 
+    def test_survey_catalog_counts_are_aggregated_without_cross_join(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        from .views import _survey_catalog_rows, analysis_visible_surveys
+
+        survey = Survey.objects.create(title="匯入問卷", slug="import-survey")
+        Question.objects.create(
+            survey=survey,
+            code="comment",
+            title="評論",
+            kind=Question.Kind.LONG_TEXT,
+            data_type=Question.DataType.TEXT,
+        )
+        Question.objects.create(
+            survey=survey,
+            code="rating",
+            title="評分",
+            kind=Question.Kind.SCALE,
+            data_type=Question.DataType.ORDINAL,
+        )
+        FeedbackSubmission.objects.create(survey=survey)
+        FeedbackSubmission.objects.create(survey=survey)
+
+        with CaptureQueriesContext(connection) as queries:
+            rows = _survey_catalog_rows(analysis_visible_surveys().filter(pk=survey.pk))
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].question_count, 2)
+        self.assertEqual(rows[0].text_question_count, 1)
+        self.assertEqual(rows[0].response_count, 2)
+        self.assertIsNotNone(rows[0].latest_submission_at)
+        self.assertFalse(
+            any(
+                "feedback_question" in query["sql"].lower()
+                and "feedback_feedbacksubmission" in query["sql"].lower()
+                for query in queries.captured_queries
+            )
+        )
+
 
 class EvidenceDisplaySemanticsTests(TestCase):
     def test_coverage_message_distinguishes_complete_and_partial_analysis(self):

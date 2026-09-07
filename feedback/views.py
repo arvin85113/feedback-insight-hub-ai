@@ -105,6 +105,48 @@ def analysis_report_surveys():
     )
 
 
+def _survey_catalog_rows(queryset):
+    """Attach lightweight counts without multiplying questions by submissions."""
+    surveys = list(queryset)
+    survey_ids = [survey.pk for survey in surveys]
+    if not survey_ids:
+        return surveys
+
+    question_counts = {
+        row["survey_id"]: row
+        for row in (
+            Question.objects.filter(survey_id__in=survey_ids)
+            .values("survey_id")
+            .annotate(
+                question_count=Count("id"),
+                text_question_count=Count(
+                    "id",
+                    filter=Q(data_type=Question.DataType.TEXT),
+                ),
+            )
+        )
+    }
+    submission_counts = {
+        row["survey_id"]: row
+        for row in (
+            FeedbackSubmission.objects.filter(survey_id__in=survey_ids)
+            .values("survey_id")
+            .annotate(
+                response_count=Count("id"),
+                latest_submission_at=Max("submitted_at"),
+            )
+        )
+    }
+    for survey in surveys:
+        question_row = question_counts.get(survey.pk, {})
+        submission_row = submission_counts.get(survey.pk, {})
+        survey.question_count = question_row.get("question_count", 0)
+        survey.text_question_count = question_row.get("text_question_count", 0)
+        survey.response_count = submission_row.get("response_count", 0)
+        survey.latest_submission_at = submission_row.get("latest_submission_at")
+    return surveys
+
+
 class ManagerRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
     def test_func(self):
         return self.request.user.is_authenticated and self.request.user.is_manager
@@ -635,15 +677,7 @@ class StatsOverviewView(DashboardBaseMixin, TemplateView):
         survey = Survey.objects.filter(slug=selected_slug).first() if selected_slug else None
         context.update(self.get_dashboard_base_context())
         context["selected_survey"] = survey
-        stats_surveys = (
-            analysis_visible_surveys()
-            .select_related("category")
-            .annotate(
-                question_count=Count("questions", distinct=True),
-                response_count=Count("submissions", distinct=True),
-                latest_submission_at=Max("submissions__submitted_at"),
-            )
-        )
+        stats_surveys = analysis_visible_surveys().select_related("category")
         if category_id:
             stats_surveys = stats_surveys.filter(category_id=category_id)
         if sort == "oldest":
@@ -652,7 +686,7 @@ class StatsOverviewView(DashboardBaseMixin, TemplateView):
             stats_surveys = stats_surveys.order_by("title")
         else:
             stats_surveys = stats_surveys.order_by("-created_at")
-        context["stats_survey_rows"] = stats_surveys
+        context["stats_survey_rows"] = _survey_catalog_rows(stats_surveys)
         context["categories"] = SurveyCategory.objects.all()
         context["current_sort"] = sort
         context["current_category"] = category_id
@@ -778,20 +812,7 @@ class TextAnalysisView(DashboardBaseMixin, TemplateView):
         survey = Survey.objects.filter(slug=selected_slug).first() if selected_slug else None
         context.update(self.get_dashboard_base_context())
         context["selected_survey"] = survey
-        text_surveys = (
-            analysis_visible_surveys()
-            .select_related("category")
-            .annotate(
-                question_count=Count("questions", distinct=True),
-                response_count=Count("submissions", distinct=True),
-                text_question_count=Count(
-                    "questions",
-                    filter=Q(questions__data_type=Question.DataType.TEXT),
-                    distinct=True,
-                ),
-                latest_submission_at=Max("submissions__submitted_at"),
-            )
-        )
+        text_surveys = analysis_visible_surveys().select_related("category")
         if category_id:
             text_surveys = text_surveys.filter(category_id=category_id)
         if sort == "oldest":
@@ -800,7 +821,7 @@ class TextAnalysisView(DashboardBaseMixin, TemplateView):
             text_surveys = text_surveys.order_by("title")
         else:
             text_surveys = text_surveys.order_by("-created_at")
-        context["text_survey_rows"] = text_surveys
+        context["text_survey_rows"] = _survey_catalog_rows(text_surveys)
         context["categories"] = SurveyCategory.objects.all()
         context["current_sort"] = sort
         context["current_category"] = category_id
