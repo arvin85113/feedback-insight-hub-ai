@@ -38,6 +38,7 @@ Django (port 8000)
   └-- Django ORM ─────────────────────────────→ Shared DB
 
 Windows EXE
+  |-- 本機固定版本 Parquet（大型外部資料）
   |-- 第一段：統計與文字分析
   |-- 第二段：Gemini 綜合解析
   └-- Django ORM ─────────────────────────────→ Shared DB
@@ -133,10 +134,13 @@ Shared DB:
 ## Data Flow
 
 ```
-網站填答或固定外部資料匯入
+網站填答
   → Supabase 的 Survey + Question + FeedbackSubmission + Answer
+大型固定外部資料
+  → Supabase 的 Survey + Question；完整列留在版本化本機 Parquet
+兩種來源
   → 交易後更新版本並合併 AnalysisJob
-  → 本機 Worker／EXE 串流讀取問卷資料並計算統計 / 文字分析
+  → 本機 Worker／EXE 透過 AnswerInput 或 ParquetInput 計算統計 / 文字分析
   → 可選擇由 Gemini 產生第二段解析
   → 新 Snapshot／Stage 發布回 Supabase，舊版本保留
   → Render 只讀最新成功結果

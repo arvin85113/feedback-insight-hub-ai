@@ -114,7 +114,7 @@ python manage.py runserver
 .\.venv\Scripts\python.exe -m desktop_app
 ```
 
-工作台提供「開啟時檢查」、「開啟後自動更新」與「第一階段完成後執行 Gemini」選項。最後一項預設關閉，勾選後才會使用本機 API 額度。
+工作台提供「開啟時檢查」、「開啟後自動更新」與「第一階段完成後執行 Gemini」選項。網站問卷從 Supabase Answer 串流分析；與 mapping slug 相符的大型外部問卷則直接使用本機固定版本 Parquet。兩種來源共用同一套工作、Snapshot 與發布流程。Gemini 預設關閉，勾選後才會使用本機 API 額度。
 
 封裝入口為：
 
@@ -128,7 +128,7 @@ python manage.py runserver
 
 一般封裝輸出為 `dist/FeedbackInsightHub/FeedbackInsightHub.exe`，診斷版為 `dist/FeedbackInsightHubDiagnostic/FeedbackInsightHubDiagnostic.exe`；啟動時須保留各自完整資料夾。
 
-EXE 使用外部設定連接與網站相同的 Supabase。既有程序環境變數優先，其次讀取第一個存在的設定檔：`FEEDBACK_HUB_ENV_FILE` 指定路徑、EXE 同層 `.env`、`%LOCALAPPDATA%\FeedbackInsightHub\.env`。專案目錄內的開發封裝也可沿用專案根目錄 `.env`。設定 `DATABASE_URL`（或 `FEEDBACK_HUB_DATABASE_URL`）及選用的 `GOOGLE_API_KEY`；封裝版問卷工作流程要求 PostgreSQL。
+EXE 使用外部設定連接與網站相同的 Supabase。既有程序環境變數優先，其次讀取第一個存在的設定檔：`FEEDBACK_HUB_ENV_FILE` 指定路徑、EXE 同層 `.env`、`%LOCALAPPDATA%\FeedbackInsightHub\.env`。專案目錄內的開發封裝也可沿用專案根目錄 `.env`。設定 `DATABASE_URL`（或 `FEEDBACK_HUB_DATABASE_URL`）及選用的 `GOOGLE_API_KEY`；封裝版問卷工作流程要求 PostgreSQL。大型外部資料另以 `FEEDBACK_HUB_DATA_ROOT` 指向含 `manifest/`、`clean/`、`report/` 的資料集目錄；專案內開發封裝會自動辨識既有資料目錄。
 
 ## Render 部署
 

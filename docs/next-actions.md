@@ -14,7 +14,7 @@
 - 第四階段第一批已實作：`run_ai_worker_once` 只領取 AI synthesis 工作，未帶 `--allow-paid-ai` 時不領取；沿用既有三階段 schema／遮蔽證據與 Snapshot，provider timeout 等不確定狀態不盲目重呼。僅以 mock provider 測試，未呼叫真實 Gemini。
 - 第五階段第一批已實作：發布交易把有限的統計／文字及 AI 展示副本保存於 `SurveyAnalysisState`，排除大型 evidence catalog；統計、文字及 AI 狀態端點在 `ANALYSIS_READ_PUBLISHED_ONLY=True` 時只讀這些副本，不觸發 request-time 分析。同步 POST 在此模式只排背景工作；頁面顯示最新／等待新版及 AI 版本差異。本機預設關閉，Render blueprint 已啟用並部署。
 - `ANALYSIS_AUTO_AI_ENABLED=True` 時，AI 工作只會在 deterministic 發布交易成功後排入；AI Worker 會在 provider 呼叫前再次核對統計與文字版本，防止以舊 Snapshot 冒充新版分析。
-- 2026-09-06 已校正桌面方向：正式資料統一保存於 Supabase 的問卷模型；桌面工作台列出各問卷的資料量、最新資料／分析時間及新舊狀態，可手動或依本機設定更新統計／文字結果。Parquet 驗證與 mock 預覽降為匯入前工具，不再是正式產品主畫面。
+- 2026-09-07 已採混合資料層：網站問卷 Answer 保存於 Supabase；大型固定外部資料保留本機 Parquet，Supabase 保存問卷定義、工作狀態與版本化結果。桌面工作台依問卷 slug 選擇 AnswerInput 或 ParquetInput，兩者共用分析與發布流程。
 - 2026-09-06 桌面流程已拆成兩段：第一段發布統計／文字 Snapshot，第二段在管理員勾選 API 額度選項後執行 Gemini 並發布新 Stage；列表分別顯示兩段時間與新舊狀態。隔離測試驗證未啟用時不觸及 AI worker，啟用後保留原 Snapshot 並新增 synthesis Stage。
 - Django 已成為唯一後端與 ORM；舊第二服務、呼叫端、設定與依賴已移除。網站提交直接使用 Django domain service，並以回覆冪等鍵防止重送。
 - 新增明確隔離的 `config.settings_test`；2026-09-06 的 `feedback`／`accounts` 受影響範圍共 204 項測試通過，未呼叫真實 Gemini。
@@ -36,8 +36,8 @@
 
 ## 已有基礎
 
-- TripAdvisor 固定版本 raw／clean／report／manifest 已建立，共 201,295 列；尚未正式匯入 Supabase。
-- `AnalysisInput`、資料庫串流 `AnswerInput`、`ParquetInput` 已存在；正式工作統一分析 Supabase 問卷，Parquet 入口保留匯入前驗證／相容性用途。
+- TripAdvisor 固定版本 raw／clean／report／manifest 已建立，共 201,295 列；不再要求把完整列匯入 Supabase。
+- `AnalysisInput`、資料庫串流 `AnswerInput`、`ParquetInput` 已存在；2026-09-07 已用 ParquetInput 完成 201,295 筆第一階段正式發布。
 - 本機管線已能重用統計、文字分析及既有 AI schema，並產生 `ai_mode=mock` 的版本化本機產物。
 - `SurveyAIReportSnapshot`／`SurveyAIAnalysisStage` 已提供指紋、版本、revision 與成功結果重用。
 - 預設設定下網頁仍保留 request 內重運算及同步 Gemini POST；背景 Job／單次 Worker 與可選發布只讀路徑已存在，但 migration、常駐執行、正式切換與部署尚未完成。

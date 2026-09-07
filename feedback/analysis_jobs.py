@@ -211,6 +211,8 @@ def claim_next_job(
     executor=None,
     external_source_refs=None,
     survey_ids=None,
+    source_kind=None,
+    source_ref=None,
 ):
     if not worker_id or len(worker_id) > 128:
         raise ValueError("worker_id 必須是 1 到 128 個字元")
@@ -218,6 +220,8 @@ def claim_next_job(
         raise ValueError("lease_seconds 不得小於 5")
     if executor is not None and executor not in AnalysisJob.Executor.values:
         raise ValueError("不支援的 executor")
+    if source_kind is not None and source_kind not in AnalysisJob.SourceKind.values:
+        raise ValueError("不支援的資料來源種類")
     now = timezone.now()
     with transaction.atomic():
         AnalysisJob.objects.filter(
@@ -248,6 +252,10 @@ def claim_next_job(
             if not survey_ids:
                 return None
             eligible = eligible.filter(survey_id__in=survey_ids)
+        if source_kind is not None:
+            eligible = eligible.filter(source_kind=source_kind)
+        if source_ref is not None:
+            eligible = eligible.filter(source_ref=str(source_ref))
         if external_source_refs is not None:
             eligible = eligible.filter(
                 Q(source_kind=AnalysisJob.SourceKind.ANSWERS)
@@ -411,6 +419,9 @@ def _published_base_is_current(state, job):
             or item.get("input_version") != job.input_version
             or item.get("config_version") != job.config_version
             or item.get("pipeline_version") != job.pipeline_version
+            or item.get("source_kind", AnalysisJob.SourceKind.ANSWERS) != job.source_kind
+            or item.get("source_ref", "") != job.source_ref
+            or item.get("source_version", "") != job.source_version
         ):
             return False
     return bool(state.published_snapshot_id)
@@ -680,6 +691,8 @@ def publish_analysis_snapshot(
                 "input_version": job.input_version,
                 "config_version": job.config_version,
                 "pipeline_version": job.pipeline_version,
+                "source_kind": job.source_kind,
+                "source_ref": job.source_ref,
                 "source_version": job.source_version,
                 "published_at": now.isoformat(),
             }
@@ -757,6 +770,8 @@ def publish_analysis_stages(
             "input_version": job.input_version,
             "config_version": job.config_version,
             "pipeline_version": job.pipeline_version,
+            "source_kind": job.source_kind,
+            "source_ref": job.source_ref,
             "source_version": job.source_version,
             "model_name": stage.model_name,
             "published_at": now.isoformat(),

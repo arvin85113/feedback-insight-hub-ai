@@ -118,12 +118,19 @@
                                 <div><dt>平均值</dt><dd>{{ chart.avg }}</dd></div>
                                 <div><dt>中位數</dt><dd>{{ chart.median }}</dd></div>
                                 <div><dt>標準差</dt><dd>{{ chart.std }}</dd></div>
+                                {% if chart.q1 is not None and chart.q3 is not None %}
+                                    <div><dt>中間 50%</dt><dd>{{ chart.q1 }} ~ {{ chart.q3 }}</dd></div>
+                                {% endif %}
+                                {% if chart.p95 is not None %}
+                                    <div><dt>第 95 百分位</dt><dd>{{ chart.p95 }}</dd></div>
+                                {% endif %}
                                 <div><dt>最小 / 最大</dt><dd>{{ chart.min }} / {{ chart.max }}</dd></div>
                                 {% if chart.ci_low is not None and chart.ci_high is not None %}
                                     <div><dt>95% 信賴區間</dt><dd>{{ chart.ci_low }} ~ {{ chart.ci_high }}</dd></div>
                                 {% endif %}
                             </dl>
                             {% if chart.counts %}
+                                {% if chart.distribution_unit %}<p class="analytics-panel-note">分布單位：{{ chart.distribution_unit }}</p>{% endif %}
                                 <div class="bar-chart">
                                     {% for row in chart.counts %}
                                         <div class="bar-row">

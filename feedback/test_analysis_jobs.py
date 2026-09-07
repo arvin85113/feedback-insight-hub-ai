@@ -190,6 +190,29 @@ class AnalysisJobCoordinationTests(TestCase):
         claimed.refresh_from_db()
         self.assertEqual(claimed.status, AnalysisJob.Status.CANCELLED)
 
+    def test_claim_can_select_exact_external_source_without_taking_answer_job(self):
+        answer_job = schedule_survey_analysis(self.survey.pk, change="input")
+        external_job = schedule_survey_analysis(
+            self.survey.pk,
+            change="none",
+            source_kind=AnalysisJob.SourceKind.EXTERNAL,
+            source_ref="fixture/reviews",
+            source_version="source-v1",
+        )
+
+        claimed = claim_next_job(
+            "external-worker",
+            lease_seconds=30,
+            executor=AnalysisJob.Executor.DETERMINISTIC,
+            survey_ids=(self.survey.pk,),
+            source_kind=AnalysisJob.SourceKind.EXTERNAL,
+            source_ref="fixture/reviews",
+        )
+
+        self.assertEqual(claimed.pk, external_job.pk)
+        answer_job.refresh_from_db()
+        self.assertEqual(answer_job.status, AnalysisJob.Status.PENDING)
+
     def test_retry_is_finite_and_does_not_store_raw_error_text(self):
         job = schedule_survey_analysis(self.survey.pk)
         job.max_attempts = 2

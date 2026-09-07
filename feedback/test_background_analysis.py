@@ -78,6 +78,31 @@ class LocalPipelineTests(SimpleTestCase):
         self.assertEqual(payload["coverage"]["sentiment_documents"], 1)
         self.assertGreater(payload["summary"]["avg_sentiment_score"], 0)
 
+    def test_review_length_uses_readable_bins_and_keeps_raw_summary(self):
+        fields = (
+            AnalysisField(
+                "review_length", "discrete", False, "評論長度 Review length", "integer"
+            ),
+        )
+        rows = [
+            {"review_length": value}
+            for value in (50, 99, 100, 249, 250, 499, 500, 999, 1000, 1999, 2000, 22387)
+        ]
+        adapter = TableInput(rows, fields, version="length-v1", name="fixture")
+
+        payload, row_count = calculate_statistics(adapter, descriptors(adapter))
+
+        chart = payload["charts"][0]
+        self.assertEqual(row_count, 12)
+        self.assertEqual(chart["min"], 50)
+        self.assertEqual(chart["max"], 22387)
+        self.assertEqual(chart["distribution_unit"], "字元")
+        self.assertEqual(
+            [item["value"] for item in chart["counts"]],
+            ["少於 100", "100–249", "250–499", "500–999", "1,000–1,999", "2,000 以上"],
+        )
+        self.assertEqual([item["total"] for item in chart["counts"]], [2, 2, 2, 2, 2, 2])
+
     def test_local_publish_is_mock_private_and_cache_reuses_without_analysis(self):
         with tempfile.TemporaryDirectory() as directory, patch("socket.socket.connect", side_effect=AssertionError("network forbidden")):
             table = TableInput(ROWS + [dict(overall=1, rooms=1, text="ZeldaSecret email zelda@example.com clean room")],

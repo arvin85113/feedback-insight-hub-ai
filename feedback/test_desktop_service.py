@@ -208,6 +208,127 @@ class DesktopDatabaseServiceTests(TestCase):
         self.assertFalse(status.ai_current)
         self.assertIsNone(status.latest_ai_at)
 
+    def test_matching_local_dataset_uses_full_parquet_and_leaves_answer_job_pending(self):
+        from feedback.models import AnalysisJob, SurveyAnalysisState
+
+        test_root = Path(self.temporary.name)
+        dataset_root = test_root / "external"
+        clean = dataset_root / "clean" / "fixture.parquet"
+        clean.parent.mkdir(parents=True)
+        with duckdb.connect(":memory:") as connection_handle:
+            connection_handle.execute(
+                "CREATE TABLE fixture(overall INTEGER, text VARCHAR, review_length INTEGER)"
+            )
+            connection_handle.executemany(
+                "INSERT INTO fixture VALUES (?, ?, ?)",
+                [
+                    (5, "clean friendly room", 19),
+                    (4, "comfortable room", 16),
+                    (2, "not good", 8),
+                    (3, "helpful staff", 13),
+                ],
+            )
+            connection_handle.execute(f"COPY fixture TO '{clean.as_posix()}' (FORMAT PARQUET)")
+        manifest_dir = dataset_root / "manifest"
+        manifest_dir.mkdir()
+        report_dir = dataset_root / "report"
+        report_dir.mkdir()
+        report = report_dir / "full.json"
+        report.write_text(
+            json.dumps({"post_date": {"maximum": "2012-12-20T00:00:00"}}),
+            encoding="utf-8",
+        )
+        manifest = manifest_dir / "dataset.json"
+        manifest.write_text(
+            json.dumps(
+                {
+                    "clean_path": "clean/fixture.parquet",
+                    "report_path": "report/full.json",
+                    "cleaning_version": "clean-v1",
+                    "counts": {"retained_rows": 4},
+                    "source": {"dataset": "fixture/reviews", "source_revision": "source-v1"},
+                    "artifacts": [
+                        {
+                            "path": "clean/fixture.parquet",
+                            "size": clean.stat().st_size,
+                            "sha256": file_sha256(clean),
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        mapping = dataset_root / "mapping.json"
+        mapping.write_text(
+            json.dumps(
+                {
+                    "dataset": {"name": "fixture/reviews", "version": "source-v1"},
+                    "survey": {"slug": self.survey.slug},
+                    "questions": [
+                        {
+                            "source_field": "overall",
+                            "title": "整體評分",
+                            "kind": "scale",
+                            "data_type": "ordinal",
+                            "required": True,
+                            "options": ["1", "2", "3", "4", "5"],
+                        },
+                        {
+                            "source_field": "text",
+                            "title": "評論",
+                            "kind": "long_text",
+                            "data_type": "text",
+                            "required": True,
+                            "options": [],
+                            "enable_keyword_tracking": True,
+                        },
+                        {
+                            "source_field": "text",
+                            "title": "評論長度 Review length",
+                            "kind": "integer",
+                            "data_type": "discrete",
+                            "required": True,
+                            "normalizers": ["text_length"],
+                            "options": [],
+                        },
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        service = DesktopService(
+            project_root=test_root,
+            dataset_root=dataset_root,
+            manifest_path=manifest,
+            mapping_path=mapping,
+            output_root=test_root / "external-analysis",
+        )
+        service.database_output_root = test_root / "published-analysis"
+
+        status = service.list_surveys()[0]
+        self.assertEqual(status.source, "本機完整資料集")
+        self.assertEqual(status.response_count, 4)
+        self.assertEqual(status.analysis_source_kind, AnalysisJob.SourceKind.EXTERNAL)
+        result = service.update_surveys((self.survey.pk,))
+
+        self.assertEqual(result.input_rows, 4)
+        self.assertEqual(result.updated_count, 1)
+        self.assertTrue(
+            AnalysisJob.objects.filter(
+                survey=self.survey,
+                source_kind=AnalysisJob.SourceKind.ANSWERS,
+                status=AnalysisJob.Status.PENDING,
+            ).exists()
+        )
+        state = SurveyAnalysisState.objects.get(survey=self.survey)
+        self.assertEqual(
+            state.publication_manifest["statistics"]["source_ref"], "fixture/reviews"
+        )
+        self.assertEqual(state.published_snapshot.response_count, 4)
+        updated_status = service.list_surveys()[0]
+        self.assertFalse(updated_status.needs_update)
+        self.assertTrue(updated_status.needs_ai)
+
     @patch("feedback.ai_worker.execute_ai_job")
     @override_settings(AI_REPORT_REQUEST_INTERVAL_SECONDS=0)
     def test_two_stage_update_publishes_new_ai_stage_without_replacing_snapshot(

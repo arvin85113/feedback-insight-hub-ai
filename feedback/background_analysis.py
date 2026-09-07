@@ -59,7 +59,7 @@ def pipeline_version(profile):
 
 
 def descriptors(adapter):
-    return [Question(id=index, title=f.title or f.name, kind=f.kind, data_type=f.data_type,
+    return [Question(id=index, code=f.name, title=f.title or f.name, kind=f.kind, data_type=f.data_type,
                      options_text="\n".join(f.options), order=index,
                      enable_keyword_tracking=f.tracked)
             for index, f in enumerate(adapter.fields(), 1)]

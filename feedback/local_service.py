@@ -410,6 +410,25 @@ def analyze_frame(questions, df):
             return str(int(rounded))
         return str(rounded)
 
+    def numeric_distribution(question, numeric_series):
+        """Keep review-length charts readable without changing the raw feature."""
+
+        code = str(getattr(question, "code", "") or "").lower()
+        title = str(getattr(question, "title", "") or "").lower()
+        is_review_length = (
+            code == "review_length"
+            or "review length" in title
+            or "評論長度" in title
+        )
+        if not is_review_length:
+            return numeric_series.value_counts().sort_index(), None
+
+        bins = [-float("inf"), 99, 249, 499, 999, 1999, float("inf")]
+        labels = ["少於 100", "100–249", "250–499", "500–999", "1,000–1,999", "2,000 以上"]
+        grouped = pd.cut(numeric_series, bins=bins, labels=labels, include_lowest=True)
+        counts = grouped.value_counts(sort=False)
+        return counts[counts > 0], "字元"
+
     for question in questions:
         col = f"Q_{question.id}"
         if col not in df.columns:
@@ -424,7 +443,7 @@ def analyze_frame(questions, df):
             if numeric_series.empty:
                 continue
             numeric_columns[col] = pd.to_numeric(df[col], errors="coerce")
-            value_counts = numeric_series.value_counts().sort_index()
+            value_counts, distribution_unit = numeric_distribution(question, numeric_series)
             total_count = int(value_counts.sum())
             ci_low, ci_high = mean_confidence_interval(numeric_series)
             charts.append(
@@ -439,9 +458,13 @@ def analyze_frame(questions, df):
                     "std": _round_or_none(numeric_series.std()) if numeric_series.count() > 1 else 0,
                     "ci_low": ci_low,
                     "ci_high": ci_high,
+                    "q1": _round_or_none(numeric_series.quantile(0.25)),
+                    "q3": _round_or_none(numeric_series.quantile(0.75)),
+                    "p95": _round_or_none(numeric_series.quantile(0.95)),
+                    "distribution_unit": distribution_unit,
                     "counts": [
                         {
-                            "value": format_numeric_bucket(value),
+                            "value": str(value) if distribution_unit else format_numeric_bucket(value),
                             "total": int(total),
                             "percent": _round_or_none((int(total) / total_count) * 100) if total_count else 0,
                         }

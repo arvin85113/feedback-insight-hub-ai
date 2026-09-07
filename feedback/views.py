@@ -7,8 +7,8 @@ from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.conf import settings
 from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Max, Q
-from django.db.models.functions import TruncDate
+from django.db.models import Count, IntegerField, Max, OuterRef, Q, Subquery
+from django.db.models.functions import Coalesce, TruncDate
 import segno
 
 from django.http import Http404, HttpResponse, HttpResponseRedirect, JsonResponse
@@ -62,6 +62,7 @@ from .models import (
     Survey,
     SurveyAIAnalysisStage,
     SurveyAIReportSnapshot,
+    SurveyAnalysisState,
     SurveyCategory,
 )
 from .notice_service import (
@@ -89,16 +90,24 @@ def analysis_visible_surveys():
 
 
 def analysis_report_surveys():
+    published_response_count = SurveyAnalysisState.objects.filter(
+        survey_id=OuterRef("pk"),
+        published_snapshot__isnull=False,
+    ).values("published_snapshot__response_count")[:1]
     return (
         analysis_visible_surveys()
         .annotate(
             response_count=Count("submissions"),
-            valid_response_count=Count(
-                "submissions",
-                filter=Q(
-                    submissions__is_complete=True,
-                    submissions__voided_at__isnull=True,
+            valid_response_count=Coalesce(
+                Subquery(published_response_count, output_field=IntegerField()),
+                Count(
+                    "submissions",
+                    filter=Q(
+                        submissions__is_complete=True,
+                        submissions__voided_at__isnull=True,
+                    ),
                 ),
+                output_field=IntegerField(),
             ),
         )
         .order_by("title")

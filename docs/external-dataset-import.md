@@ -205,15 +205,20 @@ Windows raw 根目錄 ACL 僅保留目前使用者與 SYSTEM 完整存取。raw 
 `ANALYSIS_AUTO_AI_ENABLED` 預設關閉；啟用時只在新版統計／文字成功發布的同一交易內排入
 對應 AI 工作，AI Worker 呼叫 provider 前仍會重查基礎版本。
 
-2026-09-06 架構校正：Supabase 是所有正式問卷及匯入回覆的權威資料源；固定 Parquet 是
-匯入前可追溯來源，不是正式展示資料的平行儲存核心。通用匯入器已支援 Parquet 串流與
-`--all-rows`，以批次建立同一組 `Survey／Question／FeedbackSubmission／Answer`，完成後只
-排一個合併分析工作。`AnswerInput` 改由資料庫分批串流所需題目欄位，不載入姓名、Email
-或整批評論到記憶體。匯入／工作追蹤 schema 已套用至 Supabase，但尚未正式匯入 TripAdvisor 資料。
+2026-09-07 架構校正：網站問卷回覆仍以 Supabase 為權威來源；大型固定外部資料則由
+Supabase 保存 `Survey／Question`、來源版本、工作狀態及版本化發布結果，完整列保留在
+固定版本本機 Parquet。`AnswerInput` 與 `ParquetInput` 共用相同統計、文字、工作租約及
+Snapshot 發布流程，不另建資料集專用分析核心。通用匯入器仍保留給小型或確實需要逐筆
+線上管理的資料，不再要求把大型資料全部展開成 Answer。
+
+2026-09-07 已以固定 clean SHA-256
+`8892cf5be77ea70df321aa05c090ea86d76a0d7fbbe10cf620e408e0ba0309c5` 完成 201,295 筆
+正式 deterministic 工作並發布 Snapshot；發布 payload 14,912 bytes，不含 `user_id` 或
+評論全文。評論長度保留原始字元數計算，展示改為固定區間並增加四分位數及第 95 百分位。
 
 尚待整合：Worker 程序服務安裝，以及部署後正式啟用發布只讀模式；問卷收集、權限、
 設定與工作排程仍保留必要讀寫。預設設定下頁面仍有 request 計算與同步 Gemini POST 路徑。
-Supabase 遠端串流 201,295 筆的耗時與連線穩定性尚未實測。
+完整外部資料不再經 Supabase 遠端逐列串流；本機 Parquet 完整性會在工作開始前驗證。
 現階段先完成背景分析到發布展示；訓練切分與預測模型延後。GUI 與 one-folder EXE 原型已提供本機資料驗證及 mock 分析預覽；安裝包、跨機器驗收及雲端發布操作尚未完成。
 
 2026-09-06 的 `feedback`／`accounts` 受影響範圍共 204 項通過；測試 DB 均建立後銷毀，

@@ -32,7 +32,7 @@
 ## 目標架構／尚未實作
 
 - 現階段目標：收資料 → 背景統計與文字分析 → 既有 schema 及 Gemini → 版本化發布 → Render 快速展示。
-- 目標由 Supabase PostgreSQL 保存所有問卷、匯入回覆、工作權威狀態及 Snapshot；本機 Parquet／DuckDB 僅作匯入前驗證，運算由本機 Worker／EXE 執行。
+- Supabase PostgreSQL 保存網站問卷回覆、問卷定義、工作權威狀態及 Snapshot；大型固定外部資料可留在版本化本機 Parquet，由本機 Worker／EXE 計算後只發布有限結果。
 - 優先重用既有分析邏輯、Snapshot／AI Stage；避免新增同義模型或資料集專用平行核心。
 - 隔離 PostgreSQL 17.11 已驗證雙 Worker 原子領取、租約接手與舊租約發布拒絕；Worker 程序服務安裝尚未完成。
 - 發布須核對輸入版本、管線版本與工作所有權，避免過期 Worker 覆蓋新結果。
@@ -60,7 +60,7 @@
 
 - 主展示來源為 TripAdvisor；Amazon Beauty 僅保留次要相容性案例，授權衝突仍須查核。
 - 不生成、翻譯、改寫或補造正式評論；fixture 僅供隔離測試，不得進入正式問卷。
-- 外部正式資料須透過 mapping 建立一般 `Survey／Question／FeedbackSubmission／Answer`，與網站問卷共用排程、分析及發布流程；Parquet 直接分析只保留資料準備／相容性用途。
+- 外部正式資料須透過 mapping 建立一般 `Survey／Question`；小型資料可展開成 `FeedbackSubmission／Answer`，大型固定資料可由 `ParquetInput` 直接分析。兩者必須共用排程、分析與版本化發布流程。
 - 資料版本須可追溯並驗證完整性；已驗證產物重用，下載與快取細節按需讀取 [外部資料交接](docs/external-dataset-import.md)。
 - 不全量轉 CSV、不讀 Pickle 或執行遠端資料集程式碼。
 - raw／clean／report／manifest 分開；限制 raw 存取，大檔受 Git 忽略，不任意刪除既有成果。

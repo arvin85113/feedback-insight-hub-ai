@@ -249,6 +249,11 @@ class DeterministicWorkerTests(TestCase):
                 SurveyAnalysisState.objects.get(survey=self.survey).publication_manifest["statistics"]["source_version"],
                 source_version,
             )
+            manifest_row = SurveyAnalysisState.objects.get(
+                survey=self.survey
+            ).publication_manifest["statistics"]
+            self.assertEqual(manifest_row["source_kind"], AnalysisJob.SourceKind.EXTERNAL)
+            self.assertEqual(manifest_row["source_ref"], "fixture")
 
     @override_settings(ANALYSIS_AUTO_AI_ENABLED=True)
     def test_successful_base_publication_queues_matching_ai_job(self):

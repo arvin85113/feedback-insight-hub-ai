@@ -61,6 +61,17 @@ class AnalysisSummary:
 
 
 @dataclass(frozen=True)
+class LocalExternalSource:
+    survey_slug: str
+    source_ref: str
+    source_version: str
+    response_count: int
+    latest_data_at: datetime | None
+    manifest_path: Path
+    mapping_path: Path
+
+
+@dataclass(frozen=True)
 class SurveyStatus:
     survey_id: int
     title: str
@@ -80,6 +91,9 @@ class SurveyStatus:
     latest_job_status: str
     latest_ai_job_status: str
     latest_import_status: str
+    analysis_source_kind: str = "answers"
+    analysis_source_ref: str = ""
+    analysis_source_version: str = ""
 
     def to_dict(self):
         return asdict(self)
@@ -131,11 +145,18 @@ class DesktopService:
         runtime_root = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else source_root
         resource_root = Path(getattr(sys, "_MEIPASS", source_root)).resolve()
         self.project_root = Path(project_root or runtime_root).resolve()
-        self.dataset_root = Path(
-            dataset_root
-            or os.getenv("FEEDBACK_HUB_DATA_ROOT", "").strip()
-            or self.project_root / "data" / "local" / "tripadvisor-review-rating"
-        ).resolve()
+        configured_data_root = dataset_root or os.getenv("FEEDBACK_HUB_DATA_ROOT", "").strip()
+        if configured_data_root:
+            default_dataset_root = Path(configured_data_root)
+        else:
+            default_dataset_root = self.project_root / "data" / "local" / "tripadvisor-review-rating"
+            if getattr(sys, "frozen", False) and not default_dataset_root.exists():
+                for parent in Path(sys.executable).resolve().parents:
+                    candidate = parent / "data" / "local" / "tripadvisor-review-rating"
+                    if (parent / "manage.py").is_file() and candidate.exists():
+                        default_dataset_root = candidate
+                        break
+        self.dataset_root = default_dataset_root.resolve()
         self.manifest_path = Path(
             manifest_path or self.dataset_root / "manifest" / "dataset-manifest.json"
         ).resolve()
@@ -157,6 +178,51 @@ class DesktopService:
         )[:128]
         self._active_job_id = None
         self._active_job_lock = threading.Lock()
+
+    def _local_external_source(self):
+        """Read small manifests only; Parquet integrity is verified immediately before analysis."""
+
+        if not self.manifest_path.is_file() or not self.mapping_path.is_file():
+            return None
+        manifest = self._read_json(self.manifest_path, "資料清單")
+        mapping = self._read_json(self.mapping_path, "欄位設定")
+        try:
+            source = manifest["source"]
+            clean_relative = manifest["clean_path"]
+            artifact = next(item for item in manifest["artifacts"] if item["path"] == clean_relative)
+            survey_slug = str(mapping["survey"]["slug"])
+            source_ref = str(mapping["dataset"]["name"])
+            retained_rows = int(manifest["counts"]["retained_rows"])
+        except (KeyError, StopIteration, TypeError, ValueError) as exc:
+            raise DesktopServiceError("本機完整資料設定不完整") from exc
+        if source_ref != source.get("dataset") or mapping["dataset"].get("version") != source.get("source_revision"):
+            raise DesktopServiceError("本機完整資料的 mapping 與 manifest 版本不一致")
+        clean_path = (self.dataset_root / clean_relative).resolve()
+        if not clean_path.is_relative_to(self.dataset_root) or not clean_path.is_file():
+            raise DesktopServiceError("找不到本機完整資料 Parquet")
+        if clean_path.stat().st_size != int(artifact["size"]):
+            raise DesktopServiceError("本機完整資料大小與 manifest 不一致")
+        source_version = ":".join(
+            (str(source["source_revision"]), str(manifest["cleaning_version"]), str(artifact["sha256"]))
+        )
+        latest_data_at = None
+        report_relative = manifest.get("report_path")
+        if report_relative:
+            report_path = (self.dataset_root / report_relative).resolve()
+            if report_path.is_relative_to(self.dataset_root) and report_path.is_file():
+                report = self._read_json(report_path, "全量驗證報告")
+                raw_latest = (report.get("post_date") or {}).get("maximum")
+                if raw_latest:
+                    latest_data_at = datetime.fromisoformat(str(raw_latest).replace("Z", "+00:00"))
+        return LocalExternalSource(
+            survey_slug=survey_slug,
+            source_ref=source_ref,
+            source_version=source_version,
+            response_count=retained_rows,
+            latest_data_at=latest_data_at,
+            manifest_path=self.manifest_path,
+            mapping_path=self.mapping_path,
+        )
 
     @staticmethod
     def _checkpoint(cancel_requested, progress, stage, percent):
@@ -300,13 +366,27 @@ class DesktopService:
         )
 
     @staticmethod
-    def _manifest_stage_current(state, stage):
+    def _manifest_stage_current(
+        state,
+        stage,
+        *,
+        source_kind=None,
+        source_ref=None,
+        source_version=None,
+    ):
         item = (state.publication_manifest or {}).get(stage) or {}
-        return bool(item) and (
+        current = bool(item) and (
             item.get("input_version") == state.input_version
             and item.get("config_version") == state.config_version
             and item.get("pipeline_version") == state.pipeline_version
         )
+        if source_kind is not None:
+            current = current and item.get("source_kind") == source_kind
+        if source_ref is not None:
+            current = current and item.get("source_ref") == source_ref
+        if source_version is not None:
+            current = current and item.get("source_version") == source_version
+        return current
 
     @staticmethod
     def _manifest_datetime(state, stage):
@@ -396,15 +476,31 @@ class DesktopService:
             raise DesktopServiceError(f"無法讀取問卷資料庫（{type(exc).__name__}）") from exc
 
         self._checkpoint(cancel_requested, progress, "整理問卷狀態", 80)
+        external_source = self._local_external_source()
         result = []
         for survey in surveys:
             try:
                 state = survey.analysis_state
             except Survey.analysis_state.RelatedObjectDoesNotExist:
                 state = None
-            statistics_current = bool(state and self._manifest_stage_current(state, "statistics"))
-            text_current = bool(state and self._manifest_stage_current(state, "text"))
-            ai_current = bool(state and self._manifest_stage_current(state, "ai"))
+            uses_external = bool(external_source and survey.slug == external_source.survey_slug)
+            analysis_source_kind = "external" if uses_external else "answers"
+            analysis_source_ref = external_source.source_ref if uses_external else ""
+            analysis_source_version = external_source.source_version if uses_external else ""
+            current_kwargs = (
+                {
+                    "source_kind": analysis_source_kind,
+                    "source_ref": analysis_source_ref,
+                    "source_version": analysis_source_version,
+                }
+                if uses_external
+                else {}
+            )
+            statistics_current = bool(
+                state and self._manifest_stage_current(state, "statistics", **current_kwargs)
+            )
+            text_current = bool(state and self._manifest_stage_current(state, "text", **current_kwargs))
+            ai_current = bool(state and self._manifest_stage_current(state, "ai", **current_kwargs))
             generated_values = [
                 self._manifest_datetime(state, stage)
                 for stage in ("statistics", "text")
@@ -412,13 +508,48 @@ class DesktopService:
             ]
             generated_values = [value for value in generated_values if value]
             latest_ai_at = self._manifest_datetime(state, "ai") if state else None
-            if survey.has_imported and survey.has_native:
+            if uses_external:
+                source = "本機完整資料集"
+            elif survey.has_imported and survey.has_native:
                 source = "線上問卷＋匯入資料"
             elif survey.has_imported:
                 source = "匯入資料"
             else:
                 source = "線上問卷"
-            response_count = int(survey.response_total or 0)
+            response_count = (
+                external_source.response_count if uses_external else int(survey.response_total or 0)
+            )
+            latest_data_at = (
+                external_source.latest_data_at if uses_external else survey.latest_response_at
+            )
+            if uses_external:
+                latest_job_status = (
+                    AnalysisJob.objects.filter(
+                        survey_id=survey.pk,
+                        executor=AnalysisJob.Executor.DETERMINISTIC,
+                        source_kind=AnalysisJob.SourceKind.EXTERNAL,
+                        source_ref=analysis_source_ref,
+                    )
+                    .order_by("-created_at", "-pk")
+                    .values_list("status", flat=True)
+                    .first()
+                    or ""
+                )
+                latest_ai_job_status = (
+                    AnalysisJob.objects.filter(
+                        survey_id=survey.pk,
+                        executor=AnalysisJob.Executor.AI,
+                        source_kind=AnalysisJob.SourceKind.EXTERNAL,
+                        source_ref=analysis_source_ref,
+                    )
+                    .order_by("-created_at", "-pk")
+                    .values_list("status", flat=True)
+                    .first()
+                    or ""
+                )
+            else:
+                latest_job_status = survey.latest_job_status_value or ""
+                latest_ai_job_status = survey.latest_ai_job_status_value or ""
             result.append(
                 SurveyStatus(
                     survey_id=survey.pk,
@@ -428,7 +559,7 @@ class DesktopService:
                     is_active=survey.is_active,
                     question_count=int(survey.question_total or 0),
                     response_count=response_count,
-                    latest_data_at=survey.latest_response_at,
+                    latest_data_at=latest_data_at,
                     latest_analysis_at=max(generated_values) if generated_values else None,
                     latest_ai_at=latest_ai_at,
                     statistics_current=statistics_current,
@@ -436,9 +567,12 @@ class DesktopService:
                     ai_current=ai_current,
                     needs_update=response_count > 0 and not (statistics_current and text_current),
                     needs_ai=response_count > 0 and statistics_current and text_current and not ai_current,
-                    latest_job_status=survey.latest_job_status_value or "",
-                    latest_ai_job_status=survey.latest_ai_job_status_value or "",
+                    latest_job_status=latest_job_status,
+                    latest_ai_job_status=latest_ai_job_status,
                     latest_import_status=survey.latest_import_status_value or "",
+                    analysis_source_kind=analysis_source_kind,
+                    analysis_source_ref=analysis_source_ref,
+                    analysis_source_version=analysis_source_version,
                 )
             )
         self._checkpoint(cancel_requested, progress, "狀態已更新", 100)
@@ -471,6 +605,7 @@ class DesktopService:
             schedule_survey_analysis,
         )
         from feedback.analysis_worker import (
+            ExternalInputSpec,
             WorkerCancelled,
             WorkerExecutionError,
             execute_deterministic_job,
@@ -507,13 +642,23 @@ class DesktopService:
             survey = Survey.objects.filter(pk=status.survey_id).first()
             if survey is None:
                 continue
-            schedule_survey_analysis(survey.pk, change="none")
+            source_kind = status.analysis_source_kind
+            source_ref = status.analysis_source_ref
+            source_version = status.analysis_source_version
+            schedule_survey_analysis(
+                survey.pk,
+                change="none",
+                source_kind=source_kind,
+                source_ref=source_ref,
+                source_version=source_version,
+            )
             job = claim_next_job(
                 self.worker_id,
                 lease_seconds=lease_seconds,
                 executor=AnalysisJob.Executor.DETERMINISTIC,
-                external_source_refs=(),
                 survey_ids=(survey.pk,),
+                source_kind=source_kind,
+                source_ref=source_ref,
             )
             if job is None:
                 continue
@@ -523,6 +668,16 @@ class DesktopService:
                 result = execute_deterministic_job(
                     job,
                     output_root=self.database_output_root,
+                    external_inputs=(
+                        {
+                            source_ref: ExternalInputSpec(
+                                self.manifest_path,
+                                self.mapping_path,
+                            )
+                        }
+                        if source_kind == AnalysisJob.SourceKind.EXTERNAL
+                        else None
+                    ),
                     lease_seconds=lease_seconds,
                 )
             except WorkerCancelled:
@@ -635,6 +790,9 @@ class DesktopService:
             schedule_survey_analysis(
                 survey.pk,
                 change="none",
+                source_kind=status.analysis_source_kind,
+                source_ref=status.analysis_source_ref,
+                source_version=status.analysis_source_version,
                 requested_stages=(SurveyAIAnalysisStage.StageType.SYNTHESIS,),
             )
             job = claim_next_job(
@@ -642,6 +800,8 @@ class DesktopService:
                 lease_seconds=lease_seconds,
                 executor=AnalysisJob.Executor.AI,
                 survey_ids=(survey.pk,),
+                source_kind=status.analysis_source_kind,
+                source_ref=status.analysis_source_ref,
             )
             if job is None:
                 continue
