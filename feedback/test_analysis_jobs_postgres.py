@@ -10,6 +10,7 @@ from django.test import TransactionTestCase, skipUnlessDBFeature
 from django.utils import timezone
 
 from .analysis_jobs import AnalysisJobError, claim_next_job, publish_analysis_snapshot, schedule_survey_analysis
+from .analysis_sources import register_external_dataset_version
 from .models import AnalysisJob, Survey, SurveyAIReportSnapshot, SurveyAnalysisState
 
 
@@ -106,3 +107,54 @@ class AnalysisJobPostgreSQLConcurrencyTests(TransactionTestCase):
         scheduled.refresh_from_db()
         self.assertEqual(scheduled.status, AnalysisJob.Status.SUCCEEDED)
         self.assertEqual(scheduled.attempt_count, 2)
+
+    @skipUnlessDBFeature("has_select_for_update_skip_locked")
+    def test_source_version_switch_rejects_old_worker_publication(self):
+        first_sha = "a" * 64
+        _, first_version, first_job, _ = register_external_dataset_version(
+            self.survey.pk,
+            source_ref="fixture/reviews",
+            source_version=f"revision-a:clean-v1:{first_sha}",
+            source_revision="revision-a",
+            cleaning_version="clean-v1",
+            content_sha256=first_sha,
+            mapping_key="fixture_mapping",
+            mapping_version="fixture-v1",
+            row_count=4,
+        )
+        first = claim_next_job("postgres-old-worker", lease_seconds=30)
+        self.assertEqual(first.pk, first_job.pk)
+        second_sha = "b" * 64
+        _, second_version, _, _ = register_external_dataset_version(
+            self.survey.pk,
+            source_ref="fixture/reviews",
+            source_version=f"revision-b:clean-v1:{second_sha}",
+            source_revision="revision-b",
+            cleaning_version="clean-v1",
+            content_sha256=second_sha,
+            mapping_key="fixture_mapping",
+            mapping_version="fixture-v1",
+            row_count=5,
+        )
+
+        result = publish_analysis_snapshot(
+            first.pk,
+            first.lease_token,
+            snapshot_id=self._make_snapshot("r").pk,
+        )
+
+        self.assertTrue(result.stale)
+        first.refresh_from_db()
+        self.assertEqual((first.status, first.error_code), (AnalysisJob.Status.CANCELLED, "superseded"))
+        self.assertFalse(
+            AnalysisJob.objects.filter(
+                status=AnalysisJob.Status.PENDING,
+                source_version=first_version.source_version,
+            ).exists()
+        )
+        self.assertTrue(
+            AnalysisJob.objects.filter(
+                status=AnalysisJob.Status.PENDING,
+                source_version=second_version.source_version,
+            ).exists()
+        )

@@ -62,11 +62,11 @@ class AnalysisSummary:
 
 @dataclass(frozen=True)
 class LocalExternalSource:
-    survey_slug: str
     source_ref: str
     source_version: str
     response_count: int
     latest_data_at: datetime | None
+    dataset_root: Path
     manifest_path: Path
     mapping_path: Path
 
@@ -94,6 +94,7 @@ class SurveyStatus:
     analysis_source_kind: str = "answers"
     analysis_source_ref: str = ""
     analysis_source_version: str = ""
+    analysis_source_ready: bool = True
 
     def to_dict(self):
         return asdict(self)
@@ -140,34 +141,30 @@ class DesktopService:
         manifest_path=None,
         mapping_path=None,
         output_root=None,
+        dataset_registry_path=None,
     ):
         source_root = Path(__file__).resolve().parent.parent
         runtime_root = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else source_root
         resource_root = Path(getattr(sys, "_MEIPASS", source_root)).resolve()
         self.project_root = Path(project_root or runtime_root).resolve()
-        configured_data_root = dataset_root or os.getenv("FEEDBACK_HUB_DATA_ROOT", "").strip()
-        if configured_data_root:
-            default_dataset_root = Path(configured_data_root)
-        else:
-            default_dataset_root = self.project_root / "data" / "local" / "tripadvisor-review-rating"
-            if getattr(sys, "frozen", False) and not default_dataset_root.exists():
-                for parent in Path(sys.executable).resolve().parents:
-                    candidate = parent / "data" / "local" / "tripadvisor-review-rating"
-                    if (parent / "manage.py").is_file() and candidate.exists():
-                        default_dataset_root = candidate
-                        break
-        self.dataset_root = default_dataset_root.resolve()
-        self.manifest_path = Path(
-            manifest_path or self.dataset_root / "manifest" / "dataset-manifest.json"
-        ).resolve()
-        self.mapping_path = Path(
-            mapping_path
-            or resource_root / "feedback" / "import_mappings" / "tripadvisor_hotel_reviews.json"
-        ).resolve()
-        self.output_root = Path(output_root or self.dataset_root / "analysis").resolve()
         desktop_data_root = Path(
             os.getenv("LOCALAPPDATA", "").strip() or self.project_root
         ) / "FeedbackInsightHub"
+        configured_data_root = dataset_root or os.getenv("FEEDBACK_HUB_DATA_ROOT", "").strip()
+        self.dataset_root = Path(configured_data_root).resolve() if configured_data_root else None
+        self.manifest_path = (
+            Path(manifest_path).resolve()
+            if manifest_path
+            else (self.dataset_root / "manifest" / "dataset-manifest.json" if self.dataset_root else None)
+        )
+        self.mapping_path = Path(mapping_path).resolve() if mapping_path else None
+        self.mapping_directory = (resource_root / "feedback" / "import_mappings").resolve()
+        self.dataset_registry_path = Path(
+            dataset_registry_path
+            or os.getenv("FEEDBACK_HUB_DATA_REGISTRY", "").strip()
+            or desktop_data_root / "datasets.json"
+        ).resolve()
+        self.output_root = Path(output_root or desktop_data_root / "local-analysis").resolve()
         self.database_output_root = Path(
             os.getenv("FEEDBACK_HUB_ANALYSIS_OUTPUT", "").strip()
             or desktop_data_root / "analysis"
@@ -179,49 +176,101 @@ class DesktopService:
         self._active_job_id = None
         self._active_job_lock = threading.Lock()
 
-    def _local_external_source(self):
-        """Read small manifests only; Parquet integrity is verified immediately before analysis."""
+    def _registry_roots(self, binding):
+        """Return explicitly configured local roots for one immutable source."""
 
-        if not self.manifest_path.is_file() or not self.mapping_path.is_file():
+        if self.dataset_root:
+            return (self.dataset_root,)
+        if not self.dataset_registry_path.is_file():
+            return ()
+        registry = self._read_json(self.dataset_registry_path, "本機資料來源設定")
+        entries = registry.get("datasets", []) if isinstance(registry, dict) else []
+        if not isinstance(entries, list):
+            raise DesktopServiceError("本機資料來源設定格式不正確")
+        roots = []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            if (
+                entry.get("source_ref") == binding.source_ref
+                and entry.get("source_version") == binding.source_version
+            ):
+                root_value = str(entry.get("root") or "").strip()
+                if root_value:
+                    roots.append(Path(root_value).expanduser().resolve())
+        return tuple(roots)
+
+    def _mapping_for(self, binding):
+        if self.mapping_path:
+            return self.mapping_path
+        return (self.mapping_directory / f"{binding.mapping_key}.json").resolve()
+
+    def _local_external_source(self, binding):
+        """Resolve exactly one registered external version; never infer from slug/path."""
+
+        if not binding.is_external:
             return None
-        manifest = self._read_json(self.manifest_path, "資料清單")
-        mapping = self._read_json(self.mapping_path, "欄位設定")
+        mapping_path = self._mapping_for(binding)
+        if not mapping_path.is_file():
+            return None
+        roots = self._registry_roots(binding)
+        for dataset_root in roots:
+            manifest_path = (
+                self.manifest_path
+                if self.dataset_root == dataset_root and self.manifest_path
+                else (dataset_root / "manifest" / "dataset-manifest.json").resolve()
+            )
+            source = self._source_from_paths(binding, dataset_root, manifest_path, mapping_path)
+            if source is not None:
+                return source
+        return None
+
+    def _source_from_paths(self, binding, dataset_root, manifest_path, mapping_path):
+        if not manifest_path.is_file() or not mapping_path.is_file():
+            return None
+        manifest = self._read_json(manifest_path, "資料清單")
+        mapping = self._read_json(mapping_path, "欄位設定")
         try:
             source = manifest["source"]
             clean_relative = manifest["clean_path"]
             artifact = next(item for item in manifest["artifacts"] if item["path"] == clean_relative)
-            survey_slug = str(mapping["survey"]["slug"])
             source_ref = str(mapping["dataset"]["name"])
             retained_rows = int(manifest["counts"]["retained_rows"])
         except (KeyError, StopIteration, TypeError, ValueError) as exc:
             raise DesktopServiceError("本機完整資料設定不完整") from exc
         if source_ref != source.get("dataset") or mapping["dataset"].get("version") != source.get("source_revision"):
             raise DesktopServiceError("本機完整資料的 mapping 與 manifest 版本不一致")
-        clean_path = (self.dataset_root / clean_relative).resolve()
-        if not clean_path.is_relative_to(self.dataset_root) or not clean_path.is_file():
-            raise DesktopServiceError("找不到本機完整資料 Parquet")
-        if clean_path.stat().st_size != int(artifact["size"]):
-            raise DesktopServiceError("本機完整資料大小與 manifest 不一致")
         source_version = ":".join(
             (str(source["source_revision"]), str(manifest["cleaning_version"]), str(artifact["sha256"]))
         )
+        if (
+            source_ref != binding.source_ref
+            or source_version != binding.source_version
+            or mapping.get("mapping_version") != binding.mapping_version
+        ):
+            return None
+        clean_path = (dataset_root / clean_relative).resolve()
+        if not clean_path.is_relative_to(dataset_root) or not clean_path.is_file():
+            return None
+        if clean_path.stat().st_size != int(artifact["size"]):
+            raise DesktopServiceError("本機完整資料大小與 manifest 不一致")
         latest_data_at = None
         report_relative = manifest.get("report_path")
         if report_relative:
-            report_path = (self.dataset_root / report_relative).resolve()
-            if report_path.is_relative_to(self.dataset_root) and report_path.is_file():
+            report_path = (dataset_root / report_relative).resolve()
+            if report_path.is_relative_to(dataset_root) and report_path.is_file():
                 report = self._read_json(report_path, "全量驗證報告")
                 raw_latest = (report.get("post_date") or {}).get("maximum")
                 if raw_latest:
                     latest_data_at = datetime.fromisoformat(str(raw_latest).replace("Z", "+00:00"))
         return LocalExternalSource(
-            survey_slug=survey_slug,
             source_ref=source_ref,
             source_version=source_version,
             response_count=retained_rows,
             latest_data_at=latest_data_at,
-            manifest_path=self.manifest_path,
-            mapping_path=self.mapping_path,
+            dataset_root=dataset_root,
+            manifest_path=manifest_path,
+            mapping_path=mapping_path,
         )
 
     @staticmethod
@@ -257,6 +306,8 @@ class DesktopService:
         return digest.hexdigest()
 
     def inspect_dataset(self, *, cancel_requested=None, progress=None):
+        if not self.dataset_root or not self.manifest_path or not self.mapping_path:
+            raise DesktopServiceError("尚未指定可檢查的本機資料集；請在設定中登錄資料位置。")
         self._checkpoint(cancel_requested, progress, "讀取資料清單", 5)
         manifest = self._read_json(self.manifest_path, "資料清單")
         mapping = self._read_json(self.mapping_path, "欄位設定")
@@ -328,6 +379,8 @@ class DesktopService:
         )
 
     def analyze(self, *, cancel_requested=None, progress=None):
+        if not self.manifest_path or not self.mapping_path:
+            raise DesktopServiceError("尚未指定可分析的本機資料集；請在設定中登錄資料位置。")
         self._checkpoint(cancel_requested, progress, "建立分析工作", 1)
         try:
             from feedback.analysis_adapters import ParquetInput
@@ -381,7 +434,7 @@ class DesktopService:
             and item.get("pipeline_version") == state.pipeline_version
         )
         if source_kind is not None:
-            current = current and item.get("source_kind") == source_kind
+            current = current and item.get("source_kind", "answers") == source_kind
         if source_ref is not None:
             current = current and item.get("source_ref") == source_ref
         if source_version is not None:
@@ -405,6 +458,7 @@ class DesktopService:
         from django.db.models.functions import Coalesce
         from django.db.models.fields import IntegerField
 
+        from feedback.analysis_sources import AnalysisSourceConfigurationError, resolve_analysis_source
         from feedback.models import AnalysisJob, DatasetImportBatch, FeedbackSubmission, Survey
 
         self._checkpoint(cancel_requested, progress, "連線資料庫", 5)
@@ -449,7 +503,10 @@ class DesktopService:
                 voided_at__isnull=True,
             )
             surveys = list(
-                Survey.objects.filter(archived_at__isnull=True).select_related("analysis_state")
+                Survey.objects.filter(archived_at__isnull=True).select_related(
+                    "analysis_state",
+                    "analysis_source__active_external_version",
+                )
                 .annotate(
                     question_total=Count(
                         "questions",
@@ -476,26 +533,27 @@ class DesktopService:
             raise DesktopServiceError(f"無法讀取問卷資料庫（{type(exc).__name__}）") from exc
 
         self._checkpoint(cancel_requested, progress, "整理問卷狀態", 80)
-        external_source = self._local_external_source()
         result = []
         for survey in surveys:
             try:
                 state = survey.analysis_state
             except Survey.analysis_state.RelatedObjectDoesNotExist:
                 state = None
-            uses_external = bool(external_source and survey.slug == external_source.survey_slug)
-            analysis_source_kind = "external" if uses_external else "answers"
-            analysis_source_ref = external_source.source_ref if uses_external else ""
-            analysis_source_version = external_source.source_version if uses_external else ""
-            current_kwargs = (
-                {
-                    "source_kind": analysis_source_kind,
-                    "source_ref": analysis_source_ref,
-                    "source_version": analysis_source_version,
-                }
-                if uses_external
-                else {}
-            )
+            try:
+                binding = resolve_analysis_source(survey)
+            except AnalysisSourceConfigurationError as exc:
+                raise DesktopServiceError(f"問卷分析來源設定不完整（{survey.title}）") from exc
+            external_source = self._local_external_source(binding)
+            uses_external = binding.is_external
+            source_ready = not uses_external or external_source is not None
+            analysis_source_kind = binding.kind
+            analysis_source_ref = binding.source_ref
+            analysis_source_version = binding.source_version
+            current_kwargs = {
+                "source_kind": analysis_source_kind,
+                "source_ref": analysis_source_ref,
+                "source_version": analysis_source_version,
+            }
             statistics_current = bool(
                 state and self._manifest_stage_current(state, "statistics", **current_kwargs)
             )
@@ -508,8 +566,10 @@ class DesktopService:
             ]
             generated_values = [value for value in generated_values if value]
             latest_ai_at = self._manifest_datetime(state, "ai") if state else None
-            if uses_external:
+            if uses_external and source_ready:
                 source = "本機完整資料集"
+            elif uses_external:
+                source = "外部資料（本機未就緒）"
             elif survey.has_imported and survey.has_native:
                 source = "線上問卷＋匯入資料"
             elif survey.has_imported:
@@ -517,10 +577,22 @@ class DesktopService:
             else:
                 source = "線上問卷"
             response_count = (
-                external_source.response_count if uses_external else int(survey.response_total or 0)
+                (
+                    external_source.response_count
+                    if external_source
+                    else int(binding.row_count)
+                )
+                if uses_external
+                else int(survey.response_total or 0)
             )
             latest_data_at = (
-                external_source.latest_data_at if uses_external else survey.latest_response_at
+                (
+                    external_source.latest_data_at
+                    if external_source
+                    else binding.source_latest_at
+                )
+                if uses_external
+                else survey.latest_response_at
             )
             if uses_external:
                 latest_job_status = (
@@ -529,6 +601,7 @@ class DesktopService:
                         executor=AnalysisJob.Executor.DETERMINISTIC,
                         source_kind=AnalysisJob.SourceKind.EXTERNAL,
                         source_ref=analysis_source_ref,
+                        source_version=analysis_source_version,
                     )
                     .order_by("-created_at", "-pk")
                     .values_list("status", flat=True)
@@ -541,6 +614,7 @@ class DesktopService:
                         executor=AnalysisJob.Executor.AI,
                         source_kind=AnalysisJob.SourceKind.EXTERNAL,
                         source_ref=analysis_source_ref,
+                        source_version=analysis_source_version,
                     )
                     .order_by("-created_at", "-pk")
                     .values_list("status", flat=True)
@@ -565,7 +639,7 @@ class DesktopService:
                     statistics_current=statistics_current,
                     text_current=text_current,
                     ai_current=ai_current,
-                    needs_update=response_count > 0 and not (statistics_current and text_current),
+                    needs_update=source_ready and response_count > 0 and not (statistics_current and text_current),
                     needs_ai=response_count > 0 and statistics_current and text_current and not ai_current,
                     latest_job_status=latest_job_status,
                     latest_ai_job_status=latest_ai_job_status,
@@ -573,6 +647,7 @@ class DesktopService:
                     analysis_source_kind=analysis_source_kind,
                     analysis_source_ref=analysis_source_ref,
                     analysis_source_version=analysis_source_version,
+                    analysis_source_ready=source_ready,
                 )
             )
         self._checkpoint(cancel_requested, progress, "狀態已更新", 100)
@@ -625,6 +700,15 @@ class DesktopService:
             missing = selected - known
             if missing:
                 raise DesktopServiceError("選取的問卷已不存在")
+            unavailable = [
+                status.title
+                for status in statuses
+                if status.survey_id in selected
+                and status.analysis_source_kind == AnalysisJob.SourceKind.EXTERNAL
+                and not status.analysis_source_ready
+            ]
+            if unavailable:
+                raise DesktopServiceError("本機資料尚未就緒：" + "、".join(unavailable[:3]))
             already_current_count = len(selected) - len(targets)
         if not targets:
             self._checkpoint(cancel_requested, progress, "所有問卷均為最新", 100)
@@ -639,12 +723,22 @@ class DesktopService:
             percent = int((index - 1) * 100 / len(targets))
             if progress:
                 progress(f"準備分析：{status.title}", percent)
-            survey = Survey.objects.filter(pk=status.survey_id).first()
+            survey = Survey.objects.select_related("analysis_source__active_external_version").filter(
+                pk=status.survey_id
+            ).first()
             if survey is None:
                 continue
             source_kind = status.analysis_source_kind
             source_ref = status.analysis_source_ref
             source_version = status.analysis_source_version
+            external_source = None
+            if source_kind == AnalysisJob.SourceKind.EXTERNAL:
+                from feedback.analysis_sources import resolve_analysis_source
+
+                binding = resolve_analysis_source(survey)
+                external_source = self._local_external_source(binding)
+                if external_source is None:
+                    raise DesktopServiceError("本機資料尚未就緒；請先登錄並驗證對應的資料版本。")
             schedule_survey_analysis(
                 survey.pk,
                 change="none",
@@ -671,8 +765,8 @@ class DesktopService:
                     external_inputs=(
                         {
                             source_ref: ExternalInputSpec(
-                                self.manifest_path,
-                                self.mapping_path,
+                                external_source.manifest_path,
+                                external_source.mapping_path,
                             )
                         }
                         if source_kind == AnalysisJob.SourceKind.EXTERNAL

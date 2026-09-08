@@ -549,6 +549,121 @@ class SurveyAnalysisState(models.Model):
         return f"{self.survey} / input={self.input_version} / config={self.config_version}"
 
 
+class SurveyAnalysisSource(models.Model):
+    """The one authoritative input selected for a survey's analysis work.
+
+    A missing row deliberately means the survey uses its normal persisted
+    ``FeedbackSubmission`` / ``Answer`` rows.  External datasets are explicit
+    so a desktop worker never infers its input from a survey slug or a local
+    directory name.
+    """
+
+    class Kind(models.TextChoices):
+        ANSWERS = "answers", "問卷回覆"
+        EXTERNAL = "external", "外部資料表"
+
+    survey = models.OneToOneField(
+        Survey,
+        on_delete=models.CASCADE,
+        related_name="analysis_source",
+    )
+    kind = models.CharField(max_length=16, choices=Kind.choices, default=Kind.ANSWERS)
+    active_external_version = models.ForeignKey(
+        "ExternalDatasetVersion",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="active_for_sources",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "feedback_survey_analysis_sources"
+
+    def clean(self):
+        super().clean()
+        if self.kind == self.Kind.ANSWERS and self.active_external_version_id:
+            raise ValidationError({"active_external_version": "問卷回覆來源不得指定外部資料版本。"})
+        if self.kind == self.Kind.EXTERNAL and not self.active_external_version_id:
+            raise ValidationError({"active_external_version": "外部資料來源必須指定作用中的資料版本。"})
+        if (
+            self.active_external_version_id
+            and self.active_external_version.source_id != self.pk
+        ):
+            raise ValidationError({"active_external_version": "資料版本不屬於此問卷來源。"})
+
+    def __str__(self):
+        return f"{self.survey} / {self.kind}"
+
+
+class ExternalDatasetVersion(models.Model):
+    """Immutable provenance for a locally held external analysis dataset."""
+
+    source = models.ForeignKey(
+        SurveyAnalysisSource,
+        on_delete=models.CASCADE,
+        related_name="external_versions",
+    )
+    source_ref = models.CharField(max_length=255)
+    source_version = models.CharField(max_length=255)
+    source_revision = models.CharField(max_length=128)
+    cleaning_version = models.CharField(max_length=100)
+    content_sha256 = models.CharField(max_length=64)
+    schema_sha256 = models.CharField(max_length=64, blank=True)
+    mapping_key = models.SlugField(max_length=100)
+    mapping_version = models.CharField(max_length=100)
+    row_count = models.PositiveBigIntegerField()
+    source_latest_at = models.DateTimeField(null=True, blank=True)
+    provenance = models.JSONField(default=dict, blank=True)
+    recorded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "feedback_external_dataset_versions"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("source", "source_ref", "source_version"),
+                name="fb_external_dataset_version_uniq",
+            )
+        ]
+        indexes = [
+            models.Index(fields=("source_ref", "source_version"), name="fb_external_version_lookup_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        for field_name in ("content_sha256", "schema_sha256"):
+            value = getattr(self, field_name, "")
+            if value and not re.fullmatch(r"[0-9a-f]{64}", value):
+                raise ValidationError({field_name: "必須是小寫 64 字元 SHA-256。"})
+        if self.row_count < 1:
+            raise ValidationError({"row_count": "外部資料筆數必須至少為 1。"})
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            previous = type(self).objects.filter(pk=self.pk).values(
+                "source_id",
+                "source_ref",
+                "source_version",
+                "source_revision",
+                "cleaning_version",
+                "content_sha256",
+                "schema_sha256",
+                "mapping_key",
+                "mapping_version",
+                "row_count",
+                "source_latest_at",
+                "provenance",
+            ).first()
+            immutable = tuple(previous or {})
+            for field_name in immutable:
+                if previous[field_name] != getattr(self, field_name):
+                    raise ValidationError("外部資料版本建立後不可修改；請建立新的版本。")
+        return super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.source_ref} @ {self.source_version}"
+
+
 class AnalysisJob(models.Model):
     class Status(models.TextChoices):
         PENDING = "pending", "等待處理"
@@ -558,8 +673,8 @@ class AnalysisJob(models.Model):
         CANCELLED = "cancelled", "已取消"
 
     class SourceKind(models.TextChoices):
-        ANSWERS = "answers", "問卷回覆"
-        EXTERNAL = "external", "外部資料表"
+        ANSWERS = SurveyAnalysisSource.Kind.ANSWERS, "問卷回覆"
+        EXTERNAL = SurveyAnalysisSource.Kind.EXTERNAL, "外部資料表"
 
     class Executor(models.TextChoices):
         DETERMINISTIC = "deterministic", "統計與文字"

@@ -18,6 +18,7 @@ from django.db import connection, transaction
 from django.db.models import F, Q
 from django.utils import timezone
 
+from .analysis_sources import AnalysisSourceConfigurationError, resolve_analysis_source
 from .models import AnalysisJob, Survey, SurveyAIAnalysisStage, SurveyAIReportSnapshot, SurveyAnalysisState
 
 
@@ -101,6 +102,7 @@ def _ensure_pending_job_locked(
             survey=survey,
             source_kind=source_kind,
             source_ref=source_ref,
+            source_version=source_version,
             executor=executor,
             status=AnalysisJob.Status.PENDING,
         )
@@ -145,9 +147,9 @@ def schedule_survey_analysis(
     survey_id,
     *,
     change="input",
-    source_kind=AnalysisJob.SourceKind.ANSWERS,
-    source_ref="",
-    source_version="",
+    source_kind=None,
+    source_ref=None,
+    source_version=None,
     requested_stages=DEFAULT_STAGES,
     pipeline_version=PIPELINE_CONTRACT_VERSION,
 ):
@@ -161,12 +163,6 @@ def schedule_survey_analysis(
         return None
     if change not in {"none", "input", "config", "both"}:
         raise ValueError("change 必須是 none、input、config 或 both")
-    if source_kind not in AnalysisJob.SourceKind.values:
-        raise ValueError("不支援的資料來源種類")
-    source_ref = str(source_ref or "")
-    source_version = str(source_version or "")
-    if source_kind == AnalysisJob.SourceKind.EXTERNAL and not (source_ref and source_version):
-        raise ValueError("外部資料工作必須提供 source_ref 與 source_version")
     stages = _normalise_stages(requested_stages)
     executor = _executor_for(stages)
 
@@ -174,6 +170,17 @@ def schedule_survey_analysis(
         survey = Survey.objects.select_for_update().filter(pk=survey_id).first()
         if not survey:
             return None
+        binding = resolve_analysis_source(survey, lock=True)
+        requested_source = any(value is not None for value in (source_kind, source_ref, source_version))
+        if requested_source:
+            requested = (
+                source_kind if source_kind is not None else binding.kind,
+                str(source_ref or "") if source_ref is not None else binding.source_ref,
+                str(source_version or "") if source_version is not None else binding.source_version,
+            )
+            configured = (binding.kind, binding.source_ref, binding.source_version)
+            if requested != configured:
+                raise ValueError("工作資料來源與問卷目前登錄的分析來源不一致")
         state, _ = SurveyAnalysisState.objects.get_or_create(survey=survey)
         if change in {"input", "both"}:
             state.input_version += 1
@@ -193,12 +200,26 @@ def schedule_survey_analysis(
                 finished_at=timezone.now(),
             )
             return None
+        now = timezone.now()
+        AnalysisJob.objects.filter(
+            survey=survey,
+            status=AnalysisJob.Status.PENDING,
+        ).exclude(
+            source_kind=binding.kind,
+            source_ref=binding.source_ref,
+            source_version=binding.source_version,
+        ).update(
+            status=AnalysisJob.Status.CANCELLED,
+            error_code="source_superseded",
+            finished_at=now,
+            updated_at=now,
+        )
         return _ensure_pending_job_locked(
             survey,
             state,
-            source_kind=source_kind,
-            source_ref=source_ref,
-            source_version=source_version,
+            source_kind=binding.kind,
+            source_ref=binding.source_ref,
+            source_version=binding.source_version,
             requested_stages=stages,
             executor=executor,
         )
@@ -427,18 +448,19 @@ def _published_base_is_current(state, job):
     return bool(state.published_snapshot_id)
 
 
-def _supersede_job_locked(job, state, now):
-    _ensure_pending_job_locked(
-        job.survey,
-        state,
-        source_kind=job.source_kind,
-        source_ref=job.source_ref,
-        source_version=job.source_version,
-        requested_stages=_normalise_stages(job.requested_stages),
-        executor=job.executor,
-    )
+def _supersede_job_locked(job, state, now, binding=None, *, error_code="superseded"):
+    if binding is not None:
+        _ensure_pending_job_locked(
+            job.survey,
+            state,
+            source_kind=binding.kind,
+            source_ref=binding.source_ref,
+            source_version=binding.source_version,
+            requested_stages=_normalise_stages(job.requested_stages),
+            executor=job.executor,
+        )
     job.status = AnalysisJob.Status.CANCELLED
-    job.error_code = "superseded"
+    job.error_code = error_code
     job.finished_at = now
     job.worker_id = ""
     job.lease_token = None
@@ -499,8 +521,13 @@ def _lock_current_claim(job_id, lease_token, now):
     if job.cancel_requested_at or not job.lease_expires_at or job.lease_expires_at < now:
         raise AnalysisJobError("工作已取消或租約已過期")
     state = SurveyAnalysisState.objects.select_for_update().get(survey=job.survey)
-    if not _versions_are_current(job, state):
-        _supersede_job_locked(job, state, now)
+    try:
+        binding = resolve_analysis_source(job.survey, lock=True)
+    except AnalysisSourceConfigurationError:
+        _supersede_job_locked(job, state, now, error_code="source_not_configured")
+        return job, state, False
+    if not _versions_are_current(job, state) or not binding.matches_job(job):
+        _supersede_job_locked(job, state, now, binding)
         return job, state, False
     return job, state, True
 

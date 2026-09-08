@@ -20,6 +20,7 @@ from .analysis_jobs import (
     schedule_survey_analysis,
     suppress_analysis_scheduling,
 )
+from .analysis_sources import register_external_dataset_version
 from .local_service import submit_survey_payload
 from .models import (
     AnalysisJob,
@@ -191,13 +192,24 @@ class AnalysisJobCoordinationTests(TestCase):
         self.assertEqual(claimed.status, AnalysisJob.Status.CANCELLED)
 
     def test_claim_can_select_exact_external_source_without_taking_answer_job(self):
-        answer_job = schedule_survey_analysis(self.survey.pk, change="input")
-        external_job = schedule_survey_analysis(
+        answer_survey = Survey.objects.create(title="Answer fixture", slug="answer-fixture")
+        answer_job = schedule_survey_analysis(answer_survey.pk, change="input")
+        source_version = "source-v1:clean-v1:" + "a" * 64
+        register_external_dataset_version(
             self.survey.pk,
-            change="none",
-            source_kind=AnalysisJob.SourceKind.EXTERNAL,
             source_ref="fixture/reviews",
-            source_version="source-v1",
+            source_version=source_version,
+            source_revision="source-v1",
+            cleaning_version="clean-v1",
+            content_sha256="a" * 64,
+            mapping_key="fixture_mapping",
+            mapping_version="fixture-v1",
+            row_count=4,
+        )
+        external_job = AnalysisJob.objects.get(
+            survey=self.survey,
+            source_kind=AnalysisJob.SourceKind.EXTERNAL,
+            source_version=source_version,
         )
 
         claimed = claim_next_job(

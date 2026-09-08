@@ -137,7 +137,7 @@ Shared DB:
 網站填答
   → Supabase 的 Survey + Question + FeedbackSubmission + Answer
 大型固定外部資料
-  → Supabase 的 Survey + Question；完整列留在版本化本機 Parquet
+  → Supabase 的 Survey + Question + 不可變分析來源版本；完整列留在版本化本機 Parquet
 兩種來源
   → 交易後更新版本並合併 AnalysisJob
   → 本機 Worker／EXE 透過 AnswerInput 或 ParquetInput 計算統計 / 文字分析

@@ -5,15 +5,28 @@ from __future__ import annotations
 from django.conf import settings
 from django.urls import reverse
 
+from .analysis_sources import AnalysisSourceConfigurationError, resolve_analysis_source
 from .models import AnalysisJob, ImprovementUpdate, SurveyAnalysisState
 
 
-def _stage_is_current(state, manifest_key):
+def _stage_is_current(state, manifest_key, *, binding=None):
     item = (state.publication_manifest or {}).get(manifest_key) or {}
-    return bool(item) and (
+    if not item:
+        return False
+    if binding is False:
+        return False
+    if binding is None:
+        try:
+            binding = resolve_analysis_source(state.survey_id)
+        except AnalysisSourceConfigurationError:
+            return False
+    return (
         item.get("input_version") == state.input_version
         and item.get("config_version") == state.config_version
         and item.get("pipeline_version") == state.pipeline_version
+        and item.get("source_kind", AnalysisJob.SourceKind.ANSWERS) == binding.kind
+        and item.get("source_ref", "") == binding.source_ref
+        and item.get("source_version", "") == binding.source_version
     )
 
 
@@ -21,7 +34,8 @@ def is_published_ai_stage_current(stage):
     """Check a published stage from authoritative pointers without scanning answers."""
 
     state = (
-        SurveyAnalysisState.objects.only(
+        SurveyAnalysisState.objects.select_related("survey__analysis_source__active_external_version").only(
+            "survey",
             "input_version",
             "config_version",
             "pipeline_version",
@@ -34,9 +48,13 @@ def is_published_ai_stage_current(stage):
     )
     if state is None or state.published_snapshot_id != stage.snapshot_id or state.published_ai_stage_id != stage.pk:
         return False
+    try:
+        binding = resolve_analysis_source(state.survey)
+    except AnalysisSourceConfigurationError:
+        return False
     manifest = (state.publication_manifest or {}).get("ai") or {}
     return bool(
-        _stage_is_current(state, "ai")
+        _stage_is_current(state, "ai", binding=binding)
         and manifest.get("snapshot_id") == stage.snapshot_id
         and manifest.get("stage_id") == stage.pk
     )
@@ -88,6 +106,7 @@ def get_published_analysis_payload(survey):
         SurveyAnalysisState.objects.select_related(
             "published_snapshot",
             "published_ai_stage__snapshot",
+            "survey__analysis_source__active_external_version",
         )
         .filter(survey=survey)
         .first()
@@ -108,6 +127,10 @@ def get_published_analysis_payload(survey):
             "ai": None,
             "latest_job": latest_job,
         }
+    try:
+        binding = resolve_analysis_source(state.survey)
+    except AnalysisSourceConfigurationError:
+        binding = None
     display = state.published_display_payload if isinstance(state.published_display_payload, dict) else {}
     statistics = display.get("statistics") if isinstance(display.get("statistics"), dict) else {}
     text_analysis = display.get("text_analysis") if isinstance(display.get("text_analysis"), dict) else {}
@@ -123,9 +146,9 @@ def get_published_analysis_payload(survey):
             "published": state.publication_manifest,
         },
         "freshness": {
-            "statistics": _stage_is_current(state, "statistics"),
-            "text": _stage_is_current(state, "text"),
-            "ai": _stage_is_current(state, "ai"),
+            "statistics": _stage_is_current(state, "statistics", binding=binding or False),
+            "text": _stage_is_current(state, "text", binding=binding or False),
+            "ai": _stage_is_current(state, "ai", binding=binding or False),
         },
         "statistics": statistics,
         "text_analysis": text_analysis,

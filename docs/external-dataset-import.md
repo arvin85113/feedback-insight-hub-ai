@@ -218,6 +218,19 @@ Snapshot 發布流程，不另建資料集專用分析核心。通用匯入器�
 
 尚待整合：Worker 程序服務安裝，以及部署後正式啟用發布只讀模式；問卷收集、權限、
 設定與工作排程仍保留必要讀寫。預設設定下頁面仍有 request 計算與同步 Gemini POST 路徑。
+
+### 分析來源登錄（大型 Parquet）
+
+大型資料不再由桌面程式以問卷 slug 或預設資料夾推測。`SurveyAnalysisSource` 指定問卷
+目前使用一般 Answer 或外部資料；`ExternalDatasetVersion` 保存不可變的來源名稱、revision、
+清理版本、內容 SHA-256、列數、mapping 版本與非敏感來源證據。`AnalysisJob` 和發布 manifest
+固定保存來源 kind／ref／version；來源切換後，舊 pending 工作會取消，舊 Worker 在發布前會被拒絕，
+舊 Snapshot 仍保留以供回看。
+
+使用 `register_external_analysis_source --dry-run` 先核對 manifest 與 mapping；確認目標資料庫及
+授權後才執行實際登錄。登錄不寫入任何 Parquet 列、評論、`user_id` 或本機路徑。桌面端以
+`%LOCALAPPDATA%\FeedbackInsightHub\datasets.json` 將已登錄的 `source_ref`／`source_version`
+精確對應到本機資料根目錄；檔案不存在或版本不符時顯示「本機未就緒」，不會退回分析舊 Answer。
 完整外部資料不再經 Supabase 遠端逐列串流；本機 Parquet 完整性會在工作開始前驗證。
 現階段先完成背景分析到發布展示；訓練切分與預測模型延後。GUI 與 one-folder EXE 原型已提供本機資料驗證及 mock 分析預覽；安裝包、跨機器驗收及雲端發布操作尚未完成。
 

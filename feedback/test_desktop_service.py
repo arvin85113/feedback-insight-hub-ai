@@ -209,6 +209,7 @@ class DesktopDatabaseServiceTests(TestCase):
         self.assertIsNone(status.latest_ai_at)
 
     def test_matching_local_dataset_uses_full_parquet_and_leaves_answer_job_pending(self):
+        from feedback.analysis_sources import register_external_dataset_version
         from feedback.models import AnalysisJob, SurveyAnalysisState
 
         test_root = Path(self.temporary.name)
@@ -262,6 +263,7 @@ class DesktopDatabaseServiceTests(TestCase):
         mapping.write_text(
             json.dumps(
                 {
+                    "mapping_version": "fixture-v1",
                     "dataset": {"name": "fixture/reviews", "version": "source-v1"},
                     "survey": {"slug": self.survey.slug},
                     "questions": [
@@ -304,6 +306,18 @@ class DesktopDatabaseServiceTests(TestCase):
             output_root=test_root / "external-analysis",
         )
         service.database_output_root = test_root / "published-analysis"
+        source_version = f"source-v1:clean-v1:{file_sha256(clean)}"
+        register_external_dataset_version(
+            self.survey.pk,
+            source_ref="fixture/reviews",
+            source_version=source_version,
+            source_revision="source-v1",
+            cleaning_version="clean-v1",
+            content_sha256=file_sha256(clean),
+            mapping_key="mapping",
+            mapping_version="fixture-v1",
+            row_count=4,
+        )
 
         status = service.list_surveys()[0]
         self.assertEqual(status.source, "本機完整資料集")
@@ -313,7 +327,7 @@ class DesktopDatabaseServiceTests(TestCase):
 
         self.assertEqual(result.input_rows, 4)
         self.assertEqual(result.updated_count, 1)
-        self.assertTrue(
+        self.assertFalse(
             AnalysisJob.objects.filter(
                 survey=self.survey,
                 source_kind=AnalysisJob.SourceKind.ANSWERS,
@@ -328,6 +342,36 @@ class DesktopDatabaseServiceTests(TestCase):
         updated_status = service.list_surveys()[0]
         self.assertFalse(updated_status.needs_update)
         self.assertTrue(updated_status.needs_ai)
+
+    def test_registered_external_source_without_local_data_does_not_fall_back_to_answers(self):
+        from feedback.analysis_sources import register_external_dataset_version
+        from feedback.models import AnalysisJob
+
+        register_external_dataset_version(
+            self.survey.pk,
+            source_ref="fixture/reviews",
+            source_version="source-v1:clean-v1:" + "a" * 64,
+            source_revision="source-v1",
+            cleaning_version="clean-v1",
+            content_sha256="a" * 64,
+            mapping_key="fixture_mapping",
+            mapping_version="fixture-v1",
+            row_count=40,
+        )
+        service = DesktopService(
+            project_root=self.temporary.name,
+            dataset_registry_path=Path(self.temporary.name) / "missing-datasets.json",
+        )
+
+        status = service.list_surveys()[0]
+
+        self.assertEqual(status.source, "外部資料（本機未就緒）")
+        self.assertEqual(status.analysis_source_kind, AnalysisJob.SourceKind.EXTERNAL)
+        self.assertEqual(status.response_count, 40)
+        self.assertFalse(status.analysis_source_ready)
+        self.assertFalse(status.needs_update)
+        with self.assertRaisesMessage(DesktopServiceError, "本機資料尚未就緒"):
+            service.update_surveys((self.survey.pk,))
 
     @patch("feedback.ai_worker.execute_ai_job")
     @override_settings(AI_REPORT_REQUEST_INTERVAL_SECONDS=0)

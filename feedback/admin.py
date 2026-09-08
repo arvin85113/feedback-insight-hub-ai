@@ -3,6 +3,7 @@ from django.contrib import admin
 from .models import (
     Answer,
     DatasetImportBatch,
+    ExternalDatasetVersion,
     FeedbackSubmission,
     ImportedSubmissionSource,
     ImprovementDispatch,
@@ -12,6 +13,7 @@ from .models import (
     KeywordCategory,
     Question,
     Survey,
+    SurveyAnalysisSource,
     SurveyCategory,
 )
 
@@ -92,6 +94,38 @@ class ImportedSubmissionSourceAdmin(admin.ModelAdmin):
     list_filter = ("source_namespace", "source_version")
     search_fields = ("source_record_key", "source_item_id")
     readonly_fields = tuple(field.name for field in ImportedSubmissionSource._meta.fields)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(SurveyAnalysisSource)
+class SurveyAnalysisSourceAdmin(admin.ModelAdmin):
+    list_display = ("survey", "kind", "active_external_version", "updated_at")
+    readonly_fields = tuple(field.name for field in SurveyAnalysisSource._meta.fields)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(ExternalDatasetVersion)
+class ExternalDatasetVersionAdmin(admin.ModelAdmin):
+    list_display = ("source_ref", "source_version", "row_count", "mapping_version", "recorded_at")
+    list_filter = ("mapping_key",)
+    search_fields = ("source_ref", "source_version", "source_revision", "content_sha256")
+    readonly_fields = tuple(field.name for field in ExternalDatasetVersion._meta.fields)
 
     def has_add_permission(self, request):
         return False

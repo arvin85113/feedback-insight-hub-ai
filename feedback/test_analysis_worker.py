@@ -10,6 +10,7 @@ from django.test import TestCase, override_settings
 import duckdb
 
 from .analysis_jobs import claim_next_job, schedule_survey_analysis, suppress_analysis_scheduling
+from .analysis_sources import register_external_dataset_version
 from .analysis_worker import ExternalInputSpec, execute_deterministic_job
 from .importing.local_dataset import file_sha256
 from .models import (
@@ -200,6 +201,7 @@ class DeterministicWorkerTests(TestCase):
             mapping.write_text(
                 json.dumps(
                     {
+                        "mapping_version": "fixture-v1",
                         "dataset": {"name": "fixture/reviews", "version": "source-v1"},
                         "questions": [
                             {
@@ -224,23 +226,27 @@ class DeterministicWorkerTests(TestCase):
                 encoding="utf-8",
             )
             source_version = f"source-v1:clean-v1:{parquet_hash}"
-            schedule_survey_analysis(
+            register_external_dataset_version(
                 self.survey.pk,
-                change="input",
-                source_kind=AnalysisJob.SourceKind.EXTERNAL,
-                source_ref="fixture",
+                source_ref="fixture/reviews",
                 source_version=source_version,
+                source_revision="source-v1",
+                cleaning_version="clean-v1",
+                content_sha256=parquet_hash,
+                mapping_key="mapping",
+                mapping_version="fixture-v1",
+                row_count=4,
             )
             claimed = claim_next_job(
                 "external-worker",
                 lease_seconds=60,
                 executor=AnalysisJob.Executor.DETERMINISTIC,
-                external_source_refs=("fixture",),
+                external_source_refs=("fixture/reviews",),
             )
             result = execute_deterministic_job(
                 claimed,
                 output_root=root / "output",
-                external_inputs={"fixture": ExternalInputSpec(manifest, mapping)},
+                external_inputs={"fixture/reviews": ExternalInputSpec(manifest, mapping)},
                 lease_seconds=60,
             )
             self.assertTrue(result.published)
@@ -253,7 +259,7 @@ class DeterministicWorkerTests(TestCase):
                 survey=self.survey
             ).publication_manifest["statistics"]
             self.assertEqual(manifest_row["source_kind"], AnalysisJob.SourceKind.EXTERNAL)
-            self.assertEqual(manifest_row["source_ref"], "fixture")
+            self.assertEqual(manifest_row["source_ref"], "fixture/reviews")
 
     @override_settings(ANALYSIS_AUTO_AI_ENABLED=True)
     def test_successful_base_publication_queues_matching_ai_job(self):
