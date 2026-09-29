@@ -179,6 +179,10 @@ class DashboardBaseMixin(ManagerRequiredMixin):
         return {
             "dashboard_nav": self.dashboard_nav,
             "active_section": self.active_section,
+            "section_label": next(
+                (label for route, label, _icon in self.dashboard_nav if route == self.active_section),
+                "管理工作區",
+            ),
             "survey_list": analysis_visible_surveys().order_by("title"),
         }
 
