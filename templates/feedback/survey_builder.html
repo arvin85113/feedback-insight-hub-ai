@@ -20,7 +20,7 @@
         </span>
         <span class="analytics-meta-item">
             <span class="analytics-meta-label">最近回覆</span>
-            <strong class="analytics-meta-value">{% if latest_response %}{{ latest_response.submitted_at|date:"m/d H:i" }}{% else %}尚無{% endif %}</strong>
+            <strong class="analytics-meta-value">{% if latest_response_at %}{{ latest_response_at|date:"m/d H:i" }}{% else %}尚無{% endif %}</strong>
         </span>
     </div>
     <div class="builder-header-meta">
