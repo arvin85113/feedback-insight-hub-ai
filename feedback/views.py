@@ -49,6 +49,7 @@ from .models import (
     Survey,
     SurveyAIAnalysisStage,
     SurveyAIReportSnapshot,
+    SurveyAnalysisSource,
     SurveyAnalysisState,
     SurveyCategory,
 )
@@ -98,6 +99,26 @@ def analysis_report_surveys():
         )
         .order_by("title")
     )
+
+
+def external_source_totals(survey_ids):
+    """Row count and latest date of each survey's active external dataset.
+
+    Surveys analysed from a registered external dataset (local Parquet) keep their
+    rows outside the database, so counting FeedbackSubmission rows would show 0.
+    """
+
+    return {
+        source.survey_id: (
+            source.active_external_version.row_count,
+            source.active_external_version.source_latest_at,
+        )
+        for source in SurveyAnalysisSource.objects.filter(
+            survey_id__in=survey_ids,
+            kind=SurveyAnalysisSource.Kind.EXTERNAL,
+            active_external_version__isnull=False,
+        ).select_related("active_external_version")
+    }
 
 
 def _survey_catalog_rows(queryset):
@@ -366,7 +387,10 @@ class SurveyManagerView(DashboardBaseMixin, TemplateView):
             count_map.setdefault(row["survey_id"], {})[row["sub_date"]] = row["cnt"]
 
         surveys_list = list(qs)
+        external_totals = external_source_totals([survey.id for survey in surveys_list])
         for survey in surveys_list:
+            if survey.id in external_totals:
+                survey.submission_count, survey.latest_submission_at = external_totals[survey.id]
             day_map = count_map.get(survey.id, {})
             survey.trend = [day_map.get(d, 0) for d in trend_days]
             survey.trend_max = max(survey.trend) if any(survey.trend) else 1
@@ -444,9 +468,14 @@ class SurveyBuilderView(DashboardBaseMixin, DetailView):
         context["question_form"] = kwargs.get("question_form") or QuestionCreateForm(
             initial={"order": self.object.questions.count() + 1}
         )
-        context["responses_count"] = self.object.submissions.count()
         context["survey_edit_form"] = kwargs.get("survey_edit_form") or SurveyEditForm(instance=self.object)
-        context["latest_response"] = self.object.submissions.order_by("-submitted_at").first()
+        external = external_source_totals([self.object.pk]).get(self.object.pk)
+        if external:
+            context["responses_count"], context["latest_response_at"] = external
+        else:
+            context["responses_count"] = self.object.submissions.count()
+            latest = self.object.submissions.order_by("-submitted_at").only("submitted_at").first()
+            context["latest_response_at"] = latest.submitted_at if latest else None
         context["active_tab"] = self.request.GET.get("tab", "questions")
         return context
 
