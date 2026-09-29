@@ -6,7 +6,7 @@
 ## 目前狀態（2026-09-29 查證）
 
 **部署**
-- `main` 由 GitHub Actions CI 驗證（Python 3.12／3.13 全套測試＋PostgreSQL 17 併發測試），合併後 Render 自動部署。
+- `main` 由 GitHub Actions CI 驗證（Python 3.13 全套測試＋PostgreSQL 17 併發測試），合併後 Render 自動部署。
   目前 Live 的 commit 以 Render Dashboard 為準。
 - 網站（本機與 Render）分析頁只讀已發布結果；`/healthz/`、`/healthz/db/` 健康檢查；資料庫無法連線時回 503 提示頁。
 - `.github/workflows/keepalive.yml` 每三天呼叫 `/healthz/db/`，避免 Supabase 因閒置暫停。
@@ -26,7 +26,8 @@
 
 **桌面工作台／EXE**
 - `dist/FeedbackInsightHub/` 為單一 windowed 版；錯誤寫入 `%LOCALAPPDATA%\FeedbackInsightHub\logs\desktop.log`。
-- `.venv` 建立在 Codex 內建的 Python 3.12 runtime 上；Render 使用 Python 3.13。
+- 本機 `.venv`、EXE 與 Render 都使用 Python 3.13（本機為獨立安裝的 3.13.15，Render 釘選 3.13.2）；
+  舊的 3.12 環境保留於 `.venv-py312` 供回退，確認無誤後可刪除。
 
 ## 待辦（依優先順序）
 
@@ -40,8 +41,7 @@
 6. **歷史版本比較介面**（依賴第 3 項的指標歷史表）。
 7. **清理舊版單次 AI 報告的顯示相容程式**（`ai_report_service` 驗證器、舊草稿匯入 view、`get_report_status` 等）。
 8. **待決定**：手動新增改善項目是否應讓已發布的 AI synthesis 過期（會觸發付費重跑）。
-9. **環境**：以獨立 Python 3.13 重建 `.venv`，擺脫對 Codex runtime 的依賴。
-10. **UI 小項**：文字雲調色盤仍是舊的橘／藍色系，與品牌綠不一致。
+9. **UI 小項**：文字雲調色盤仍是舊的橘／藍色系，與品牌綠不一致。
 
 ## 延後範圍
 
