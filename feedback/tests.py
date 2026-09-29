@@ -3,11 +3,11 @@ from pathlib import Path
 import re
 from dataclasses import replace
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.db.models.query import QuerySet
-from django.test import Client, TestCase, override_settings
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from google.genai import types
 
@@ -16,13 +16,11 @@ from .ai_report_service import (
     _provider_error,
     create_gemini_client,
     generation_options,
-    generate_report,
     validate_report_payload,
 )
 from .ai_snapshot_service import (
     SNAPSHOT_SCHEMA_VERSION,
     SnapshotError,
-    FingerprintResult,
     SourceChangedError,
     build_evidence_coverage,
     build_or_reuse_snapshot,
@@ -820,30 +818,6 @@ class StructuredReportTests(AIReportTestCase):
         GEMINI_THINKING_BUDGET=512,
         GEMINI_MAX_OUTPUT_TOKENS=4096,
     )
-    @patch("feedback.ai_report_service.create_gemini_client")
-    def test_generate_report_uses_structured_output_without_real_api(self, client_factory):
-        previous = self.make_snapshot(
-            status=SurveyAIReportSnapshot.Status.SUCCEEDED,
-            fingerprint="b" * 64,
-        )
-        snapshot = self.make_snapshot()
-        client = client_factory.return_value
-        client.models.generate_content.return_value = SimpleNamespace(
-            text=json.dumps(provider_report(self.survey.slug), ensure_ascii=False)
-        )
-        result = generate_report(snapshot)
-        self.assertEqual(result.status, SurveyAIReportSnapshot.Status.SUCCEEDED)
-        self.assertEqual(result.ai_report["improvement_drafts"][0]["draft_id"], "draft-1")
-        self.assertEqual(client.models.generate_content.call_args.kwargs["model"], snapshot.model_name)
-        config = client.models.generate_content.call_args.kwargs["config"]
-        self.assertEqual(config.thinking_config.thinking_budget, 512)
-        self.assertEqual(config.http_options.timeout, 45000)
-        self.assertEqual(config.http_options.retry_options.attempts, 1)
-        self.assertEqual(config.http_options.retry_options.http_status_codes, [429])
-        self.assertIsNotNone(config.response_schema)
-        self.assertIsNone(config.response_json_schema)
-        self.assertTrue(SurveyAIReportSnapshot.objects.filter(pk=previous.pk).exists())
-
     @override_settings(
         GOOGLE_API_KEY="configured",
         GEMINI_MODEL="gemini-2.5-flash",
@@ -851,26 +825,6 @@ class StructuredReportTests(AIReportTestCase):
         GEMINI_THINKING_BUDGET=512,
         GEMINI_MAX_OUTPUT_TOKENS=4096,
     )
-    @patch("feedback.ai_report_service.create_gemini_client")
-    def test_schema_validation_failure_retries_once_without_saving_invalid_report(self, client_factory):
-        snapshot = self.make_snapshot()
-        invalid = provider_report(self.survey.slug)
-        invalid["executive_summary"] = "沒有證據支持提升 99%。"
-        client = client_factory.return_value
-        client.models.generate_content.side_effect = [
-            SimpleNamespace(text=json.dumps(invalid, ensure_ascii=False)),
-            SimpleNamespace(text=json.dumps(provider_report(self.survey.slug), ensure_ascii=False)),
-        ]
-
-        result = generate_report(snapshot)
-
-        self.assertEqual(result.status, SurveyAIReportSnapshot.Status.SUCCEEDED)
-        self.assertEqual(client.models.generate_content.call_count, 2)
-        retry_config = client.models.generate_content.call_args_list[1].kwargs["config"]
-        self.assertEqual(retry_config.thinking_config.thinking_budget, 256)
-        self.assertEqual(result.ai_report["_generation"]["profile"], "compact")
-        self.assertNotIn("99%", json.dumps(result.ai_report, ensure_ascii=False))
-
     @override_settings(
         GOOGLE_API_KEY="configured",
         GEMINI_MODEL="gemini-2.5-flash",
@@ -878,19 +832,6 @@ class StructuredReportTests(AIReportTestCase):
         GEMINI_THINKING_BUDGET=512,
         GEMINI_MAX_OUTPUT_TOKENS=4096,
     )
-    @patch("feedback.ai_report_service.create_gemini_client")
-    def test_stale_generating_row_can_be_recovered(self, client_factory):
-        snapshot = self.make_snapshot(status=SurveyAIReportSnapshot.Status.GENERATING)
-        SurveyAIReportSnapshot.objects.filter(pk=snapshot.pk).update(
-            updated_at=snapshot.updated_at.replace(year=snapshot.updated_at.year - 1)
-        )
-        snapshot.refresh_from_db()
-        client_factory.return_value.models.generate_content.return_value = SimpleNamespace(
-            text=json.dumps(provider_report(self.survey.slug), ensure_ascii=False)
-        )
-        result = generate_report(snapshot)
-        self.assertEqual(result.status, SurveyAIReportSnapshot.Status.SUCCEEDED)
-
     def test_provider_error_categories_are_distinct(self):
         cases = {
             401: "authentication_error",

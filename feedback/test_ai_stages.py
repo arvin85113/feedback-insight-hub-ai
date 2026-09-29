@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from django.db import IntegrityError, transaction
 from django.db.models import F
@@ -869,3 +869,115 @@ class AIStageDashboardTests(AIReportTestCase):
     def test_stage_status_endpoint_requires_manager(self):
         self.client.force_login(self.customer)
         self.assertEqual(self.client.get(self.status_url()).status_code, 403)
+
+
+class ProviderFailure(Exception):
+    def __init__(self, code):
+        super().__init__(f"provider-{code}")
+        self.code = code
+
+
+def finished_response(payload, *, finish_reason="STOP"):
+    response = provider_response(payload)
+    response.candidates = [SimpleNamespace(finish_reason=finish_reason)]
+    return response
+
+
+@override_settings(AI_REPORT_REQUEST_INTERVAL_SECONDS=0, AI_REPORT_RATE_LIMIT_BACKOFF_SECONDS=6)
+class AIStageResilienceTests(AIReportTestCase):
+    """Provider-failure behaviour of the staged pipeline (ported from the legacy report path)."""
+
+    def setUp(self):
+        super().setUp()
+        self.add_responses(count=3)
+        self.snapshot = self.make_snapshot(fingerprint=calculate_data_fingerprint(self.survey).value)
+
+    def generate(self):
+        return generate_stage(self.snapshot, SurveyAIAnalysisStage.StageType.STATISTICS)
+
+    @patch("feedback.ai_stage_service.create_gemini_client")
+    def test_standard_success_does_not_retry_and_records_usage(self, client_factory):
+        client_factory.return_value.models.generate_content.return_value = finished_response(statistics_payload())
+        stage = self.generate()
+        self.assertEqual(client_factory.return_value.models.generate_content.call_count, 1)
+        self.assertEqual(stage.token_metrics["generation_profile"], "standard")
+        self.assertEqual(stage.token_metrics["prompt_token_count"], 100)
+        self.assertEqual(stage.token_metrics["thinking_token_count"], 10)
+        self.assertEqual(stage.token_metrics["attempts"][0]["finish_reason"], "STOP")
+
+    @patch("feedback.ai_stage_service.time.sleep")
+    @patch("feedback.ai_stage_service.create_gemini_client")
+    def test_rate_limit_backs_off_before_single_compact_retry(self, client_factory, sleep):
+        client_factory.return_value.models.generate_content.side_effect = [
+            ProviderFailure(429),
+            finished_response(statistics_payload()),
+        ]
+        stage = self.generate()
+        self.assertEqual(client_factory.return_value.models.generate_content.call_count, 2)
+        sleep.assert_called_once_with(6)
+        self.assertEqual(stage.token_metrics["generation_profile"], "compact")
+
+    @patch("feedback.ai_stage_service.create_gemini_client")
+    def test_output_truncated_enters_compact_mode(self, client_factory):
+        client_factory.return_value.models.generate_content.side_effect = [
+            finished_response(statistics_payload(), finish_reason="MAX_TOKENS"),
+            finished_response(statistics_payload()),
+        ]
+        stage = self.generate()
+        self.assertEqual(stage.token_metrics["generation_profile"], "compact")
+        self.assertEqual(stage.token_metrics["attempts"][0]["finish_reason"], "MAX_TOKENS")
+
+    @patch("feedback.ai_stage_service.create_gemini_client")
+    def test_forbidden_and_model_not_found_do_not_retry(self, client_factory):
+        for code, error_code in ((403, "forbidden"), (404, "model_not_found")):
+            with self.subTest(code=code):
+                client = Mock()
+                client.models.generate_content.side_effect = ProviderFailure(code)
+                client_factory.return_value = client
+                with self.assertRaises(StageError) as raised:
+                    generate_stage(self.snapshot, SurveyAIAnalysisStage.StageType.STATISTICS, force=True)
+                self.assertEqual(raised.exception.error_code, error_code)
+                self.assertEqual(client.models.generate_content.call_count, 1)
+
+    @patch("feedback.ai_stage_service.create_gemini_client")
+    def test_empty_response_and_unknown_provider_error_remain_distinct(self, client_factory):
+        client = Mock()
+        client.models.generate_content.return_value = SimpleNamespace(
+            text="",
+            candidates=[SimpleNamespace(finish_reason="STOP")],
+            usage_metadata=None,
+        )
+        client_factory.return_value = client
+        with self.assertRaises(StageError) as empty_error:
+            self.generate()
+        self.assertEqual(empty_error.exception.error_code, "empty_response")
+        self.assertEqual(client.models.generate_content.call_count, 1)
+
+        client = Mock()
+        client.models.generate_content.side_effect = RuntimeError("opaque provider failure")
+        client_factory.return_value = client
+        with self.assertRaises(StageError) as provider_error:
+            generate_stage(self.snapshot, SurveyAIAnalysisStage.StageType.STATISTICS, force=True)
+        self.assertEqual(provider_error.exception.error_code, "provider_error")
+        self.assertEqual(client.models.generate_content.call_count, 1)
+
+    @override_settings(GOOGLE_API_KEY="PRIVATE_KEY_MARKER")
+    @patch("feedback.ai_stage_service.create_gemini_client")
+    def test_failure_logs_exclude_prompt_evidence_and_key(self, client_factory):
+        source = dict(self.snapshot.source_snapshot)
+        source["data_scope"] = {**source.get("data_scope", {}), "survey_title": "PRIVATE_PROMPT_MARKER"}
+        source["evidence_catalog"] = [
+            {**row, "label": "PRIVATE_ANSWER_MARKER"} for row in source.get("evidence_catalog", [])
+        ]
+        self.snapshot.source_snapshot = source
+        self.snapshot.save(update_fields=["source_snapshot"])
+        client_factory.return_value.models.generate_content.side_effect = [
+            finished_response(statistics_payload(), finish_reason="MAX_TOKENS"),
+            finished_response(statistics_payload()),
+        ]
+        with self.assertLogs("feedback.ai_stage_service", level="WARNING") as captured:
+            self.generate()
+        output = "\n".join(captured.output)
+        for marker in ("PRIVATE_PROMPT_MARKER", "PRIVATE_ANSWER_MARKER", "PRIVATE_KEY_MARKER"):
+            self.assertNotIn(marker, output)
+        self.assertIn("output_truncated", output)
