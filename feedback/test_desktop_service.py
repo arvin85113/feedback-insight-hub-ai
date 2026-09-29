@@ -374,7 +374,7 @@ class DesktopDatabaseServiceTests(TestCase):
             service.update_surveys((self.survey.pk,))
 
     @patch("feedback.ai_worker.execute_ai_job")
-    @override_settings(AI_REPORT_REQUEST_INTERVAL_SECONDS=0)
+    @override_settings(AI_REPORT_REQUEST_INTERVAL_SECONDS=0, GEMINI_MODEL="gemini-test")
     def test_two_stage_update_publishes_new_ai_stage_without_replacing_snapshot(
         self, execute_ai_job
     ):
@@ -436,6 +436,13 @@ class DesktopDatabaseServiceTests(TestCase):
         self.assertFalse(status.needs_ai)
         self.assertTrue(status.ai_current)
         self.assertIsNotNone(status.latest_ai_at)
+
+        # Switching the configured Gemini model makes the published AI result stale.
+        with override_settings(GEMINI_MODEL="gemini-test-next"):
+            switched = self.service.list_surveys()[0]
+        self.assertFalse(switched.needs_update)
+        self.assertTrue(switched.needs_ai)
+        self.assertFalse(switched.ai_current)
 
     @patch("feedback.ai_stage_service.create_gemini_client")
     def test_second_stage_requires_explicit_paid_ai_enablement(self, client_factory):

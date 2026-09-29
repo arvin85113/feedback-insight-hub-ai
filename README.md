@@ -103,7 +103,7 @@ python manage.py migrate
 python manage.py runserver
 ```
 
-開啟 `http://127.0.0.1:8000/`。本機網站若要使用與 Render 相同的分析展示流程，設定 `ANALYSIS_READ_PUBLISHED_ONLY=true`，並由本機工作台處理分析工作。
+開啟 `http://127.0.0.1:8000/`。本機網站與 Render 使用相同的分析展示流程：頁面只讀已發布結果，統計、文字與 Gemini 由本機工作台或 Worker 產生並發布。
 
 ## Windows 本機工作台與 EXE
 
@@ -146,7 +146,7 @@ EXE 再從 `%LOCALAPPDATA%\FeedbackInsightHub\datasets.json` 讀取該不可變�
 
 `render.yaml` 定義單一 Django web service；`build.sh` 安裝依賴、收集靜態檔並套用 migration。部署前請確認目標資料庫、備份與回復方式，因 migration 會改變 schema。
 
-Render 使用 `ANALYSIS_READ_PUBLISHED_ONLY=true`：
+網站（本機與 Render）一律只讀已發布結果：
 
 - 問卷、權限、設定與工作排程維持必要讀寫。
 - 營運分析、統計、文字與 AI 展示僅讀已發布 payload。

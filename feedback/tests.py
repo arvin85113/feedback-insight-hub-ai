@@ -21,6 +21,7 @@ from .ai_report_service import (
 )
 from .ai_snapshot_service import (
     SNAPSHOT_SCHEMA_VERSION,
+    SnapshotError,
     FingerprintResult,
     SourceChangedError,
     build_evidence_coverage,
@@ -458,6 +459,23 @@ class AIReportTestCase(TestCase):
         )
 
 
+def published_payload(*, statistics=None, text_analysis=None):
+    """Minimal published-analysis payload for page rendering tests."""
+
+    return {
+        "available": True,
+        "snapshot_id": None,
+        "published_at": None,
+        "versions": {"input": 1, "config": 1, "pipeline": "test", "published": {}},
+        "freshness": {"statistics": True, "text": True, "ai": False},
+        "statistics": statistics or {},
+        "text_analysis": text_analysis or {},
+        "snapshot": {},
+        "ai": None,
+        "latest_job": None,
+    }
+
+
 class ExistingAnalysisRegressionTests(AIReportTestCase):
     def test_text_analysis_is_get_only_and_keeps_existing_payload(self):
         self.client.force_login(self.manager)
@@ -467,7 +485,7 @@ class ExistingAnalysisRegressionTests(AIReportTestCase):
             "category_sentiments": [{"category": "流程", "positive": 0, "neutral": 1, "negative": 3, "total": 4}],
         }
         url = f"{reverse('feedback:text-analysis')}?survey={self.survey.slug}"
-        with patch("feedback.views.local_service.get_text_analysis_payload", return_value=payload):
+        with patch("feedback.views.get_published_analysis_payload", return_value=published_payload(text_analysis=payload)):
             response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "等待")
@@ -509,7 +527,7 @@ class ExistingAnalysisRegressionTests(AIReportTestCase):
             ],
         }
         url = f"{reverse('feedback:stats-overview')}?survey={self.survey.slug}"
-        with patch("feedback.views.local_service.get_stats_payload", return_value=payload):
+        with patch("feedback.views.get_published_analysis_payload", return_value=published_payload(statistics=payload)):
             response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "相關係數 r")
@@ -520,7 +538,7 @@ class ExistingAnalysisRegressionTests(AIReportTestCase):
         payload = {"charts": [], "question_analysis": [], "inferential_analysis": []}
         url = f"{reverse('feedback:stats-overview')}?survey={self.survey.slug}"
 
-        with patch("feedback.views.local_service.get_stats_payload", return_value=payload):
+        with patch("feedback.views.get_published_analysis_payload", return_value=published_payload(statistics=payload)):
             response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
@@ -570,12 +588,10 @@ class DashboardSurveySelectionTests(AIReportTestCase):
 
     def test_insufficient_survey_cannot_create_snapshot(self):
         self.add_responses(count=2)
-        self.client.force_login(self.manager)
-        url = reverse("feedback:ai-report-snapshot", args=[self.survey.slug])
         with patch("feedback.ai_report_service.create_gemini_client") as client_factory:
-            response = self.client.post(url)
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.json()["error_code"], "insufficient_responses")
+            with self.assertRaises(SnapshotError) as raised:
+                build_or_reuse_snapshot(self.survey)
+        self.assertEqual(raised.exception.error_code, "insufficient_responses")
         self.assertFalse(SurveyAIReportSnapshot.objects.exists())
         client_factory.assert_not_called()
 
@@ -900,8 +916,6 @@ class EndpointSecurityAndDraftTests(AIReportTestCase):
         snapshot = self.make_snapshot()
         urls = [
             ("get", reverse("feedback:ai-report-status", args=[self.survey.slug])),
-            ("post", reverse("feedback:ai-report-snapshot", args=[self.survey.slug])),
-            ("post", reverse("feedback:ai-report-generate", args=[self.survey.slug, snapshot.pk])),
             (
                 "get",
                 reverse(
@@ -914,48 +928,6 @@ class EndpointSecurityAndDraftTests(AIReportTestCase):
         for method, url in urls:
             with self.subTest(url=url):
                 self.assertEqual(getattr(self.client, method)(url).status_code, 403)
-
-    def test_post_endpoints_require_csrf(self):
-        csrf_client = Client(enforce_csrf_checks=True)
-        csrf_client.force_login(self.manager)
-        snapshot = self.make_snapshot()
-        self.assertEqual(
-            csrf_client.post(reverse("feedback:ai-report-snapshot", args=[self.survey.slug])).status_code,
-            403,
-        )
-        self.assertEqual(
-            csrf_client.post(
-                reverse("feedback:ai-report-generate", args=[self.survey.slug, snapshot.pk])
-            ).status_code,
-            403,
-        )
-
-    def test_snapshot_cannot_be_used_with_another_survey(self):
-        other = Survey.objects.create(title="其他", slug="other")
-        snapshot = self.make_snapshot()
-        self.client.force_login(self.manager)
-        with patch("feedback.views.generate_report") as generate:
-            response = self.client.post(reverse("feedback:ai-report-generate", args=[other.slug, snapshot.pk]))
-        self.assertEqual(response.status_code, 404)
-        generate.assert_not_called()
-
-    def test_failed_update_keeps_previous_successful_report(self):
-        previous = self.make_snapshot(status=SurveyAIReportSnapshot.Status.SUCCEEDED, fingerprint="1" * 64)
-        previous.ai_report = validate_report_payload(provider_report(self.survey.slug), previous.source_snapshot)
-        previous.generated_at = previous.created_at
-        previous.save(update_fields=["ai_report", "generated_at"])
-        current = self.make_snapshot(status=SurveyAIReportSnapshot.Status.SNAPSHOT_READY, fingerprint="2" * 64)
-        self.client.force_login(self.manager)
-        with patch(
-            "feedback.views.generate_report",
-            side_effect=AIReportError("provider_error", "AI 服務暫時無法使用。"),
-        ):
-            response = self.client.post(
-                reverse("feedback:ai-report-generate", args=[self.survey.slug, current.pk])
-            )
-        self.assertEqual(response.status_code, 502)
-        status = self.client.get(reverse("feedback:ai-report-status", args=[self.survey.slug])).json()
-        self.assertEqual(status["report"]["snapshot_id"], previous.pk)
 
     def test_ai_draft_only_prefills_then_creates_with_source_survey(self):
         snapshot = self.make_snapshot(status=SurveyAIReportSnapshot.Status.SUCCEEDED)

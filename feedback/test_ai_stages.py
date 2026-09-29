@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.db import IntegrityError, transaction
+from django.db.models import F
 from django.core.exceptions import ValidationError
 from django.test import Client, override_settings
 from django.urls import reverse
@@ -15,6 +16,7 @@ from .ai_stage_service import (
     StageError,
     build_stage_input,
     generate_stage,
+    get_pipeline_status,
     is_stage_current,
     prepare_stage,
     stage_input_hash,
@@ -25,6 +27,7 @@ from .models import (
     ImprovementUpdate,
     SurveyAIAnalysisStage,
     SurveyAIReportSnapshot,
+    SurveyAnalysisState,
 )
 from .tests import AIReportTestCase, provider_report, source_snapshot
 
@@ -570,6 +573,25 @@ class AIStageDraftImportTests(AIReportTestCase):
             generate_stage(self.snapshot, SurveyAIAnalysisStage.StageType.TEXT)
             self.stage = generate_stage(self.snapshot, SurveyAIAnalysisStage.StageType.SYNTHESIS)
         self.drafts = self.stage.output_json["improvement_drafts"]
+        self.publish_stage(self.stage)
+
+    def publish_stage(self, stage):
+        """Drafts are importable only from the published, version-current AI stage."""
+
+        state, _ = SurveyAnalysisState.objects.get_or_create(survey=self.survey)
+        manifest = dict(state.publication_manifest or {})
+        manifest["ai"] = {
+            "snapshot_id": stage.snapshot_id,
+            "stage_id": stage.pk,
+            "input_version": state.input_version,
+            "config_version": state.config_version,
+            "pipeline_version": state.pipeline_version,
+            "model_name": stage.model_name,
+        }
+        state.published_snapshot = stage.snapshot
+        state.published_ai_stage = stage
+        state.publication_manifest = manifest
+        state.save(update_fields=("published_snapshot", "published_ai_stage", "publication_manifest"))
 
     def draft_url(self, draft=None, *, survey=None, stage=None):
         draft = draft or self.drafts[0]
@@ -678,11 +700,13 @@ class AIStageDraftImportTests(AIReportTestCase):
         self.assertEqual(self.client.get(self.draft_url()).status_code, 403)
 
     def test_stale_synthesis_is_strictly_blocked(self):
-        ImprovementUpdate.objects.create(survey=self.survey, title="外部改善", summary="使 synthesis 過期。")
+        # Import freshness follows the published version pointers (same rule as Render):
+        # a newer input version makes the published synthesis stale.
+        SurveyAnalysisState.objects.filter(survey=self.survey).update(input_version=F("input_version") + 1)
         self.client.force_login(self.manager)
         response = self.client.get(self.draft_url())
         self.assertEqual(response.status_code, 409)
-        self.assertEqual(ImprovementUpdate.objects.count(), 1)
+        self.assertEqual(ImprovementUpdate.objects.count(), 0)
 
     def test_failed_or_generating_stage_is_not_importable(self):
         failed = SurveyAIAnalysisStage.objects.create(
@@ -725,12 +749,6 @@ class AIStageDashboardTests(AIReportTestCase):
     def status_url(self):
         return reverse("feedback:ai-stage-status", args=[self.survey.slug])
 
-    def generate_url(self, stage_type):
-        return reverse(
-            "feedback:ai-stage-generate",
-            args=[self.survey.slug, self.snapshot.pk, stage_type],
-        )
-
     def test_operations_page_uses_stage_status_endpoint_and_shows_three_stage_shell(self):
         # The AI stage shell moved from the overview to the operations page (7c579cc).
         with patch("feedback.views.local_service.get_dashboard_payload", return_value={}):
@@ -772,34 +790,6 @@ class AIStageDashboardTests(AIReportTestCase):
         self.assertIn("grid-template-columns: minmax(0, 1fr);", css)
         self.assertIn(".dashboard-support-grid .trend-bar", css)
 
-    def test_text_endpoint_requires_statistics_first(self):
-        response = self.client.post(self.generate_url(SurveyAIAnalysisStage.StageType.TEXT))
-        self.assertEqual(response.status_code, 409)
-        self.assertEqual(response.json()["error_code"], "upstream_incomplete")
-
-    @patch("feedback.ai_stage_service.create_gemini_client")
-    def test_endpoints_run_in_sequence_and_return_staged_report(self, client_factory):
-        client_factory.return_value.models.generate_content.side_effect = [
-            provider_response(statistics_payload()),
-            provider_response(text_payload()),
-            provider_response(synthesis_payload()),
-        ]
-        for stage_type in (
-            SurveyAIAnalysisStage.StageType.STATISTICS,
-            SurveyAIAnalysisStage.StageType.TEXT,
-            SurveyAIAnalysisStage.StageType.SYNTHESIS,
-        ):
-            response = self.client.post(self.generate_url(stage_type))
-            self.assertEqual(response.status_code, 200)
-        payload = response.json()
-        self.assertTrue(payload["freshness"]["is_current"])
-        self.assertEqual(payload["report"]["report_source"], "staged")
-        self.assertEqual(payload["report"]["generation_profile"], "standard")
-        self.assertEqual(payload["stages"]["statistics"]["status"], "succeeded")
-        draft_state = next(iter(payload["report"]["draft_states"].values()))
-        self.assertFalse(draft_state["imported"])
-        self.assertIn("/dashboard/improvements/", draft_state["url"])
-
     def test_legacy_success_is_returned_as_fallback_before_pipeline_completes(self):
         self.snapshot.status = SurveyAIReportSnapshot.Status.SUCCEEDED
         self.snapshot.ai_report = validate_report_payload(
@@ -808,9 +798,7 @@ class AIStageDashboardTests(AIReportTestCase):
         )
         self.snapshot.generated_at = self.snapshot.created_at
         self.snapshot.save(update_fields=["status", "ai_report", "generated_at"])
-        response = self.client.get(self.status_url())
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
+        payload = get_pipeline_status(self.survey)
         self.assertEqual(payload["report"]["report_source"], "legacy")
         self.assertFalse(payload["freshness"]["is_current"])
         self.assertTrue(payload["freshness"]["latest_analysis_incomplete"])
@@ -842,7 +830,7 @@ class AIStageDashboardTests(AIReportTestCase):
                 ]
             },
         )
-        payload = self.client.get(self.status_url()).json()
+        payload = get_pipeline_status(self.survey)
         self.assertEqual(payload["report"]["report_source"], "legacy")
         self.assertEqual(payload["freshness"]["latest_ai_status"], "failed")
         self.assertEqual(
@@ -874,22 +862,12 @@ class AIStageDashboardTests(AIReportTestCase):
             output_json={},
         )
 
-        freshness = self.client.get(self.status_url()).json()["freshness"]
+        freshness = get_pipeline_status(self.survey)["freshness"]
 
         self.assertEqual(freshness["latest_ai_status"], "not_started")
         self.assertEqual(freshness["latest_error_code"], "")
         self.assertEqual(freshness["latest_error_message"], "")
 
-    def test_stage_endpoints_require_manager_and_csrf(self):
+    def test_stage_status_endpoint_requires_manager(self):
         self.client.force_login(self.customer)
         self.assertEqual(self.client.get(self.status_url()).status_code, 403)
-        self.assertEqual(
-            self.client.post(self.generate_url(SurveyAIAnalysisStage.StageType.STATISTICS)).status_code,
-            403,
-        )
-        csrf_client = Client(enforce_csrf_checks=True)
-        csrf_client.force_login(self.manager)
-        self.assertEqual(
-            csrf_client.post(self.generate_url(SurveyAIAnalysisStage.StageType.STATISTICS)).status_code,
-            403,
-        )

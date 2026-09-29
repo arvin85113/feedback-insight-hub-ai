@@ -195,8 +195,8 @@ Windows raw 根目錄 ACL 僅保留目前使用者與 SYSTEM 完整存取。raw 
 [單次確定性 Worker](../feedback/management/commands/run_analysis_worker_once.py)：前者定義版本、
 租約、心跳、有限重試、取消及發布前核對。正式產品流程統一從 Supabase 的 Answer 產生
 無原始評論的本機產物，再把統計／文字 Snapshot 指標原子發布。另有需明確付費授權旗標的
-[單次 AI Worker](../feedback/management/commands/run_ai_worker_once.py)，以及預設停用的
-`ANALYSIS_READ_PUBLISHED_ONLY` 頁面切換。發布交易會把有限展示副本保存到狀態表，Render
+[單次 AI Worker](../feedback/management/commands/run_ai_worker_once.py)。網站頁面一律只讀已發布結果
+（2026-09-29 起移除 request-time 計算與同步產生端點）。發布交易會把有限展示副本保存到狀態表，網站
 讀取時不需載入完整 Snapshot evidence catalog。0015～0018 已套用至設定的 Supabase；
 雙 Worker 競爭已通過隔離 PostgreSQL 17.11 驗證，真實 Gemini 仍未呼叫。
 

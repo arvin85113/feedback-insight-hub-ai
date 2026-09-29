@@ -442,6 +442,15 @@ class DesktopService:
         return current
 
     @staticmethod
+    def _manifest_ai_model_current(state):
+        """AI output from a previously configured Gemini model needs a rerun."""
+
+        from django.conf import settings
+
+        item = (state.publication_manifest or {}).get("ai") or {}
+        return item.get("model_name") == settings.GEMINI_MODEL
+
+    @staticmethod
     def _manifest_datetime(state, stage):
         from django.utils.dateparse import parse_datetime
 
@@ -558,7 +567,11 @@ class DesktopService:
                 state and self._manifest_stage_current(state, "statistics", **current_kwargs)
             )
             text_current = bool(state and self._manifest_stage_current(state, "text", **current_kwargs))
-            ai_current = bool(state and self._manifest_stage_current(state, "ai", **current_kwargs))
+            ai_current = bool(
+                state
+                and self._manifest_stage_current(state, "ai", **current_kwargs)
+                and self._manifest_ai_model_current(state)
+            )
             generated_values = [
                 self._manifest_datetime(state, stage)
                 for stage in ("statistics", "text")

@@ -1,5 +1,5 @@
 from django.contrib.auth import get_user_model
-from django.test import TestCase, override_settings
+from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 from unittest.mock import patch
@@ -19,7 +19,6 @@ from .published_analysis import (
 )
 
 
-@override_settings(ANALYSIS_READ_PUBLISHED_ONLY=True)
 class PublishedAnalysisReadTests(TestCase):
     def setUp(self):
         self.manager = get_user_model().objects.create_user(
@@ -198,7 +197,7 @@ class PublishedAnalysisReadTests(TestCase):
             args=[self.survey.slug, self.ai_stage.pk, self.draft_id],
         )
 
-        with patch("feedback.views.is_stage_current", side_effect=AssertionError("must not scan answers")):
+        with patch("feedback.ai_stage_service.is_stage_current", side_effect=AssertionError("must not scan answers")):
             response = self.client.get(url)
 
         self.assertEqual(response.status_code, 200)
@@ -266,9 +265,9 @@ class PublishedAnalysisReadTests(TestCase):
         self.assertEqual(payload["report"]["snapshot_id"], self.snapshot.pk)
         self.assertEqual(payload["report"]["response_count"], 4)
 
-    def test_stats_and_text_views_do_not_call_request_time_analysis_when_enabled(self):
+    def test_stats_and_text_views_never_call_request_time_analysis(self):
         self.client.force_login(self.manager)
-        with patch("feedback.views.local_service.get_stats_payload", side_effect=AssertionError("must not calculate")):
+        with patch("feedback.local_service.build_stats_payload", side_effect=AssertionError("must not calculate")):
             response = self.client.get(reverse("feedback:stats-overview"), {"survey": self.survey.slug})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["charts"][0]["count"], 4)
@@ -276,28 +275,24 @@ class PublishedAnalysisReadTests(TestCase):
         self.assertContains(response, "符合目前資料版本")
         self.assertContains(response, "AI 結果仍為上一版本")
 
-        with patch("feedback.views.local_service.get_text_analysis_payload", side_effect=AssertionError("must not calculate")):
+        with patch("feedback.local_service.build_text_analysis_payload", side_effect=AssertionError("must not calculate")):
             response = self.client.get(reverse("feedback:text-analysis"), {"survey": self.survey.slug})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["keywords"][0]["keyword"], "clean")
         self.assertEqual(response.context["analysis_publication"]["freshness"]["ai"], False)
         self.assertContains(response, "已發布結果")
 
-    def test_ai_status_and_update_use_published_state_and_background_queue(self):
+    def test_ai_status_uses_published_state_and_sync_generation_is_not_routed(self):
         self.client.force_login(self.manager)
-        with patch("feedback.views.get_pipeline_status", side_effect=AssertionError("must not scan")):
+        with patch("feedback.ai_stage_service.get_pipeline_status", side_effect=AssertionError("must not scan")):
             response = self.client.get(reverse("feedback:ai-stage-status", args=[self.survey.slug]))
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["report"]["content"]["executive_summary"], "Published AI summary")
 
-        with patch("feedback.views.build_or_reuse_snapshot", side_effect=AssertionError("must not build")):
-            response = self.client.post(reverse("feedback:ai-report-snapshot", args=[self.survey.slug]))
-        self.assertEqual(response.status_code, 202)
-        self.assertTrue(response.json()["queued"])
-        self.assertTrue(
-            AnalysisJob.objects.filter(
-                survey=self.survey,
-                executor=AnalysisJob.Executor.DETERMINISTIC,
-                status=AnalysisJob.Status.PENDING,
-            ).exists()
-        )
+        # Snapshot and Gemini generation run only in the local worker, never in a web request.
+        for path in (
+            f"/dashboard/ai-reports/{self.survey.slug}/snapshot/",
+            f"/dashboard/ai-reports/{self.survey.slug}/snapshots/{self.snapshot.pk}/generate/",
+            f"/dashboard/ai-reports/{self.survey.slug}/snapshots/{self.snapshot.pk}/stages/statistics/generate/",
+        ):
+            self.assertEqual(self.client.post(path).status_code, 404)

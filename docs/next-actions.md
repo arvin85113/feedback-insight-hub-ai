@@ -12,6 +12,9 @@
 - 測試隔離：`config.settings_test`／`settings_postgres_test` 固定測試模型並使用假金鑰，不再讀入開發者 `.env` 的模型或真實金鑰；修正營運分析頁搬移後的過時測試。2026-09-29 本機 Python 3.12.14 於無 `.env` 的乾淨副本執行 `feedback accounts` 226 項通過（1 項略過）。
 - 新增 GitHub Actions CI：Python 3.12／3.13 執行 migration 檢查、system check 與全部 SQLite 測試，另以 PostgreSQL 17 服務執行併發測試；首次推送後才會有 CI 結果。
 - Web 啟動只載入 `jieba`、`google.genai`，pandas／scipy／duckdb 為延遲載入；拆分 web／worker 依賴主要縮短建置時間，列為後續項目。
+- Phase 2（同日）：移除 `ANALYSIS_READ_PUBLISHED_ONLY` 切換，本機與 Render 頁面一律只讀已發布結果；刪除 request-time 統計／文字 wrapper 及同步 Snapshot／Gemini POST 端點（UI 僅使用 GET 狀態端點）。AI 草稿匯入一律依發布指標判定最新；手動新增改善項目不會使已發布 synthesis 過期（與 Render 既有行為相同），是否應觸發版本失效待決定。
+- 桌面工作台的 Gemini「最新」判定加入模型名稱：`GEMINI_MODEL` 與已發布 AI 的 `model_name` 不同時顯示待更新，可用「只執行勾選問卷 Gemini」重跑。
+- 舊版單次 `generate_report` 已無網頁呼叫端，但其限流／截斷／日誌隱私測試尚未移植到 AI Stage 流程，移植後再刪除。
 
 ## 實作進度（2026-09-06）
 
