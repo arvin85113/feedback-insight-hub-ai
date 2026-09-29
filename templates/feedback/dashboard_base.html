@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block body_class %}dashboard-body{% endblock %}
 
@@ -52,8 +53,5 @@
         </main>
     </div>
 </div>
-<script>
-    // On narrow screens the nav scrolls horizontally; keep the current section in view.
-    document.querySelector('.manager-nav-link.active')?.scrollIntoView({block: 'nearest', inline: 'center'});
-</script>
+<script src="{% static 'js/manager-shell.js' %}?v=20260929-ui2"></script>
 {% endblock %}

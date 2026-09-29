@@ -1,4 +1,5 @@
 {% extends "feedback/dashboard_base.html" %}
+{% load static %}
 
 {% block title %}統計分析 | FeedBack IQ{% endblock %}
 
@@ -35,7 +36,7 @@
 {% include "feedback/_analysis_publication_status.html" %}
 
 {% if selected_survey %}
-    <nav class="analytics-tab-nav" role="tablist" aria-label="統計分析步驟">
+    <nav class="analytics-tab-nav" data-default-tab="data-map" role="tablist" aria-label="統計分析步驟">
         <button class="analytics-tab" data-tab="data-map" role="tab" aria-selected="true">
             <span class="analytics-tab-num">1</span>
             <span class="analytics-tab-label">資料地圖</span>
@@ -269,38 +270,7 @@
         </div>
     </div>
 
-    <script>
-    (() => {
-        const tabs = Array.from(document.querySelectorAll('.analytics-tab[data-tab]'));
-        const panels = Array.from(document.querySelectorAll('[data-tab-panel]'));
-        if (!tabs.length || !panels.length) return;
-
-        function activate(tabId, scroll) {
-            const valid = tabs.some(t => t.dataset.tab === tabId);
-            const id = valid ? tabId : tabs[0].dataset.tab;
-            tabs.forEach(t => {
-                const active = t.dataset.tab === id;
-                t.classList.toggle('analytics-tab-active', active);
-                t.setAttribute('aria-selected', active ? 'true' : 'false');
-            });
-            panels.forEach(p => { p.hidden = p.dataset.tabPanel !== id; });
-            history.replaceState(null, '', '#' + id);
-            if (scroll) {
-                const nav = document.querySelector('.analytics-tab-nav');
-                if (nav) nav.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }
-        }
-
-        tabs.forEach(t => t.addEventListener('click', () => activate(t.dataset.tab, false)));
-        document.querySelectorAll('[data-tab-next]').forEach(btn =>
-            btn.addEventListener('click', () => activate(btn.dataset.tabNext, true)));
-        document.querySelectorAll('[data-tab-prev]').forEach(btn =>
-            btn.addEventListener('click', () => activate(btn.dataset.tabPrev, true)));
-
-        const hash = location.hash.slice(1);
-        activate(hash || 'data-map', false);
-    })();
-    </script>
+    <script src="{% static 'js/analysis-tabs.js' %}?v=20260929-ui2"></script>
 
 {% else %}
     <section class="manager-toolbar stats-list-toolbar">

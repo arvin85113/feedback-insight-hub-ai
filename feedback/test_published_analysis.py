@@ -4,6 +4,7 @@ from django.urls import reverse
 from django.utils import timezone
 from unittest.mock import patch
 
+from .test_utils import page_with_scripts
 from .models import (
     AnalysisJob,
     ImprovementUpdate,
@@ -222,15 +223,17 @@ class PublishedAnalysisReadTests(TestCase):
 
         response = self.client.get(reverse("feedback:analysis-operations"))
 
+        page = page_with_scripts(response)
+
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "網站唯讀展示")
-        self.assertContains(response, "重新讀取發布狀態")
-        self.assertContains(response, "data-ai-refresh")
-        self.assertNotContains(response, "data-ai-update")
-        self.assertNotContains(response, "data-snapshot-url")
-        self.assertNotContains(response, "產生第一份報告")
-        self.assertNotContains(response, "報告已過期，請重新產生後再帶入")
-        self.assertContains(response, "此為 AI 建議草稿，尚未建立改善追蹤項目")
+        self.assertIn("網站唯讀展示", page)
+        self.assertIn("重新讀取發布狀態", page)
+        self.assertIn("data-ai-refresh", page)
+        self.assertNotIn("data-ai-update", page)
+        self.assertNotIn("data-snapshot-url", page)
+        self.assertNotIn("產生第一份報告", page)
+        self.assertNotIn("報告已過期，請重新產生後再帶入", page)
+        self.assertIn("此為 AI 建議草稿，尚未建立改善追蹤項目", page)
         self.assertEqual(response.context["active_section"], "feedback:analysis-operations")
         self.assertEqual(
             [route for route, _, _ in response.context["dashboard_nav"][:3]],

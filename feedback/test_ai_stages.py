@@ -32,6 +32,7 @@ from .models import (
     SurveyAnalysisState,
 )
 from .tests import AIReportTestCase, provider_report, source_snapshot
+from .test_utils import page_with_scripts
 
 
 @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
@@ -751,27 +752,28 @@ class AIStageDashboardTests(AIReportTestCase):
         # The AI stage shell moved from the overview to the operations page (7c579cc).
         with patch("feedback.views.local_service.get_dashboard_payload", return_value={}):
             response = self.client.get(reverse("feedback:analysis-operations"))
-        self.assertContains(response, self.status_url())
+            page = page_with_scripts(response)
+        self.assertIn(self.status_url(), page)
         # Manual per-stage progress labels were replaced by the local worker workflow (dfd3dff).
-        self.assertContains(response, "本機工作台正在產生 Gemini 綜合分析")
-        self.assertContains(response, "const status = freshness.is_current")
-        self.assertNotContains(response, "const status = report.is_current")
-        self.assertContains(response, "else {\n            clearError();")
-        self.assertContains(response, 'class="ai-report-spinner"')
-        self.assertContains(response, "progressText.textContent = message")
-        self.assertContains(response, "function evidenceAnalysisKey(row)")
-        self.assertContains(response, "group.includes(row)")
-        self.assertContains(response, "Spearman ρ =")
-        self.assertContains(response, "單因子變異數分析")
-        self.assertContains(response, "ai-card-section-label', '分析依據")
-        self.assertContains(response, "ai-card-section-label', '資料限制")
-        self.assertContains(response, "button button-ghost button-small ai-card-action")
-        self.assertContains(response, "['生成時間', formatDate(report.generated_at)]")
-        self.assertNotContains(response, "['來源', report.cache_hit")
-        self.assertContains(response, "high: '高優先'")
-        self.assertContains(response, "medium: '中優先'")
-        self.assertContains(response, "low: '低優先'")
-        self.assertContains(response, "/static/css/app.css?v=")
+        self.assertIn("本機工作台正在產生 Gemini 綜合分析", page)
+        self.assertIn("const status = freshness.is_current", page)
+        self.assertNotIn("const status = report.is_current", page)
+        self.assertIn("else {\n            clearError();", page)
+        self.assertIn('class="ai-report-spinner"', page)
+        self.assertIn("progressText.textContent = message", page)
+        self.assertIn("function evidenceAnalysisKey(row)", page)
+        self.assertIn("group.includes(row)", page)
+        self.assertIn("Spearman ρ =", page)
+        self.assertIn("單因子變異數分析", page)
+        self.assertIn("ai-card-section-label', '分析依據", page)
+        self.assertIn("ai-card-section-label', '資料限制", page)
+        self.assertIn("button button-ghost button-small ai-card-action", page)
+        self.assertIn("['生成時間', formatDate(report.generated_at)]", page)
+        self.assertNotIn("['來源', report.cache_hit", page)
+        self.assertIn("high: '高優先'", page)
+        self.assertIn("medium: '中優先'", page)
+        self.assertIn("low: '低優先'", page)
+        self.assertIn("/static/css/app.css?v=", page)
 
     def test_ai_report_css_has_balanced_desktop_and_single_column_rules(self):
         css_path = Path(__file__).resolve().parents[1] / "static" / "css" / "app.css"
