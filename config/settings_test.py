@@ -14,3 +14,10 @@ DATABASES = {
     }
 }
 EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+
+# Tests must not depend on the developer's .env: pin the model that fixtures use
+# and never carry a real provider key into the test process.
+GEMINI_MODEL = "gemini-2.5-flash"
+GOOGLE_API_KEY = "test-key-not-a-real-credential"
+LOGGING["root"]["level"] = "WARNING"  # noqa: F405
+LOGGING["loggers"]["feedback"]["level"] = "WARNING"  # noqa: F405

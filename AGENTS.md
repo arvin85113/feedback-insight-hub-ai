@@ -26,8 +26,8 @@
 - TripAdvisor 本機 raw／clean／report／manifest 已存在，固定版本資料為 201,295 列。
 - AnalysisInput、AnswerInput、ParquetInput 與本機統計／詞典 NLP／AI schema mock 管線已存在。
 - 本機 analysis-mock 是格式與流程驗證產物，不是真實 Gemini 結論或已發布的雲端 Snapshot。
-- SurveyAnalysisState／AnalysisJob、版本失效、待處理合併、租約／心跳／重試／取消及發布前版本核對已在程式定義；0015～0018 已於 2026-09-06 套用至設定的 Supabase。deterministic／AI 單次命令與持續輪詢 CLI、有限展示副本及選用的發布只讀頁已存在；仍未安裝為服務或呼叫真實 Gemini。
-- 桌面工作台已把統計／文字與 Gemini 分為兩段，分別顯示時間及版本狀態；Gemini 預設停用，管理員勾選 API 額度選項後才執行。Render blueprint 已收斂為 Django 單一 web service；提交 `43c9839` 已於 2026-09-06 部署為 Live。
+- SurveyAnalysisState／AnalysisJob、版本失效、待處理合併、租約／心跳／重試／取消及發布前版本核對已在程式定義；0015～0019 已套用至設定的 Supabase。deterministic／AI 單次命令與持續輪詢 CLI、有限展示副本及選用的發布只讀頁已存在；仍未安裝為服務。桌面工作台已於 2026-09-08 以 gemini-2.5-flash 發布三份問卷的 Gemini 結果；預設模型已改為 gemini-3.6-flash（2.5 預定 2026-10 停用），換模型後需重跑。
+- 桌面工作台已把統計／文字與 Gemini 分為兩段，分別顯示時間及版本狀態；Gemini 預設停用，管理員勾選 API 額度選項後才執行。Render blueprint 已收斂為 Django 單一 web service；Render Dashboard 於 2026-09-29 確認 `da0f55e` 為 Live。
 
 ## 目標架構／尚未實作
 

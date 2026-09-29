@@ -3,7 +3,7 @@ dj-database-url==3.0.1
 duckdb==1.5.5
 gunicorn==23.0.0
 google-genai==2.18.0
-jieba
+jieba==0.42.1
 pandas==3.0.5
 psycopg[binary]==3.3.5
 python-dotenv==1.2.2

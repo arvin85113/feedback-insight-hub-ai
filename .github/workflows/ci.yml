@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Django tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.12 matches the local worker/EXE build; 3.13 matches Render.
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - name: Check for missing migrations
+        run: python manage.py makemigrations --check --dry-run --settings=config.settings_test
+      - name: Django system check
+        run: python manage.py check --settings=config.settings_test
+      - name: Tests (isolated in-memory SQLite, mocked Gemini)
+        run: python manage.py test feedback accounts --settings=config.settings_test
+
+  postgres-concurrency:
+    name: PostgreSQL 17 queue concurrency
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: feedback_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ci" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://ci:ci@localhost:5432/feedback_ci
+      TEST_DATABASE_CONFIRM_ISOLATED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - run: python manage.py test feedback.test_analysis_jobs_postgres --settings=config.settings_postgres_test
