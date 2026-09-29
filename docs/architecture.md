@@ -1,7 +1,6 @@
 # System Architecture — Feedback Insight Hub
 
-> **Current as of:** 2026-09-06
-> **Initial design doc (2026-04-22):** `docs/architecture-initial.md`
+描述現行架構；狀態與待辦見 [next-actions](next-actions.md)，除錯線索見 [debugging-notes](debugging-notes.md)。
 
 ---
 
@@ -24,6 +23,11 @@
 - 透過 manager workspace (`/dashboard/`) 進行所有問卷與分析操作
 - 管理問卷（建立、設定、Builder）
 - 統計分析、文字洞察、改善追蹤、通知中心
+- 管理者帳號由系統管理員建立；註冊頁只建立顧客帳號
+
+### 共用登入入口
+- 管理者與顧客使用同一個 `/accounts/login/`；登入後依角色導向（管理者 `/dashboard/`、顧客 `/app/`）
+- 首頁「進入管理端／顧客端」帶 `?next=`；若入口與帳號角色不符，改導向該帳號自己的工作區，不會 403
 
 ---
 
@@ -63,7 +67,7 @@ Shared DB:
 - 題目資料型別：`continuous` / `discrete` / `nominal` / `ordinal` / `text`（對應統計分析方法）
 - 問卷設定：標題、分類（SurveyCategory）、說明、是否開放、感謝信
 - Survey Builder：題目設定 tab + 問卷設定 tab，含題目預覽；頂部使用與分析二級頁一致的 KPI 膠囊列
-- 問卷管理列表：分類篩選、排序、統計 chips（題目 / 回覆 / 最近回覆）、3 日趨勢圖
+- 問卷管理列表：分類篩選、排序、統計 chips（題目 / 回覆 / 最近回覆）、3 日趨勢圖；外部資料集來源的問卷顯示資料集筆數
 
 ### 3. 統計分析 (`/dashboard/stats/`)
 - 問卷索引 → 選擇問卷 → 進入分析工作台
@@ -75,7 +79,7 @@ Shared DB:
 ### 4. 文字洞察 (`/dashboard/text-analysis/`)
 - 問卷索引 → 選擇問卷 → 進入分析工作台
 - 單一問卷頁：頂部 KPI 膠囊列 + 關鍵字摘要 / 情緒分布 / 分類規則 tab
-- 字典驅動關鍵字提取 + 情緒分數（快取於 `Answer.analysis_text` / `sentiment_score`）
+- 字典驅動關鍵字提取 + 情緒分數（快取於 `Answer.analysis_text` / `sentiment_score`）；頁面只讀已發布結果
 - 文字雲（關鍵字模式 / 分類模式可切換）+ 三欄精簡關鍵字卡
 - 分類情緒分布：每個分類一張卡，正向 / 中性 / 負向 stacked bar 內直接顯示數字
 - 關鍵字分類規則（`KeywordCategory`）支援新增、inline 編輯、刪除
@@ -127,7 +131,8 @@ Shared DB:
 | 文字分析 | 字典驅動 pipeline（`feedback/text_pipeline.py`） |
 | 靜態檔案 | Whitenoise |
 | 部署 | Render |
-| 前端 | Django templates + 純手寫 CSS（`static/css/app.css`） |
+| 前端 | Django templates；設計變數與既有樣式在 `static/css/app.css`，元件層在 `static/css/ui.css`；頁面腳本在 `static/js/` |
+| AI | Gemini（`GEMINI_MODEL`，Vertex express mode），只由本機工作台／Worker 呼叫；AI 文字中的數字須對應 evidence |
 
 ---
 
@@ -164,7 +169,11 @@ Shared DB:
 | `feedback/analysis_jobs.py` | 版本失效、工作租約與發布協調 |
 | `feedback/analysis_adapters.py` | Answer／Parquet 共用分析輸入契約 |
 | `feedback/text_pipeline.py` | Tokenization, sentiment, ANALYSIS_VERSION |
-| `static/css/app.css` | Main stylesheet |
+| `feedback/published_analysis.py` | 頁面讀取已發布結果 |
+| `feedback/ai_stage_service.py` / `feedback/ai_grounding.py` | Gemini 三階段分析與數字驗證 |
+| `config/health.py` | 健康檢查與資料庫無法連線時的 503 頁 |
+| `desktop_app/` | Windows 本機工作台（EXE） |
+| `static/css/` / `static/js/` | 樣式與頁面腳本 |
 | `templates/` | All Django templates |
 
 ---
@@ -182,9 +191,7 @@ Shared DB:
 | 字典驅動文字分析 | 使用自訂詞典、同義詞正規化、情緒字典評分（`feedback/text_pipeline.py`）；網站提交只保存原始答案並排程，正式統計／文字計算由本機 Worker 執行。 |
 | Survey-index-first 流程 | 統計分析、文字洞察、改善追蹤、通知中心均採「先選問卷 → 再進入工作台」的流程，減少頁面跳轉並讓各功能聚焦於單一問卷。 |
 | Django 單一後端 | Render 與問卷寫入使用 Django，避免雙 ORM 與逾時 fallback 造成重複寫入。 |
+| 頁面只讀已發布結果 | 統計、文字與 Gemini 由本機工作台／Worker 計算後版本化發布；網站不在 request 內運算，Free 方案也不會逾時。 |
+| 大型資料留在本機 | 大型固定外部資料以本機 Parquet 分析，Supabase 只存定義、來源版本與發布結果，避免超過 500 MB 上限。 |
 | 問卷／題目生命週期分離 | `Survey.is_active` 控制填答、`analysis_enabled` 控制分析、`archived_at` 保留歷史；題目以 `code` 作穩定識別並可停用。 |
 | 回覆與匯入可追溯 | 回覆具有冪等鍵、寫入時間、完整／作廢狀態；外部來源以 namespace＋record key 去重，內容改變列為衝突而不覆寫。 |
-
----
-
-*初始設計文件（2026-04-22 版）請見 `docs/architecture-initial.md`。*

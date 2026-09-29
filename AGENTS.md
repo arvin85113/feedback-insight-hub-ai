@@ -1,6 +1,6 @@
 # AGENTS.md
 
-本檔只放長期有效的規則與索引。目前進度、部署狀態與資料版本見 [next-actions](docs/next-actions.md)；
+本檔只放長期有效的規則與索引。目前狀態與待辦見 [next-actions](docs/next-actions.md)，除錯線索見 [debugging-notes](docs/debugging-notes.md)；
 實際程式、資料產物與驗證證據優先於任何文件或舊對話摘要。
 
 ## 工作邊界
@@ -70,7 +70,7 @@
 | UI／權限／完整 URL | [架構與 UI 流程](docs/architecture.md)、[feedback URLs](feedback/urls.py)、[accounts URLs](accounts/urls.py) |
 | 部署／依賴 | [README](README.md)、[render.yaml](render.yaml)、[build.sh](build.sh)、[設定](config/settings.py)、[依賴](requirements.txt) |
 | Schema／migration | [feedback models](feedback/models.py)、[accounts models](accounts/models.py)、[feedback migrations](feedback/migrations/)、[accounts migrations](accounts/migrations/) |
-| 歷史 UI／遷移事件 | [CHANGELOG](docs/CHANGELOG.md)，只查相關日期或事件。 |
+| 除錯／migration 異常 | [除錯筆記](docs/debugging-notes.md)；變更歷史看 Git log。 |
 
 ## 工作習慣
 
