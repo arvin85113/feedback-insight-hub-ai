@@ -1,5 +1,6 @@
 import logging
 import re
+from urllib.parse import urlsplit
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -34,6 +35,17 @@ class SafePasswordResetForm(PasswordResetForm):
             logger.error("SafePasswordResetForm: missing context for %s", to_email)
 
 
+def _entry_role(next_url):
+    """Which workspace a login link points at: "manager", "customer" or None."""
+
+    path = urlsplit(next_url or "").path
+    if path.startswith(str(reverse_lazy("feedback:dashboard"))):
+        return "manager"
+    if path.startswith(str(reverse_lazy("feedback:customer-home"))):
+        return "customer"
+    return None
+
+
 class PlatformLoginView(LoginView):
     authentication_form = LoginForm
     template_name = "accounts/login.html"
@@ -48,6 +60,7 @@ class PlatformLoginView(LoginView):
         next_url = self.request.GET.get("next", "") or self.request.POST.get("next", "")
         m = re.match(r"^/survey/([^/]+)/", next_url)
         ctx["survey_context"] = Survey.objects.filter(slug=m.group(1)).only("title").first() if m else None
+        ctx["entry_role"] = _entry_role(next_url)
         return ctx
 
     def get_success_url(self):
@@ -58,7 +71,12 @@ class PlatformLoginView(LoginView):
             allowed_hosts={self.request.get_host()},
             require_https=False,
         ):
-            return next_url
+            # Shared entry: a manager/customer workspace link lands on the signed-in
+            # user's own workspace instead of a page their role cannot open.
+            intended = _entry_role(next_url)
+            actual = "manager" if self.request.user.is_manager else "customer"
+            if intended is None or intended == actual:
+                return next_url
         if self.request.user.is_manager:
             return str(reverse_lazy("feedback:dashboard"))
         return str(reverse_lazy("feedback:customer-home"))
