@@ -26,7 +26,6 @@
 
 **桌面工作台／EXE**
 - `dist/FeedbackInsightHub/` 為單一 windowed 版；錯誤寫入 `%LOCALAPPDATA%\FeedbackInsightHub\logs\desktop.log`。
-- `dist/FeedbackInsightHub.bak-20260908/` 是舊版備份，確認新版正常後可刪除。
 - `.venv` 建立在 Codex 內建的 Python 3.12 runtime 上；Render 使用 Python 3.13。
 
 ## 待辦（依優先順序）
