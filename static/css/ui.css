@@ -546,3 +546,73 @@ body.dashboard-body {
     border: 0;
     box-shadow: none;
 }
+
+/* ── Customer navigation: plain links; only unread notifications stand out ── */
+.customer-workspace-body :is(.nav-notif-link, .nav-notif-link.nav-notif-clear, .nav-notif-link.nav-notif-unread, .nav-profile-link) {
+    padding: 7px 12px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--c-ink-700);
+    font-weight: 500;
+    opacity: 1;
+}
+
+.customer-workspace-body :is(.nav-notif-link, .nav-profile-link):hover {
+    color: var(--c-ink-900);
+    background: var(--c-surface-muted);
+    opacity: 1;
+}
+
+.customer-workspace-body .nav-notif-link.nav-notif-unread .nav-badge {
+    background: var(--c-danger-500);
+    color: #fff;
+}
+
+.customer-workspace-body .site-nav a[aria-current="page"] {
+    color: var(--c-brand-700);
+    font-weight: 600;
+}
+
+.customer-workspace-body .site-nav > a {
+    padding: 7px 12px;
+    border-radius: var(--radius-sm);
+}
+
+/* Native checkboxes, radios and ranges follow the brand colour. */
+:root {
+    accent-color: var(--c-brand-700);
+}
+
+/* Survey questions outrank their answer options. */
+.customer-workspace-body .field-block > label {
+    display: block;
+    margin-bottom: 10px;
+    font-size: 1.05rem;
+    font-weight: 600;
+    line-height: 1.5;
+    color: var(--c-ink-900);
+}
+
+@media (max-width: 860px) {
+    .manager-shell .manager-topbar {
+        flex-direction: row;
+        flex-wrap: nowrap;
+        align-items: center;
+    }
+
+    .manager-shell .manager-topbar-actions {
+        flex-direction: row;
+        flex-shrink: 0;
+        width: auto;
+    }
+
+    .manager-shell .manager-topbar-actions .button,
+    .manager-shell .manager-topbar-actions form {
+        width: auto;
+    }
+
+    .manager-topbar-title p {
+        display: none;
+    }
+}

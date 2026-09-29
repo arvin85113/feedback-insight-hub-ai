@@ -2576,7 +2576,7 @@ ul.errorlist {
     width: 56px;
     height: 56px;
     border-radius: 50%;
-    background: var(--c-ink-900);
+    background: var(--c-brand-700);
     color: var(--c-on-brand);
     font-size: 24px;
     display: flex;
@@ -5092,7 +5092,7 @@ input[type="checkbox"] {
     place-items: center;
     border-radius: 5px;
     color: var(--c-on-brand);
-    background: var(--c-ink-900);
+    background: var(--c-brand-700);
     font-family: "Consolas", "IBM Plex Mono", monospace;
     font-size: 11px;
     font-weight: 700;
@@ -5140,7 +5140,7 @@ input[type="checkbox"] {
     border: 1px solid var(--c-ink-900);
     border-radius: 6px;
     color: var(--c-on-brand);
-    background: var(--c-ink-900);
+    background: var(--c-brand-700);
     font: inherit;
     font-size: 13.5px;
     font-weight: 700;
@@ -5150,7 +5150,7 @@ input[type="checkbox"] {
 }
 
 .public-btn:hover {
-    background: var(--c-ink-900);
+    background: var(--c-brand-600);
 }
 
 .public-btn-link {
@@ -5518,7 +5518,7 @@ input[type="checkbox"] {
 }
 
 .public-mock-chart .public-peak {
-    background: var(--c-ink-900);
+    background: var(--c-brand-700);
 }
 
 .public-mock-survey-head {
@@ -5575,8 +5575,8 @@ input[type="checkbox"] {
 
 .public-mock-scale .public-selected {
     color: var(--c-on-brand);
-    border-color: var(--c-ink-900);
-    background: var(--c-ink-900);
+    border-color: var(--c-brand-700);
+    background: var(--c-brand-700);
 }
 
 .public-mock-option {
@@ -5724,8 +5724,8 @@ input[type="checkbox"] {
 
 .public-role-primary {
     color: var(--c-on-brand);
-    border-color: var(--c-ink-900);
-    background: var(--c-ink-900);
+    border-color: var(--c-brand-700);
+    background: var(--c-brand-700);
 }
 
 .public-role-label {
@@ -5920,7 +5920,7 @@ input[type="checkbox"] {
     display: grid;
     place-items: center;
     color: var(--c-on-brand);
-    background: var(--c-ink-900);
+    background: var(--c-brand-700);
     font-size: 12px;
     font-weight: 800;
     letter-spacing: 0.02em;
@@ -5969,7 +5969,7 @@ input[type="checkbox"] {
     border: 1px solid var(--c-ink-900);
     border-radius: 7px;
     color: var(--c-on-brand);
-    background: var(--c-ink-900);
+    background: var(--c-brand-700);
     box-shadow: none;
     font-size: 14px;
     font-weight: 720;
@@ -5988,8 +5988,8 @@ input[type="checkbox"] {
 .public-btn:hover {
     transform: none;
     color: var(--c-on-brand);
-    background: var(--c-ink-900);
-    border-color: var(--c-ink-900);
+    background: var(--c-brand-600);
+    border-color: var(--c-brand-700);
 }
 
 .public-btn-link {
@@ -6354,8 +6354,8 @@ input[type="checkbox"] {
 
 .public-role-primary {
     color: var(--c-on-brand);
-    border-color: var(--c-ink-900);
-    background: var(--c-ink-900);
+    border-color: var(--c-brand-700);
+    background: var(--c-brand-700);
 }
 
 .public-role-label {
@@ -6633,8 +6633,8 @@ input[type="checkbox"] {
 
 .auth-page-public .button.button-primary {
     min-height: 48px;
-    background: var(--c-ink-900);
-    border-color: var(--c-ink-900);
+    background: var(--c-brand-700);
+    border-color: var(--c-brand-700);
     border-radius: 7px;
     color: var(--c-on-brand);
     box-shadow: none;
@@ -6771,7 +6771,7 @@ input[type="checkbox"] {
 
 .survey-progress-fill {
     height: 100%;
-    background: var(--c-ink-900);
+    background: var(--c-brand-700);
     border-radius: 99px;
     transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     width: 0%;
@@ -6851,7 +6851,7 @@ input[type="checkbox"] {
 .consent-label input[type="checkbox"] {
     width: 17px;
     height: 17px;
-    accent-color: #1d1a17;
+    accent-color: var(--c-brand-700);
     cursor: pointer;
     flex-shrink: 0;
     margin: 0;
@@ -6912,7 +6912,7 @@ input[type="checkbox"] {
 .customer-workspace-body .survey-card input[type="checkbox"] {
     width: 17px;
     height: 17px;
-    accent-color: #1d1a17;
+    accent-color: var(--c-brand-700);
     cursor: pointer;
     flex-shrink: 0;
     margin: 0;
@@ -6959,9 +6959,9 @@ input[type="checkbox"] {
 
 /* Selected: fill black */
 .customer-workspace-body .survey-card .field-block > div[id] > div > label:has(input:checked) {
-    background: var(--c-ink-900);
+    background: var(--c-brand-700);
     color: var(--c-on-brand);
-    border-color: var(--c-ink-900);
+    border-color: var(--c-brand-700);
     font-weight: 500;
 }
 
@@ -6977,7 +6977,7 @@ input[type="checkbox"] {
 }
 
 .customer-workspace-body .brand-mark-icon {
-    background: var(--c-ink-900);
+    background: var(--c-brand-700);
     border-radius: 6px;
     box-shadow: none;
 }
@@ -7050,8 +7050,8 @@ input[type="checkbox"] {
 }
 
 .customer-workspace-body .button-primary {
-    background: var(--c-ink-900);
-    border-color: var(--c-ink-900);
+    background: var(--c-brand-700);
+    border-color: var(--c-brand-700);
     border-radius: 7px;
     color: var(--c-on-brand);
 }
@@ -7372,8 +7372,8 @@ input[type="checkbox"] {
 }
 
 .customer-workspace-body .filter-pill-active {
-    background: var(--c-ink-900);
-    border-color: var(--c-ink-900);
+    background: var(--c-brand-700);
+    border-color: var(--c-brand-700);
     color: var(--c-on-brand);
 }
 
@@ -7424,7 +7424,7 @@ input[type="checkbox"] {
 
 .customer-workspace-body .toggle-wrapper input[type="checkbox"]:checked ~ .toggle-track,
 .customer-workspace-body .google-toggle input:checked + .slider {
-    background: var(--c-ink-900);
+    background: var(--c-brand-700);
 }
 
 .customer-workspace-body .field-block label {
