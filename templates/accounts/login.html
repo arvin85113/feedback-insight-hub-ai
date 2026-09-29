@@ -20,29 +20,33 @@
                 <li><span class="auth-value-check">✓</span> 可隨時查看填答紀錄與追蹤狀態</li>
             </ul>
         {% else %}
-            <p class="section-kicker">Secure Access</p>
-            <h1>回到你的回饋分析工作區。</h1>
+            <p class="section-kicker">Sign In</p>
+            <h1>一個入口，<br>兩個工作區。</h1>
             <p>
-                登入後依照你的角色進入管理端或顧客端，繼續查看問卷、統計分析、文字洞察與改善通知。
-                FeedBack IQ 會把回饋收集到後續追蹤維持在同一條工作流裡。
+                管理者與顧客使用同一個登入入口。登入後，系統會依帳號角色帶你到對應的工作區。
             </p>
-            <div class="summary-grid auth-quiet-grid">
-                <div class="summary-card">
-                    <span class="info-label">Manager</span>
-                    <strong>管理問卷、檢視統計、追蹤改善任務。</strong>
+            <div class="summary-grid auth-quiet-grid auth-role-grid">
+                <div class="summary-card auth-role-card{% if entry_role == 'manager' %} is-intended{% endif %}">
+                    <span class="info-label">Manager · 管理者</span>
+                    <strong>進入管理端</strong>
+                    <p>問卷管理、統計與文字分析、改善追蹤與顧客通知。</p>
+                    {% if entry_role == "manager" %}<span class="auth-role-flag">你正要前往</span>{% endif %}
                 </div>
-                <div class="summary-card">
-                    <span class="info-label">Customer</span>
-                    <strong>查看填答紀錄、通知與回饋後續狀態。</strong>
+                <div class="summary-card auth-role-card{% if entry_role == 'customer' %} is-intended{% endif %}">
+                    <span class="info-label">Customer · 顧客</span>
+                    <strong>進入顧客端</strong>
+                    <p>填寫問卷、查看自己的回饋紀錄與改善通知。</p>
+                    {% if entry_role == "customer" %}<span class="auth-role-flag">你正要前往</span>{% endif %}
                 </div>
             </div>
+            <p class="auth-role-note">不需要選擇角色；若帳號角色與入口不同，登入後會自動帶你到自己的工作區。</p>
         {% endif %}
     </article>
 
     <article class="auth-card">
         <div class="panel-head">
             <h2>登入帳號</h2>
-            <span class="pill">Workspace</span>
+            <span class="pill">管理者／顧客共用</span>
         </div>
         <form method="post" class="form-stack">
             {% csrf_token %}
@@ -75,6 +79,7 @@
             還沒有帳號？
             <a href="{% url 'accounts:signup' %}{% if next %}?next={{ next }}{% endif %}">建立顧客帳號</a>
         </p>
+        <p class="auth-link-row auth-link-note">管理者帳號由系統管理員建立。</p>
     </article>
 </main>
 {% endblock %}
