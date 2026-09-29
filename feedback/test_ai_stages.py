@@ -15,11 +15,13 @@ from .ai_snapshot_service import calculate_data_fingerprint
 from .ai_stage_service import (
     StageError,
     build_stage_input,
+    STAGE_MODULES,
     generate_stage,
     get_pipeline_status,
     is_stage_current,
     prepare_stage,
     stage_input_hash,
+    stage_prompt_version,
 )
 from .models import (
     FeedbackSubmission,
@@ -265,12 +267,8 @@ class AIStageServiceTests(AIReportTestCase):
     def create_success_stage(self, stage_type, output_json, *, snapshot=None):
         snapshot = snapshot or self.snapshot
         input_hash = stage_input_hash(snapshot, stage_type)
-        module_versions = {
-            "statistics": ("2", "5"),
-            "text": ("2", "5"),
-            "synthesis": ("3", "3"),
-        }
-        schema_version, prompt_version = module_versions[stage_type]
+        module = STAGE_MODULES[stage_type]
+        schema_version, prompt_version = module.SCHEMA_VERSION, stage_prompt_version(module)
         revision = snapshot.analysis_stages.filter(stage_type=stage_type).count() + 1
         return SurveyAIAnalysisStage.objects.create(
             snapshot=snapshot,
@@ -319,19 +317,19 @@ class AIStageServiceTests(AIReportTestCase):
         self.assertNotIn("statistics", text_input)
 
     @patch("feedback.ai_stage_service.create_gemini_client")
-    def test_statistics_and_text_generate_independently(self, client_factory):
+    def test_statistics_generates_and_text_without_evidence_skips_provider(self, client_factory):
         client = client_factory.return_value
         aliased_statistics = statistics_payload()
         aliased_statistics["descriptive_statistics"][0]["evidence_refs"] = ["E001"]
-        client.models.generate_content.side_effect = [
-            provider_response(aliased_statistics),
-            provider_response(text_payload()),
-        ]
+        client.models.generate_content.side_effect = [provider_response(aliased_statistics)]
         statistics = generate_stage(self.snapshot, SurveyAIAnalysisStage.StageType.STATISTICS)
         text = generate_stage(self.snapshot, SurveyAIAnalysisStage.StageType.TEXT)
         self.assertEqual(statistics.status, SurveyAIAnalysisStage.Status.SUCCEEDED)
         self.assertEqual(text.status, SurveyAIAnalysisStage.Status.SUCCEEDED)
-        self.assertEqual(client.models.generate_content.call_count, 2)
+        # The fixture has no text evidence, so the text stage must not call Gemini.
+        self.assertEqual(client.models.generate_content.call_count, 1)
+        self.assertEqual(text.token_metrics["skipped_reason"], "no_text_evidence")
+        self.assertTrue(all(rows == [] for rows in text.output_json.values()))
         self.assertIn("stats.wait.mean", statistics.output_json["_evidence_registry"])
         self.assertEqual(
             statistics.output_json["descriptive_statistics"][0]["evidence_refs"],

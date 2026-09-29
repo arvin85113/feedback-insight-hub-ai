@@ -442,13 +442,24 @@ class DesktopService:
         return current
 
     @staticmethod
-    def _manifest_ai_model_current(state):
-        """AI output from a previously configured Gemini model needs a rerun."""
+    def _published_ai_config_current(state):
+        """AI output from another Gemini model, prompt or schema needs a rerun."""
 
         from django.conf import settings
 
+        from feedback.ai_stage_service import STAGE_MODULES, stage_prompt_version
+        from feedback.models import SurveyAIAnalysisStage
+
         item = (state.publication_manifest or {}).get("ai") or {}
-        return item.get("model_name") == settings.GEMINI_MODEL
+        if item.get("model_name") != settings.GEMINI_MODEL or not state.published_ai_stage_id:
+            return False
+        module = STAGE_MODULES[SurveyAIAnalysisStage.StageType.SYNTHESIS]
+        published = (
+            SurveyAIAnalysisStage.objects.filter(pk=state.published_ai_stage_id)
+            .values_list("schema_version", "prompt_version")
+            .first()
+        )
+        return published == (module.SCHEMA_VERSION, stage_prompt_version(module))
 
     @staticmethod
     def _manifest_datetime(state, stage):
@@ -570,7 +581,7 @@ class DesktopService:
             ai_current = bool(
                 state
                 and self._manifest_stage_current(state, "ai", **current_kwargs)
-                and self._manifest_ai_model_current(state)
+                and self._published_ai_config_current(state)
             )
             generated_values = [
                 self._manifest_datetime(state, stage)

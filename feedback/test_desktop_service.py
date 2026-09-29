@@ -378,12 +378,15 @@ class DesktopDatabaseServiceTests(TestCase):
     def test_two_stage_update_publishes_new_ai_stage_without_replacing_snapshot(
         self, execute_ai_job
     ):
+        from feedback.ai_stage_service import STAGE_MODULES, stage_prompt_version
         from feedback.analysis_jobs import publish_analysis_stages
         from feedback.models import (
             SurveyAIAnalysisStage,
             SurveyAIReportSnapshot,
             SurveyAnalysisState,
         )
+
+        synthesis_module = STAGE_MODULES[SurveyAIAnalysisStage.StageType.SYNTHESIS]
 
         def publish_fixture(job, *, allow_paid_ai, lease_seconds, progress=None):
             self.assertTrue(allow_paid_ai)
@@ -395,8 +398,8 @@ class DesktopDatabaseServiceTests(TestCase):
                 stage_type=SurveyAIAnalysisStage.StageType.SYNTHESIS,
                 status=SurveyAIAnalysisStage.Status.SUCCEEDED,
                 input_hash="a" * 64,
-                schema_version="desktop-test-v1",
-                prompt_version="desktop-test-v1",
+                schema_version=synthesis_module.SCHEMA_VERSION,
+                prompt_version=stage_prompt_version(synthesis_module),
                 model_name="gemini-test",
                 output_json={
                     "executive_summary": "測試分析",

@@ -1,21 +1,21 @@
 import copy
 import hashlib
 import json
-import re
 import uuid
 from collections.abc import Mapping
 
+from .ai_grounding import ungrounded_numbers
+
 
 SCHEMA_VERSION = "3"
-PROMPT_VERSION = "3"
+PROMPT_VERSION = "4"
 STAGE_TYPE = "synthesis"
 PRIORITIES = {"high", "medium", "low"}
-_UNTRUSTED_NUMBER_RE = re.compile(r"\d|百分之[零〇一二兩三四五六七八九十百千萬億]+")
 
 COMBINED_FINDING_SCHEMA = {
     "type": "object",
     "properties": {
-        "title": {"type": "string", "description": "繁體中文綜合發現，不自行撰寫數字。"},
+        "title": {"type": "string", "description": "繁體中文綜合發現；數字只能照抄引用 evidence。"},
         "source_stages": {
             "type": "array",
             "items": {"type": "string", "enum": ["statistics", "text"]},
@@ -80,7 +80,7 @@ IMPROVEMENT_DRAFT_SCHEMA = {
 BASE_RESPONSE_SCHEMA = {
     "type": "object",
     "properties": {
-        "executive_summary": {"type": "string", "description": "繁體中文營運摘要，不自行撰寫數字。"},
+        "executive_summary": {"type": "string", "description": "繁體中文營運摘要；數字只能照抄 evidence。"},
         "combined_findings": {"type": "array", "items": COMBINED_FINDING_SCHEMA, "maxItems": 5},
         "improvement_drafts": {"type": "array", "items": IMPROVEMENT_DRAFT_SCHEMA, "maxItems": 3},
         "data_caveats": {"type": "array", "items": {"type": "string"}, "maxItems": 5},
@@ -91,9 +91,9 @@ BASE_RESPONSE_SCHEMA = {
 
 PROFILE_LIMITS = {
     "standard": {
-        "findings": 3,
-        "drafts": 3,
-        "evidence_refs": 3,
+        "findings": 5,
+        "drafts": 4,
+        "evidence_refs": 4,
         "limitations": 3,
         "caveats": 3,
         "acceptance_criteria": 4,
@@ -130,10 +130,11 @@ def response_schema_for_profile(profile):
 
 RESPONSE_SCHEMA = response_schema_for_profile("standard")
 
-SYSTEM_INSTRUCTION = """你是企業營運決策分析師。只能讀取已驗證的統計 stage、文字 stage、匿名改善摘要與資料限制。
-不得要求或推測原始 snapshot、Answer.value 或個人資料。不得捏造數字，所有 evidence_refs 必須存在於上游 stage。
-survey_slug 與 draft_id 由後端處理，不得輸出。改善草稿只是管理者可編輯的建議，不得聲稱已執行或已通知。
-所有自然語言欄位禁止出現 0 到 9；精確數值只由後端依 evidence_refs 顯示。"""
+SYSTEM_INSTRUCTION = """你是企業營運決策分析師，整合已驗證的統計 stage、文字 stage、匿名改善摘要與資料限制，撰寫繁體中文營運摘要與改善草稿。
+所有 evidence_refs 必須存在於上游 stage；不得推測原始回答或個人資料。survey_slug 與 draft_id 由後端處理，不得輸出。
+摘要先講最重要的結論與其影響；改善草稿要具體、可由管理者執行並有可觀察的驗收方式，它只是可編輯的建議，不得聲稱已執行或已通知。
+依對營運決策的重要性排序，優先指出差異、異常、極端值與可行動的訊號；不要重述顯而易見的填答分布。rationale 說明這代表什麼、為何重要。data_limitations 只寫與該項發現直接相關的具體限制，沒有就留空陣列。
+可以引用數字，但只能照抄所引用 evidence 的數值、樣本數或標籤中的數字，並依 evidence 精度四捨五入；不要自行計算差距、比例或目標值。"""
 
 
 def build_input(statistics_stage, text_stage, improvements, data_scope):
@@ -149,21 +150,21 @@ def build_input(statistics_stage, text_stage, improvements, data_scope):
     }
 
 
-def _text(value, max_length, reason):
+def _text(value, max_length, reason, evidence=()):
     if (
         not isinstance(value, str)
         or not value.strip()
         or len(value) > max_length
-        or _UNTRUSTED_NUMBER_RE.search(value)
+        or ungrounded_numbers(value, evidence)
     ):
         raise ValueError(reason)
     return value.strip()
 
 
-def _text_list(value, max_items, max_length, reason):
+def _text_list(value, max_items, max_length, reason, evidence=()):
     if not isinstance(value, list) or len(value) > max_items:
         raise ValueError(reason)
-    return [_text(item, max_length, reason) for item in value]
+    return [_text(item, max_length, reason, evidence) for item in value]
 
 
 def _refs(value, evidence_by_id, max_items=4):
@@ -188,6 +189,7 @@ def _stable_draft_id(input_hash, index, draft):
 
 def validate_output(payload, evidence_by_id, input_hash, *, profile="standard"):
     limits = PROFILE_LIMITS[profile]
+    all_evidence = list(evidence_by_id.values())
     expected = {"executive_summary", "combined_findings", "improvement_drafts", "data_caveats"}
     if not isinstance(payload, Mapping) or set(payload) != expected:
         raise ValueError("invalid_synthesis_root")
@@ -196,6 +198,7 @@ def validate_output(payload, evidence_by_id, input_hash, *, profile="standard"):
             payload.get("executive_summary"),
             limits["summary_length"],
             "invalid_summary",
+            all_evidence,
         ),
         "combined_findings": [],
         "improvement_drafts": [],
@@ -204,6 +207,7 @@ def validate_output(payload, evidence_by_id, input_hash, *, profile="standard"):
             limits["caveats"],
             400,
             "invalid_caveats",
+            all_evidence,
         ),
     }
     findings = payload.get("combined_findings")
@@ -217,23 +221,26 @@ def validate_output(payload, evidence_by_id, input_hash, *, profile="standard"):
         if not isinstance(source_stages, list) or not source_stages or not set(source_stages) <= {"statistics", "text"}:
             raise ValueError("invalid_source_stages")
         refs = _refs(row.get("evidence_refs"), evidence_by_id, limits["evidence_refs"])
+        cited = [evidence_by_id[ref] for ref in refs]
         result["combined_findings"].append(
             {
-                "title": _text(row.get("title"), 180, "invalid_finding_title"),
+                "title": _text(row.get("title"), 180, "invalid_finding_title", cited),
                 "source_stages": list(dict.fromkeys(source_stages)),
                 "priority": row["priority"],
                 "rationale": _text(
                     row.get("rationale"),
                     limits["rationale_length"],
                     "invalid_rationale",
+                    cited,
                 ),
                 "evidence_refs": refs,
-                "evidence": [evidence_by_id[ref] for ref in refs],
+                "evidence": cited,
                 "data_limitations": _text_list(
                     row.get("data_limitations"),
                     limits["limitations"],
                     400,
                     "invalid_limitations",
+                    cited,
                 ),
             }
         )
@@ -254,33 +261,38 @@ def validate_output(payload, evidence_by_id, input_hash, *, profile="standard"):
         if not isinstance(row, Mapping) or set(row) != draft_keys or row.get("priority") not in PRIORITIES:
             raise ValueError("invalid_draft")
         refs = _refs(row.get("evidence_refs"), evidence_by_id, limits["evidence_refs"])
+        cited = [evidence_by_id[ref] for ref in refs]
         validated = {
-            "title": _text(row.get("title"), 255, "invalid_draft_title"),
+            "title": _text(row.get("title"), 255, "invalid_draft_title", cited),
             "summary": _text(
                 row.get("summary"),
                 limits["summary_length"],
                 "invalid_draft_summary",
+                cited,
             ),
-            "related_category": _text(row.get("related_category"), 100, "invalid_category"),
+            "related_category": _text(row.get("related_category"), 100, "invalid_category", cited),
             "priority": row["priority"],
             "rationale": _text(
                 row.get("rationale"),
                 limits["rationale_length"],
                 "invalid_rationale",
+                cited,
             ),
             "acceptance_criteria": _text_list(
                 row.get("acceptance_criteria"),
                 limits["acceptance_criteria"],
                 300,
                 "invalid_acceptance",
+                cited,
             ),
             "evidence_refs": refs,
-            "evidence": [evidence_by_id[ref] for ref in refs],
+            "evidence": cited,
             "data_limitations": _text_list(
                 row.get("data_limitations"),
                 limits["limitations"],
                 400,
                 "invalid_limitations",
+                cited,
             ),
         }
         validated["draft_id"] = _stable_draft_id(input_hash, index, validated)

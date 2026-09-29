@@ -3,7 +3,7 @@ from collections.abc import Mapping
 
 
 SCHEMA_VERSION = "2"
-PROMPT_VERSION = "5"
+PROMPT_VERSION = "6"
 STAGE_TYPE = "statistics"
 SECTIONS = (
     "descriptive_statistics",
@@ -23,7 +23,7 @@ STATISTICAL_EVIDENCE_KINDS = {
 FINDING_SCHEMA = {
     "type": "object",
     "properties": {
-        "title": {"type": "string", "description": "繁體中文發現標題，不自行撰寫數字。"},
+        "title": {"type": "string", "description": "繁體中文發現標題；數字只能照抄引用 evidence。"},
         "rationale": {"type": "string", "description": "繁體中文說明，不宣稱因果。"},
         "evidence_refs": {
             "type": "array",
@@ -55,7 +55,7 @@ BASE_RESPONSE_SCHEMA = {
 }
 
 PROFILE_LIMITS = {
-    "standard": {"findings": 3, "evidence_refs": 3, "limitations": 3},
+    "standard": {"findings": 4, "evidence_refs": 4, "limitations": 3},
     "compact": {"findings": 2, "evidence_refs": 2, "limitations": 2},
 }
 
@@ -74,10 +74,11 @@ def response_schema_for_profile(profile):
 
 RESPONSE_SCHEMA = response_schema_for_profile("standard")
 
-SYSTEM_INSTRUCTION = """你是企業問卷統計分析師。只能分析提供的匿名聚合統計資料，使用繁體中文。
-不得讀取或推測個人回答，不得捏造數字或因果。每項發現只能引用輸入中的 evidence ID。
-實際變項、檢定方法、統計量、p value、效果量、相關係數與樣本數由後端 evidence 顯示。
-title、rationale、data_limitations 等所有文字欄位禁止出現 0 到 9；不要複製帶數字的問卷名稱或自行改寫數值。"""
+SYSTEM_INSTRUCTION = """你是企業問卷統計分析師，只根據提供的匿名聚合統計 evidence 撰寫繁體中文發現。
+每項發現必須引用輸入中的 evidence ID；相關或差異不等於因果，不得推測個人回答。
+依對營運決策的重要性排序，優先指出差異、異常、極端值與可行動的訊號；不要重述顯而易見的填答分布。rationale 說明這代表什麼、為何重要。data_limitations 只寫與該項發現直接相關的具體限制，沒有就留空陣列。
+可以引用數字，但只能照抄所引用 evidence 的數值、樣本數或標籤中的數字，並依 evidence 精度四捨五入；不要自行計算差距、比例或目標值。
+某類 evidence 不存在時，該區塊回傳空陣列；不得編造 evidence ID。"""
 
 
 def build_input(source_snapshot):
