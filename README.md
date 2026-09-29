@@ -120,13 +120,11 @@ python manage.py runserver
 
 ```powershell
 .\scripts\build_desktop.ps1
-# 需要保留主控台診斷資訊時
-.\scripts\build_desktop.ps1 -Diagnostic
 ```
 
 封裝不包含 `.env`、憑證、完整 Parquet 或其他大型資料產物。正式安裝包、簽章與長駐 Worker 服務仍待完成。
 
-一般封裝輸出為 `dist/FeedbackInsightHub/FeedbackInsightHub.exe`，診斷版為 `dist/FeedbackInsightHubDiagnostic/FeedbackInsightHubDiagnostic.exe`；啟動時須保留各自完整資料夾。
+封裝輸出為 `dist/FeedbackInsightHub/FeedbackInsightHub.exe`，啟動時須保留完整資料夾。警告與未預期錯誤會寫入 `%LOCALAPPDATA%\FeedbackInsightHub\logs\desktop.log`（輪替保留 3 份），不含憑證；一般不需要另外建置主控台診斷版（`-Diagnostic` 仍保留作為最後手段）。
 
 EXE 使用外部設定連接與網站相同的 Supabase。既有程序環境變數優先，其次讀取第一個存在的設定檔：`FEEDBACK_HUB_ENV_FILE` 指定路徑、EXE 同層 `.env`、`%LOCALAPPDATA%\FeedbackInsightHub\.env`。專案目錄內的開發封裝也可沿用專案根目錄 `.env`。設定 `DATABASE_URL`（或 `FEEDBACK_HUB_DATABASE_URL`）及選用的 `GOOGLE_API_KEY`；封裝版問卷工作流程要求 PostgreSQL。
 

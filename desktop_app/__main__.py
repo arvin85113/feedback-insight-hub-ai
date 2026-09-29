@@ -50,6 +50,31 @@ def _load_external_environment():
     return None
 
 
+def _configure_file_logging(*, local_app_data=None):
+    """Write warnings and crashes to a rotating log, replacing the console build.
+
+    The windowed EXE has no console, so this file is the diagnostic channel.
+    Log records never include credentials (see ``main``).
+    """
+
+    import logging
+    from logging.handlers import RotatingFileHandler
+
+    root = Path(local_app_data or os.getenv("LOCALAPPDATA", "").strip() or Path.cwd())
+    log_dir = root / "FeedbackInsightHub" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    handler = RotatingFileHandler(log_dir / "desktop.log", maxBytes=1_000_000, backupCount=3, encoding="utf-8")
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+    logging.getLogger().addHandler(handler)
+
+    def log_uncaught(exc_type, exc, traceback):
+        logging.getLogger("desktop_app").critical("uncaught exception", exc_info=(exc_type, exc, traceback))
+        sys.__excepthook__(exc_type, exc, traceback)
+
+    sys.excepthook = log_uncaught
+    return log_dir / "desktop.log"
+
+
 def main():
     # Deployment credentials remain external to the bundle and are never logged.
     _load_external_environment()
@@ -60,6 +85,8 @@ def main():
     import django
 
     django.setup()
+    # After Django's LOGGING so the file handler is not reset by dictConfig.
+    _configure_file_logging()
     if "--smoke-test" in sys.argv:
         import dearpygui.dearpygui as dpg
         from desktop_app.app import FeedbackInsightDesktop
