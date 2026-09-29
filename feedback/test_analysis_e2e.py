@@ -10,7 +10,7 @@ from .models import AnalysisJob, Answer, Question, Survey, SurveyAnalysisState
 from .published_analysis import get_published_analysis_payload
 
 
-@override_settings(ANALYSIS_AUTO_AI_ENABLED=True, ANALYSIS_READ_PUBLISHED_ONLY=True)
+@override_settings(ANALYSIS_AUTO_AI_ENABLED=True)
 class ScheduledAnalysisEndToEndTests(TestCase):
     def test_new_responses_coalesce_run_and_publish_without_sync_ai(self):
         survey = Survey.objects.create(title="端到端測試", slug="scheduled-e2e")

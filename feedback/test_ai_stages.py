@@ -1,9 +1,10 @@
 import json
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from django.db import IntegrityError, transaction
+from django.db.models import F
 from django.core.exceptions import ValidationError
 from django.test import Client, override_settings
 from django.urls import reverse
@@ -14,10 +15,13 @@ from .ai_snapshot_service import calculate_data_fingerprint
 from .ai_stage_service import (
     StageError,
     build_stage_input,
+    STAGE_MODULES,
     generate_stage,
+    get_pipeline_status,
     is_stage_current,
     prepare_stage,
     stage_input_hash,
+    stage_prompt_version,
 )
 from .models import (
     FeedbackSubmission,
@@ -25,6 +29,7 @@ from .models import (
     ImprovementUpdate,
     SurveyAIAnalysisStage,
     SurveyAIReportSnapshot,
+    SurveyAnalysisState,
 )
 from .tests import AIReportTestCase, provider_report, source_snapshot
 
@@ -262,12 +267,8 @@ class AIStageServiceTests(AIReportTestCase):
     def create_success_stage(self, stage_type, output_json, *, snapshot=None):
         snapshot = snapshot or self.snapshot
         input_hash = stage_input_hash(snapshot, stage_type)
-        module_versions = {
-            "statistics": ("2", "5"),
-            "text": ("2", "5"),
-            "synthesis": ("3", "3"),
-        }
-        schema_version, prompt_version = module_versions[stage_type]
+        module = STAGE_MODULES[stage_type]
+        schema_version, prompt_version = module.SCHEMA_VERSION, stage_prompt_version(module)
         revision = snapshot.analysis_stages.filter(stage_type=stage_type).count() + 1
         return SurveyAIAnalysisStage.objects.create(
             snapshot=snapshot,
@@ -316,19 +317,19 @@ class AIStageServiceTests(AIReportTestCase):
         self.assertNotIn("statistics", text_input)
 
     @patch("feedback.ai_stage_service.create_gemini_client")
-    def test_statistics_and_text_generate_independently(self, client_factory):
+    def test_statistics_generates_and_text_without_evidence_skips_provider(self, client_factory):
         client = client_factory.return_value
         aliased_statistics = statistics_payload()
         aliased_statistics["descriptive_statistics"][0]["evidence_refs"] = ["E001"]
-        client.models.generate_content.side_effect = [
-            provider_response(aliased_statistics),
-            provider_response(text_payload()),
-        ]
+        client.models.generate_content.side_effect = [provider_response(aliased_statistics)]
         statistics = generate_stage(self.snapshot, SurveyAIAnalysisStage.StageType.STATISTICS)
         text = generate_stage(self.snapshot, SurveyAIAnalysisStage.StageType.TEXT)
         self.assertEqual(statistics.status, SurveyAIAnalysisStage.Status.SUCCEEDED)
         self.assertEqual(text.status, SurveyAIAnalysisStage.Status.SUCCEEDED)
-        self.assertEqual(client.models.generate_content.call_count, 2)
+        # The fixture has no text evidence, so the text stage must not call Gemini.
+        self.assertEqual(client.models.generate_content.call_count, 1)
+        self.assertEqual(text.token_metrics["skipped_reason"], "no_text_evidence")
+        self.assertTrue(all(rows == [] for rows in text.output_json.values()))
         self.assertIn("stats.wait.mean", statistics.output_json["_evidence_registry"])
         self.assertEqual(
             statistics.output_json["descriptive_statistics"][0]["evidence_refs"],
@@ -570,6 +571,25 @@ class AIStageDraftImportTests(AIReportTestCase):
             generate_stage(self.snapshot, SurveyAIAnalysisStage.StageType.TEXT)
             self.stage = generate_stage(self.snapshot, SurveyAIAnalysisStage.StageType.SYNTHESIS)
         self.drafts = self.stage.output_json["improvement_drafts"]
+        self.publish_stage(self.stage)
+
+    def publish_stage(self, stage):
+        """Drafts are importable only from the published, version-current AI stage."""
+
+        state, _ = SurveyAnalysisState.objects.get_or_create(survey=self.survey)
+        manifest = dict(state.publication_manifest or {})
+        manifest["ai"] = {
+            "snapshot_id": stage.snapshot_id,
+            "stage_id": stage.pk,
+            "input_version": state.input_version,
+            "config_version": state.config_version,
+            "pipeline_version": state.pipeline_version,
+            "model_name": stage.model_name,
+        }
+        state.published_snapshot = stage.snapshot
+        state.published_ai_stage = stage
+        state.publication_manifest = manifest
+        state.save(update_fields=("published_snapshot", "published_ai_stage", "publication_manifest"))
 
     def draft_url(self, draft=None, *, survey=None, stage=None):
         draft = draft or self.drafts[0]
@@ -678,11 +698,13 @@ class AIStageDraftImportTests(AIReportTestCase):
         self.assertEqual(self.client.get(self.draft_url()).status_code, 403)
 
     def test_stale_synthesis_is_strictly_blocked(self):
-        ImprovementUpdate.objects.create(survey=self.survey, title="外部改善", summary="使 synthesis 過期。")
+        # Import freshness follows the published version pointers (same rule as Render):
+        # a newer input version makes the published synthesis stale.
+        SurveyAnalysisState.objects.filter(survey=self.survey).update(input_version=F("input_version") + 1)
         self.client.force_login(self.manager)
         response = self.client.get(self.draft_url())
         self.assertEqual(response.status_code, 409)
-        self.assertEqual(ImprovementUpdate.objects.count(), 1)
+        self.assertEqual(ImprovementUpdate.objects.count(), 0)
 
     def test_failed_or_generating_stage_is_not_importable(self):
         failed = SurveyAIAnalysisStage.objects.create(
@@ -725,12 +747,6 @@ class AIStageDashboardTests(AIReportTestCase):
     def status_url(self):
         return reverse("feedback:ai-stage-status", args=[self.survey.slug])
 
-    def generate_url(self, stage_type):
-        return reverse(
-            "feedback:ai-stage-generate",
-            args=[self.survey.slug, self.snapshot.pk, stage_type],
-        )
-
     def test_operations_page_uses_stage_status_endpoint_and_shows_three_stage_shell(self):
         # The AI stage shell moved from the overview to the operations page (7c579cc).
         with patch("feedback.views.local_service.get_dashboard_payload", return_value={}):
@@ -772,34 +788,6 @@ class AIStageDashboardTests(AIReportTestCase):
         self.assertIn("grid-template-columns: minmax(0, 1fr);", css)
         self.assertIn(".dashboard-support-grid .trend-bar", css)
 
-    def test_text_endpoint_requires_statistics_first(self):
-        response = self.client.post(self.generate_url(SurveyAIAnalysisStage.StageType.TEXT))
-        self.assertEqual(response.status_code, 409)
-        self.assertEqual(response.json()["error_code"], "upstream_incomplete")
-
-    @patch("feedback.ai_stage_service.create_gemini_client")
-    def test_endpoints_run_in_sequence_and_return_staged_report(self, client_factory):
-        client_factory.return_value.models.generate_content.side_effect = [
-            provider_response(statistics_payload()),
-            provider_response(text_payload()),
-            provider_response(synthesis_payload()),
-        ]
-        for stage_type in (
-            SurveyAIAnalysisStage.StageType.STATISTICS,
-            SurveyAIAnalysisStage.StageType.TEXT,
-            SurveyAIAnalysisStage.StageType.SYNTHESIS,
-        ):
-            response = self.client.post(self.generate_url(stage_type))
-            self.assertEqual(response.status_code, 200)
-        payload = response.json()
-        self.assertTrue(payload["freshness"]["is_current"])
-        self.assertEqual(payload["report"]["report_source"], "staged")
-        self.assertEqual(payload["report"]["generation_profile"], "standard")
-        self.assertEqual(payload["stages"]["statistics"]["status"], "succeeded")
-        draft_state = next(iter(payload["report"]["draft_states"].values()))
-        self.assertFalse(draft_state["imported"])
-        self.assertIn("/dashboard/improvements/", draft_state["url"])
-
     def test_legacy_success_is_returned_as_fallback_before_pipeline_completes(self):
         self.snapshot.status = SurveyAIReportSnapshot.Status.SUCCEEDED
         self.snapshot.ai_report = validate_report_payload(
@@ -808,9 +796,7 @@ class AIStageDashboardTests(AIReportTestCase):
         )
         self.snapshot.generated_at = self.snapshot.created_at
         self.snapshot.save(update_fields=["status", "ai_report", "generated_at"])
-        response = self.client.get(self.status_url())
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
+        payload = get_pipeline_status(self.survey)
         self.assertEqual(payload["report"]["report_source"], "legacy")
         self.assertFalse(payload["freshness"]["is_current"])
         self.assertTrue(payload["freshness"]["latest_analysis_incomplete"])
@@ -842,7 +828,7 @@ class AIStageDashboardTests(AIReportTestCase):
                 ]
             },
         )
-        payload = self.client.get(self.status_url()).json()
+        payload = get_pipeline_status(self.survey)
         self.assertEqual(payload["report"]["report_source"], "legacy")
         self.assertEqual(payload["freshness"]["latest_ai_status"], "failed")
         self.assertEqual(
@@ -874,22 +860,124 @@ class AIStageDashboardTests(AIReportTestCase):
             output_json={},
         )
 
-        freshness = self.client.get(self.status_url()).json()["freshness"]
+        freshness = get_pipeline_status(self.survey)["freshness"]
 
         self.assertEqual(freshness["latest_ai_status"], "not_started")
         self.assertEqual(freshness["latest_error_code"], "")
         self.assertEqual(freshness["latest_error_message"], "")
 
-    def test_stage_endpoints_require_manager_and_csrf(self):
+    def test_stage_status_endpoint_requires_manager(self):
         self.client.force_login(self.customer)
         self.assertEqual(self.client.get(self.status_url()).status_code, 403)
-        self.assertEqual(
-            self.client.post(self.generate_url(SurveyAIAnalysisStage.StageType.STATISTICS)).status_code,
-            403,
+
+
+class ProviderFailure(Exception):
+    def __init__(self, code):
+        super().__init__(f"provider-{code}")
+        self.code = code
+
+
+def finished_response(payload, *, finish_reason="STOP"):
+    response = provider_response(payload)
+    response.candidates = [SimpleNamespace(finish_reason=finish_reason)]
+    return response
+
+
+@override_settings(AI_REPORT_REQUEST_INTERVAL_SECONDS=0, AI_REPORT_RATE_LIMIT_BACKOFF_SECONDS=6)
+class AIStageResilienceTests(AIReportTestCase):
+    """Provider-failure behaviour of the staged pipeline (ported from the legacy report path)."""
+
+    def setUp(self):
+        super().setUp()
+        self.add_responses(count=3)
+        self.snapshot = self.make_snapshot(fingerprint=calculate_data_fingerprint(self.survey).value)
+
+    def generate(self):
+        return generate_stage(self.snapshot, SurveyAIAnalysisStage.StageType.STATISTICS)
+
+    @patch("feedback.ai_stage_service.create_gemini_client")
+    def test_standard_success_does_not_retry_and_records_usage(self, client_factory):
+        client_factory.return_value.models.generate_content.return_value = finished_response(statistics_payload())
+        stage = self.generate()
+        self.assertEqual(client_factory.return_value.models.generate_content.call_count, 1)
+        self.assertEqual(stage.token_metrics["generation_profile"], "standard")
+        self.assertEqual(stage.token_metrics["prompt_token_count"], 100)
+        self.assertEqual(stage.token_metrics["thinking_token_count"], 10)
+        self.assertEqual(stage.token_metrics["attempts"][0]["finish_reason"], "STOP")
+
+    @patch("feedback.ai_stage_service.time.sleep")
+    @patch("feedback.ai_stage_service.create_gemini_client")
+    def test_rate_limit_backs_off_before_single_compact_retry(self, client_factory, sleep):
+        client_factory.return_value.models.generate_content.side_effect = [
+            ProviderFailure(429),
+            finished_response(statistics_payload()),
+        ]
+        stage = self.generate()
+        self.assertEqual(client_factory.return_value.models.generate_content.call_count, 2)
+        sleep.assert_called_once_with(6)
+        self.assertEqual(stage.token_metrics["generation_profile"], "compact")
+
+    @patch("feedback.ai_stage_service.create_gemini_client")
+    def test_output_truncated_enters_compact_mode(self, client_factory):
+        client_factory.return_value.models.generate_content.side_effect = [
+            finished_response(statistics_payload(), finish_reason="MAX_TOKENS"),
+            finished_response(statistics_payload()),
+        ]
+        stage = self.generate()
+        self.assertEqual(stage.token_metrics["generation_profile"], "compact")
+        self.assertEqual(stage.token_metrics["attempts"][0]["finish_reason"], "MAX_TOKENS")
+
+    @patch("feedback.ai_stage_service.create_gemini_client")
+    def test_forbidden_and_model_not_found_do_not_retry(self, client_factory):
+        for code, error_code in ((403, "forbidden"), (404, "model_not_found")):
+            with self.subTest(code=code):
+                client = Mock()
+                client.models.generate_content.side_effect = ProviderFailure(code)
+                client_factory.return_value = client
+                with self.assertRaises(StageError) as raised:
+                    generate_stage(self.snapshot, SurveyAIAnalysisStage.StageType.STATISTICS, force=True)
+                self.assertEqual(raised.exception.error_code, error_code)
+                self.assertEqual(client.models.generate_content.call_count, 1)
+
+    @patch("feedback.ai_stage_service.create_gemini_client")
+    def test_empty_response_and_unknown_provider_error_remain_distinct(self, client_factory):
+        client = Mock()
+        client.models.generate_content.return_value = SimpleNamespace(
+            text="",
+            candidates=[SimpleNamespace(finish_reason="STOP")],
+            usage_metadata=None,
         )
-        csrf_client = Client(enforce_csrf_checks=True)
-        csrf_client.force_login(self.manager)
-        self.assertEqual(
-            csrf_client.post(self.generate_url(SurveyAIAnalysisStage.StageType.STATISTICS)).status_code,
-            403,
-        )
+        client_factory.return_value = client
+        with self.assertRaises(StageError) as empty_error:
+            self.generate()
+        self.assertEqual(empty_error.exception.error_code, "empty_response")
+        self.assertEqual(client.models.generate_content.call_count, 1)
+
+        client = Mock()
+        client.models.generate_content.side_effect = RuntimeError("opaque provider failure")
+        client_factory.return_value = client
+        with self.assertRaises(StageError) as provider_error:
+            generate_stage(self.snapshot, SurveyAIAnalysisStage.StageType.STATISTICS, force=True)
+        self.assertEqual(provider_error.exception.error_code, "provider_error")
+        self.assertEqual(client.models.generate_content.call_count, 1)
+
+    @override_settings(GOOGLE_API_KEY="PRIVATE_KEY_MARKER")
+    @patch("feedback.ai_stage_service.create_gemini_client")
+    def test_failure_logs_exclude_prompt_evidence_and_key(self, client_factory):
+        source = dict(self.snapshot.source_snapshot)
+        source["data_scope"] = {**source.get("data_scope", {}), "survey_title": "PRIVATE_PROMPT_MARKER"}
+        source["evidence_catalog"] = [
+            {**row, "label": "PRIVATE_ANSWER_MARKER"} for row in source.get("evidence_catalog", [])
+        ]
+        self.snapshot.source_snapshot = source
+        self.snapshot.save(update_fields=["source_snapshot"])
+        client_factory.return_value.models.generate_content.side_effect = [
+            finished_response(statistics_payload(), finish_reason="MAX_TOKENS"),
+            finished_response(statistics_payload()),
+        ]
+        with self.assertLogs("feedback.ai_stage_service", level="WARNING") as captured:
+            self.generate()
+        output = "\n".join(captured.output)
+        for marker in ("PRIVATE_PROMPT_MARKER", "PRIVATE_ANSWER_MARKER", "PRIVATE_KEY_MARKER"):
+            self.assertNotIn(marker, output)
+        self.assertIn("output_truncated", output)

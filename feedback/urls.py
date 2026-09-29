@@ -3,10 +3,7 @@ from django.urls import path
 from .views import (
     AIImprovementDraftCreateView,
     AIStageImprovementDraftCreateView,
-    AIReportGenerateView,
-    AIReportSnapshotView,
     AIReportStatusView,
-    AIStageGenerateView,
     AIStagePipelineStatusView,
     AnalysisOperationsView,
     CustomerHomeView,
@@ -57,21 +54,6 @@ urlpatterns = [
         "dashboard/ai-reports/<slug:slug>/stages/",
         AIStagePipelineStatusView.as_view(),
         name="ai-stage-status",
-    ),
-    path(
-        "dashboard/ai-reports/<slug:slug>/snapshot/",
-        AIReportSnapshotView.as_view(),
-        name="ai-report-snapshot",
-    ),
-    path(
-        "dashboard/ai-reports/<slug:slug>/snapshots/<int:pk>/generate/",
-        AIReportGenerateView.as_view(),
-        name="ai-report-generate",
-    ),
-    path(
-        "dashboard/ai-reports/<slug:slug>/snapshots/<int:pk>/stages/<str:stage_type>/generate/",
-        AIStageGenerateView.as_view(),
-        name="ai-stage-generate",
     ),
     path("dashboard/forms/", SurveyManagerView.as_view(), name="survey-manager"),
     path("dashboard/categories/create/", SurveyCategoryCreateView.as_view(), name="category-create"),

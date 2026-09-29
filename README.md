@@ -103,7 +103,7 @@ python manage.py migrate
 python manage.py runserver
 ```
 
-開啟 `http://127.0.0.1:8000/`。本機網站若要使用與 Render 相同的分析展示流程，設定 `ANALYSIS_READ_PUBLISHED_ONLY=true`，並由本機工作台處理分析工作。
+開啟 `http://127.0.0.1:8000/`。本機網站與 Render 使用相同的分析展示流程：頁面只讀已發布結果，統計、文字與 Gemini 由本機工作台或 Worker 產生並發布。
 
 ## Windows 本機工作台與 EXE
 
@@ -120,13 +120,11 @@ python manage.py runserver
 
 ```powershell
 .\scripts\build_desktop.ps1
-# 需要保留主控台診斷資訊時
-.\scripts\build_desktop.ps1 -Diagnostic
 ```
 
 封裝不包含 `.env`、憑證、完整 Parquet 或其他大型資料產物。正式安裝包、簽章與長駐 Worker 服務仍待完成。
 
-一般封裝輸出為 `dist/FeedbackInsightHub/FeedbackInsightHub.exe`，診斷版為 `dist/FeedbackInsightHubDiagnostic/FeedbackInsightHubDiagnostic.exe`；啟動時須保留各自完整資料夾。
+封裝輸出為 `dist/FeedbackInsightHub/FeedbackInsightHub.exe`，啟動時須保留完整資料夾。警告與未預期錯誤會寫入 `%LOCALAPPDATA%\FeedbackInsightHub\logs\desktop.log`（輪替保留 3 份），不含憑證；一般不需要另外建置主控台診斷版（`-Diagnostic` 仍保留作為最後手段）。
 
 EXE 使用外部設定連接與網站相同的 Supabase。既有程序環境變數優先，其次讀取第一個存在的設定檔：`FEEDBACK_HUB_ENV_FILE` 指定路徑、EXE 同層 `.env`、`%LOCALAPPDATA%\FeedbackInsightHub\.env`。專案目錄內的開發封裝也可沿用專案根目錄 `.env`。設定 `DATABASE_URL`（或 `FEEDBACK_HUB_DATABASE_URL`）及選用的 `GOOGLE_API_KEY`；封裝版問卷工作流程要求 PostgreSQL。
 
@@ -146,11 +144,13 @@ EXE 再從 `%LOCALAPPDATA%\FeedbackInsightHub\datasets.json` 讀取該不可變�
 
 `render.yaml` 定義單一 Django web service；`build.sh` 安裝依賴、收集靜態檔並套用 migration。部署前請確認目標資料庫、備份與回復方式，因 migration 會改變 schema。
 
-Render 使用 `ANALYSIS_READ_PUBLISHED_ONLY=true`：
+網站（本機與 Render）一律只讀已發布結果：
 
 - 問卷、權限、設定與工作排程維持必要讀寫。
 - 營運分析、統計、文字與 AI 展示僅讀已發布 payload。
 - 網頁不掃描全量回覆、不訓練模型，也不呼叫 Gemini。
+
+健康檢查：`/healthz/`（不碰資料庫）與 `/healthz/db/`（資料庫往返）。資料庫無法連線時頁面回傳 503 與自動重新整理的提示頁，而非伺服器錯誤。`.github/workflows/keepalive.yml` 每三天呼叫 `/healthz/db/`，避免 Supabase 免費方案因閒置暫停；已暫停的專案仍需在 Supabase 手動恢復。
 
 ## 專案結構
 

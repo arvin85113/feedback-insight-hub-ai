@@ -21,6 +21,7 @@ from .ai_report_service import (
     create_gemini_client,
     generation_options,
 )
+from .ai_grounding import ungrounded_numbers
 from .ai_snapshot_service import (
     SNAPSHOT_SCHEMA_VERSION,
     build_evidence_coverage,
@@ -33,7 +34,6 @@ from .models import ImprovementUpdate, SurveyAIAnalysisStage
 
 
 logger = logging.getLogger(__name__)
-_UNTRUSTED_NUMBER_RE = re.compile(r"\d|百分之[零〇一二兩三四五六七八九十百千萬億]+")
 STAGE_MODULES = {
     SurveyAIAnalysisStage.StageType.STATISTICS: ai_statistics_service,
     SurveyAIAnalysisStage.StageType.TEXT: ai_text_service,
@@ -78,6 +78,23 @@ def _canonical_hash(value):
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def stage_prompt_version(module):
+    """Manual prompt label plus a digest of what the model sees.
+
+    Editing the instruction, schema or limits changes the version, so a stale
+    stage can never be reused just because PROMPT_VERSION was not bumped.
+    """
+
+    digest = _canonical_hash(
+        {
+            "instruction": module.SYSTEM_INSTRUCTION,
+            "limits": module.PROFILE_LIMITS,
+            "schema": module.response_schema_for_profile(STANDARD_PROFILE),
+        }
+    )
+    return f"{module.PROMPT_VERSION}-{digest[:10]}"
+
+
 def _improvement_summary(snapshot, *, exclude_stage=None):
     queryset = ImprovementUpdate.objects.filter(survey=snapshot.survey).order_by("created_at", "id")
     if exclude_stage is not None:
@@ -103,7 +120,7 @@ def _latest_matching_stage(snapshot, stage_type):
             status=SurveyAIAnalysisStage.Status.SUCCEEDED,
             input_hash=input_hash,
             schema_version=module.SCHEMA_VERSION,
-            prompt_version=module.PROMPT_VERSION,
+            prompt_version=stage_prompt_version(module),
             model_name=settings.GEMINI_MODEL,
         )
         .order_by("-revision", "-id")
@@ -171,7 +188,7 @@ def prepare_stage(snapshot, stage_type, *, force=False):
         "stage_type": stage_type,
         "input_hash": input_hash,
         "schema_version": module.SCHEMA_VERSION,
-        "prompt_version": module.PROMPT_VERSION,
+        "prompt_version": stage_prompt_version(module),
         "model_name": settings.GEMINI_MODEL,
     }
     existing = (
@@ -230,14 +247,15 @@ def prepare_stage(snapshot, stage_type, *, force=False):
     return stage, stage_input, evidence_by_id, False
 
 
-def _validate_text(value, max_length=800):
+def _validate_text(value, max_length=800, *, evidence=()):
     if (
         not isinstance(value, str)
         or not value.strip()
         or len(value) > max_length
-        or _UNTRUSTED_NUMBER_RE.search(value)
     ):
         raise ValueError("invalid_text")
+    if ungrounded_numbers(value, evidence):
+        raise ValueError("ungrounded_number")
     return value.strip()
 
 
@@ -262,12 +280,13 @@ def _validate_stage_finding(row, evidence_by_id, *, max_refs=3, max_limitations=
     limitations = row.get("data_limitations")
     if not isinstance(limitations, list) or len(limitations) > max_limitations:
         raise ValueError("invalid_limitations")
+    cited = [evidence_by_id[ref] for ref in refs]
     return {
-        "title": _validate_text(row.get("title"), 180),
-        "rationale": _validate_text(row.get("rationale")),
+        "title": _validate_text(row.get("title"), 180, evidence=cited),
+        "rationale": _validate_text(row.get("rationale"), evidence=cited),
         "evidence_refs": refs,
-        "evidence": [evidence_by_id[ref] for ref in refs],
-        "data_limitations": [_validate_text(item, 400) for item in limitations],
+        "evidence": cited,
+        "data_limitations": [_validate_text(item, 400, evidence=cited) for item in limitations],
     }
 
 
@@ -697,11 +716,35 @@ def _stage_token_metrics(attempts, *, profile=None, retry_count=0):
     }
 
 
+def _complete_without_provider(stage, module, *, reason):
+    """Record an empty, valid stage when there is nothing for the model to analyse."""
+
+    now = timezone.now()
+    updated = SurveyAIAnalysisStage.objects.filter(
+        pk=stage.pk,
+        status=SurveyAIAnalysisStage.Status.GENERATING,
+    ).update(
+        status=SurveyAIAnalysisStage.Status.SUCCEEDED,
+        output_json={section: [] for section in module.SECTIONS},
+        error_code="",
+        generation_ms=0,
+        token_metrics={"attempts": [], "retry_count": 0, "skipped_reason": reason},
+        generated_at=now,
+        updated_at=now,
+    )
+    if not updated:
+        raise StageError("terminal_stage", "AI 階段已完成，不能覆寫。", status_code=409)
+    stage.refresh_from_db()
+    return stage
+
+
 def generate_stage(snapshot, stage_type, *, force=False):
     stage, stage_input, evidence_by_id, cache_hit = prepare_stage(snapshot, stage_type, force=force)
     if cache_hit:
         return stage
     module = STAGE_MODULES[stage_type]
+    if stage_type == SurveyAIAnalysisStage.StageType.TEXT and not evidence_by_id:
+        return _complete_without_provider(stage, module, reason="no_text_evidence")
     client = None
     started = time.perf_counter()
     attempts = []
@@ -805,7 +848,7 @@ def is_stage_current(stage):
     module = STAGE_MODULES.get(stage.stage_type)
     if not module or (
         stage.schema_version != module.SCHEMA_VERSION
-        or stage.prompt_version != module.PROMPT_VERSION
+        or stage.prompt_version != stage_prompt_version(module)
         or stage.model_name != settings.GEMINI_MODEL
         or stage.snapshot.snapshot_schema_version != SNAPSHOT_SCHEMA_VERSION
     ):

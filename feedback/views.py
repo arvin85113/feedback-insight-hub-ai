@@ -4,7 +4,6 @@ from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
-from django.conf import settings
 from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
 from django.db.models import Count, IntegerField, Max, OuterRef, Q, Subquery
@@ -18,21 +17,9 @@ from django.utils import timezone
 from django.utils.text import slugify
 from django.views.generic import CreateView, DeleteView, DetailView, TemplateView, UpdateView, View
 
-from .ai_report_service import AIReportError, generate_report
 from .ai_snapshot_service import (
-    SnapshotError,
-    build_or_reuse_snapshot,
-    get_report_status,
     serialize_ai_report_content,
     serialize_evidence_for_display,
-    serialize_report,
-)
-from .ai_stage_service import (
-    StageError,
-    generate_stage,
-    get_pipeline_status,
-    is_stage_current,
-    latest_stage_status,
 )
 from .forms import (
     ImprovementEditForm,
@@ -73,7 +60,6 @@ from .notice_service import (
     send_notice_batch,
 )
 from . import local_service
-from .analysis_jobs import schedule_survey_analysis
 from .published_analysis import (
     get_published_ai_pipeline_status,
     get_published_analysis_payload,
@@ -324,138 +310,13 @@ class AnalysisOperationsView(DashboardBaseMixin, TemplateView):
 class AIReportStatusView(ManagerRequiredMixin, View):
     def get(self, request, slug):
         survey = get_object_or_404(analysis_visible_surveys(), slug=slug)
-        if settings.ANALYSIS_READ_PUBLISHED_ONLY:
-            return JsonResponse({"ok": True, **get_published_ai_pipeline_status(survey)})
-        return JsonResponse({"ok": True, **get_report_status(survey)})
+        return JsonResponse({"ok": True, **get_published_ai_pipeline_status(survey)})
 
 
 class AIStagePipelineStatusView(ManagerRequiredMixin, View):
     def get(self, request, slug):
         survey = get_object_or_404(analysis_visible_surveys(), slug=slug)
-        if settings.ANALYSIS_READ_PUBLISHED_ONLY:
-            return JsonResponse({"ok": True, **get_published_ai_pipeline_status(survey)})
-        return JsonResponse({"ok": True, **get_pipeline_status(survey)})
-
-
-def _queue_background_analysis(survey):
-    job = schedule_survey_analysis(survey.pk, change="none")
-    return JsonResponse(
-        {
-            "ok": True,
-            "queued": True,
-            "job": {"id": job.pk, "status": job.status, "executor": job.executor},
-            **get_published_ai_pipeline_status(survey),
-        },
-        status=202,
-    )
-
-
-class AIReportSnapshotView(ManagerRequiredMixin, View):
-    def post(self, request, slug):
-        survey = get_object_or_404(Survey, slug=slug, is_active=True)
-        if settings.ANALYSIS_READ_PUBLISHED_ONLY:
-            return _queue_background_analysis(survey)
-        try:
-            result = build_or_reuse_snapshot(survey)
-        except SnapshotError as exc:
-            return JsonResponse(
-                {"ok": False, "error_code": exc.error_code, "message": exc.user_message},
-                status=exc.status_code,
-            )
-        snapshot = result.snapshot
-        payload = {
-            "ok": True,
-            "snapshot": {
-                "id": snapshot.pk,
-                "survey_slug": survey.slug,
-                "status": snapshot.status,
-                "source_latest_at": snapshot.source_latest_at.isoformat() if snapshot.source_latest_at else None,
-                "response_count": snapshot.response_count,
-                "analysis_coverage": float(snapshot.analysis_coverage),
-                "fingerprint_ms": snapshot.fingerprint_ms,
-                "snapshot_ms": snapshot.snapshot_ms,
-                "cache_hit": result.cache_hit,
-                "generate_url": reverse(
-                    "feedback:ai-report-generate",
-                    args=[survey.slug, snapshot.pk],
-                ),
-                "stage_urls": {
-                    stage_type: reverse(
-                        "feedback:ai-stage-generate",
-                        args=[survey.slug, snapshot.pk, stage_type],
-                    )
-                    for stage_type in (
-                        SurveyAIAnalysisStage.StageType.STATISTICS,
-                        SurveyAIAnalysisStage.StageType.TEXT,
-                        SurveyAIAnalysisStage.StageType.SYNTHESIS,
-                    )
-                },
-            },
-        }
-        if snapshot.status == SurveyAIReportSnapshot.Status.SUCCEEDED:
-            payload["report"] = serialize_report(snapshot, is_current=True, cache_hit=True)
-        return JsonResponse(payload)
-
-
-class AIReportGenerateView(ManagerRequiredMixin, View):
-    def post(self, request, slug, pk):
-        survey = get_object_or_404(Survey, slug=slug, is_active=True)
-        if settings.ANALYSIS_READ_PUBLISHED_ONLY:
-            return _queue_background_analysis(survey)
-        snapshot = get_object_or_404(
-            SurveyAIReportSnapshot.objects.select_related("survey"),
-            pk=pk,
-            survey=survey,
-        )
-        try:
-            generate_report(snapshot)
-        except AIReportError as exc:
-            return JsonResponse(
-                {"ok": False, "error_code": exc.error_code, "message": exc.user_message},
-                status=exc.status_code,
-            )
-        return JsonResponse({"ok": True, **get_report_status(survey)})
-
-
-class AIStageGenerateView(ManagerRequiredMixin, View):
-    def post(self, request, slug, pk, stage_type):
-        survey = get_object_or_404(Survey, slug=slug, is_active=True)
-        allowed = {item.value for item in SurveyAIAnalysisStage.StageType}
-        if stage_type not in allowed:
-            raise Http404("不支援的 AI 分析階段。")
-        if settings.ANALYSIS_READ_PUBLISHED_ONLY:
-            return _queue_background_analysis(survey)
-        snapshot = get_object_or_404(
-            SurveyAIReportSnapshot.objects.select_related("survey"),
-            pk=pk,
-            survey=survey,
-        )
-        if stage_type == SurveyAIAnalysisStage.StageType.TEXT:
-            statistics = latest_stage_status(snapshot)[SurveyAIAnalysisStage.StageType.STATISTICS]
-            if statistics["status"] != SurveyAIAnalysisStage.Status.SUCCEEDED or not statistics["is_current"]:
-                return JsonResponse(
-                    {"ok": False, "error_code": "upstream_incomplete", "message": "請先完成統計分析階段。"},
-                    status=409,
-                )
-        try:
-            stage = generate_stage(snapshot, stage_type)
-        except StageError as exc:
-            return JsonResponse(
-                {"ok": False, "error_code": exc.error_code, "message": exc.user_message},
-                status=exc.status_code,
-            )
-        return JsonResponse(
-            {
-                "ok": True,
-                "completed_stage": {
-                    "id": stage.pk,
-                    "stage_type": stage.stage_type,
-                    "status": stage.status,
-                    "cache_hit": bool(stage.reused_from_id),
-                },
-                **get_pipeline_status(survey),
-            }
-        )
+        return JsonResponse({"ok": True, **get_published_ai_pipeline_status(survey)})
 
 
 class SurveyManagerView(DashboardBaseMixin, TemplateView):
@@ -709,12 +570,9 @@ class StatsOverviewView(DashboardBaseMixin, TemplateView):
         context["categories"] = SurveyCategory.objects.all()
         context["current_sort"] = sort
         context["current_category"] = category_id
-        publication = None
-        if survey and settings.ANALYSIS_READ_PUBLISHED_ONLY:
-            publication = get_published_analysis_payload(survey)
-            payload = publication["statistics"]
-        else:
-            payload = local_service.get_stats_payload(selected_slug) if selected_slug else {"charts": [], "question_analysis": [], "inferential_analysis": []}
+        # Pages only read published results; statistics are computed by the local worker.
+        publication = get_published_analysis_payload(survey) if survey else None
+        payload = publication["statistics"] if publication else {}
         context["analysis_publication"] = publication
         context["analysis_stage_fresh"] = publication["freshness"]["statistics"] if publication else None
         context["charts"] = payload.get("charts", [])
@@ -844,12 +702,8 @@ class TextAnalysisView(DashboardBaseMixin, TemplateView):
         context["categories"] = SurveyCategory.objects.all()
         context["current_sort"] = sort
         context["current_category"] = category_id
-        publication = None
-        if survey and settings.ANALYSIS_READ_PUBLISHED_ONLY:
-            publication = get_published_analysis_payload(survey)
-            text_analysis_payload = publication["text_analysis"]
-        else:
-            text_analysis_payload = local_service.get_text_analysis_payload(selected_slug) if survey else {}
+        publication = get_published_analysis_payload(survey) if survey else None
+        text_analysis_payload = publication["text_analysis"] if publication else {}
         context["analysis_publication"] = publication
         context["analysis_stage_fresh"] = publication["freshness"]["text"] if publication else None
         context["keywords"] = text_analysis_payload.get("keywords", []) if survey else []
@@ -1504,11 +1358,7 @@ class AIStageImprovementDraftCreateView(ImprovementCreateView):
             stage_type=SurveyAIAnalysisStage.StageType.SYNTHESIS,
             status=SurveyAIAnalysisStage.Status.SUCCEEDED,
         )
-        if settings.ANALYSIS_READ_PUBLISHED_ONLY:
-            stage_is_current = is_published_ai_stage_current(self.source_stage)
-        else:
-            stage_is_current = is_stage_current(self.source_stage)
-        if not stage_is_current:
+        if not is_published_ai_stage_current(self.source_stage):
             return False
         drafts = (self.source_stage.output_json or {}).get("improvement_drafts", [])
         draft_id = str(self.kwargs["draft_id"])

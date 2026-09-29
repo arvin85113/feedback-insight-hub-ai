@@ -34,11 +34,6 @@ AI_REPORT_RATE_LIMIT_BACKOFF_SECONDS = float(os.getenv("AI_REPORT_RATE_LIMIT_BAC
 AI_REPORT_REQUEST_INTERVAL_SECONDS = float(os.getenv("AI_REPORT_REQUEST_INTERVAL_SECONDS", "6"))
 RENDER_EXTERNAL_HOSTNAME = os.getenv("RENDER_EXTERNAL_HOSTNAME", "").strip()
 _IS_RENDER_RUNTIME = bool(RENDER_EXTERNAL_HOSTNAME) or os.getenv("RENDER", "").lower() == "true"
-# Render must never fall back to request-time statistics, NLP, or Gemini even
-# when an existing service has not synchronized the render.yaml environment.
-ANALYSIS_READ_PUBLISHED_ONLY = _IS_RENDER_RUNTIME or (
-    os.getenv("ANALYSIS_READ_PUBLISHED_ONLY", "False").lower() == "true"
-)
 ANALYSIS_AUTO_AI_ENABLED = os.getenv("ANALYSIS_AUTO_AI_ENABLED", "False").lower() == "true"
 
 # Local development defaults to DEBUG; a deployed runtime must opt in explicitly.
@@ -91,6 +86,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "config.health.DatabaseUnavailableMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"

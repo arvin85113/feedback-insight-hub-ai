@@ -5,6 +5,7 @@
 
 ## 實作進度（2026-09-29）
 
+- 現況摘要（原 AGENTS.md「已確認現況」移入此處）：migration 0015～0019 已套用至設定的 Supabase；TripAdvisor 固定版本 201,295 列以本機 Parquet 分析；deterministic／AI 單次與持續輪詢 CLI 已存在但未安裝為服務；EXE 可列出 Supabase 問卷並兩段發布，安裝包、簽章與跨機器驗收未完成；模型訓練與預測延後。
 - 基線：`main`／`origin/main` 為 `da0f55e`；Render Dashboard 確認 `da0f55e` 為 Live（2026-09-08 自動部署，Free 方案閒置會休眠）。下方 2026-09-06 條目中的 HEAD `c8448b3`、「Render 部署與真實 Gemini 驗收仍未完成」已過時。
 - 正式 EXE 可見驗收：3 份問卷、201,444 筆；TripAdvisor 201,295 筆、本機完整資料集就緒，第一段與第二段皆顯示最新。Gemini 已於 2026-09-08 15:15～15:23 對三份問卷執行並發布（`gemini-2.5-flash`），桌面端「最新」判定需 AI manifest 與目前輸入／設定／管線及來源版本一致。
 - Gemini 2.5 Flash 預定於 2026-10-16～20 在 Vertex（已改名 Gemini Enterprise Agent Platform）停用；預設模型改為 `gemini-3.6-flash`，Gemini 3+ 改用 `GEMINI_THINKING_LEVEL`／`GEMINI_COMPACT_THINKING_LEVEL` 並沿用模型預設 temperature，`gemini-2.x` 仍用 thinking budget。換模型後既有 AI Stage 不再重用，需重跑 Gemini（付費）；正式 EXE 須重建才會使用新參數。
@@ -12,6 +13,11 @@
 - 測試隔離：`config.settings_test`／`settings_postgres_test` 固定測試模型並使用假金鑰，不再讀入開發者 `.env` 的模型或真實金鑰；修正營運分析頁搬移後的過時測試。2026-09-29 本機 Python 3.12.14 於無 `.env` 的乾淨副本執行 `feedback accounts` 226 項通過（1 項略過）。
 - 新增 GitHub Actions CI：Python 3.12／3.13 執行 migration 檢查、system check 與全部 SQLite 測試，另以 PostgreSQL 17 服務執行併發測試；首次推送後才會有 CI 結果。
 - Web 啟動只載入 `jieba`、`google.genai`，pandas／scipy／duckdb 為延遲載入；拆分 web／worker 依賴主要縮短建置時間，列為後續項目。
+- Phase 2（同日）：移除 `ANALYSIS_READ_PUBLISHED_ONLY` 切換，本機與 Render 頁面一律只讀已發布結果；刪除 request-time 統計／文字 wrapper 及同步 Snapshot／Gemini POST 端點（UI 僅使用 GET 狀態端點）。AI 草稿匯入一律依發布指標判定最新；手動新增改善項目不會使已發布 synthesis 過期（與 Render 既有行為相同），是否應觸發版本失效待決定。
+- 桌面工作台的 Gemini「最新」判定加入模型名稱：`GEMINI_MODEL` 與已發布 AI 的 `model_name` 不同時顯示待更新，可用「只執行勾選問卷 Gemini」重跑。
+- Gemini prompt 改為 evidence-grounded：AI 文字可引用與所引 evidence 一致的數字（`feedback/ai_grounding.py`），prompt 改以品質目標為主並提高標準模式上限；stage prompt 版本由指令／schema／上限內容雜湊產生；無文字 evidence 時跳過文字階段呼叫。46 筆問卷（gemini-3.6-flash）試驗：發現引用具體數值、無被丟棄項目、呼叫由 3 次降為 2 次，結果已發布。
+- EXE 改為單一 windowed 版，警告與未預期錯誤寫入 `%LOCALAPPDATA%\FeedbackInsightHub\logs\desktop.log`；已刪除過時的診斷版封裝。AGENTS.md 精簡為長期規則，CLAUDE.md 以 `@AGENTS.md` 匯入同一份規則。
+- 舊版單次 `generate_report` 已無網頁呼叫端，但其限流／截斷／日誌隱私測試尚未移植到 AI Stage 流程，移植後再刪除。
 
 ## 實作進度（2026-09-06）
 

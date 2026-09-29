@@ -29,7 +29,7 @@ jobs:
       - name: Django system check
         run: python manage.py check --settings=config.settings_test
       - name: Tests (isolated in-memory SQLite, mocked Gemini)
-        run: python manage.py test feedback accounts --settings=config.settings_test
+        run: python manage.py test feedback accounts config --settings=config.settings_test
 
   postgres-concurrency:
     name: PostgreSQL 17 queue concurrency

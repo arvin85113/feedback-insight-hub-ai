@@ -21,8 +21,6 @@ from .models import (
 )
 from .analysis_jobs import schedule_survey_analysis, suppress_analysis_scheduling
 
-_STATS_PAYLOAD_CACHE = {}
-_STATS_PAYLOAD_CACHE_MAX_SIZE = 16
 STATISTICS_VERSION = "v1"
 
 
@@ -783,51 +781,6 @@ def build_stats_payload(survey):
     }
 
 
-def get_stats_payload(slug):
-    survey = Survey.objects.filter(slug=slug).first() if slug else None
-    if not survey:
-        return {
-            "charts": [],
-            "question_analysis": [],
-            "inferential_analysis": [],
-            "available_tests_count": 0,
-            "skipped_tests_count": 0,
-        }
-
-    question_signature = tuple(
-        Question.objects.filter(survey=survey, is_active=True)
-        .order_by("order", "id")
-        .values_list("id", "title", "kind", "data_type", "options_text", "order")
-    )
-    answer_signature = Answer.objects.filter(
-        question__survey=survey,
-        question__is_active=True,
-        submission__is_complete=True,
-        submission__voided_at__isnull=True,
-    ).aggregate(count=Count("id"), max_id=Max("id"))
-    try:
-        state = survey.analysis_state
-    except Survey.analysis_state.RelatedObjectDoesNotExist:
-        state = None
-    cache_key = (
-        survey.id,
-        question_signature,
-        answer_signature["count"],
-        answer_signature["max_id"],
-        getattr(state, "input_version", None),
-        getattr(state, "config_version", None),
-    )
-    cached_payload = _STATS_PAYLOAD_CACHE.get(cache_key)
-    if cached_payload is not None:
-        return cached_payload
-
-    payload = build_stats_payload(survey)
-    if len(_STATS_PAYLOAD_CACHE) >= _STATS_PAYLOAD_CACHE_MAX_SIZE:
-        _STATS_PAYLOAD_CACHE.clear()
-    _STATS_PAYLOAD_CACHE[cache_key] = payload
-    return payload
-
-
 def build_text_analysis_payload(survey):
     keywords = keyword_summary(survey)
     response_counts = {}
@@ -851,13 +804,6 @@ def build_text_analysis_payload(survey):
         "summary": text_analysis_summary(survey),
         "category_sentiments": category_sentiment_summary(survey),
     }
-
-
-def get_text_analysis_payload(slug):
-    survey = Survey.objects.filter(slug=slug).first() if slug else None
-    if not survey:
-        return {"keywords": [], "summary": {}, "category_sentiments": []}
-    return build_text_analysis_payload(survey)
 
 
 def _submission_result(submission, *, reused=False):

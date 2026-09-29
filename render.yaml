@@ -12,5 +12,3 @@ services:
         generateValue: true
       - key: DEBUG
         value: false
-      - key: ANALYSIS_READ_PUBLISHED_ONLY
-        value: true

@@ -1,6 +1,5 @@
 import json
-from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 from django.test import SimpleTestCase, override_settings
 from django.utils import timezone
@@ -8,12 +7,11 @@ from django.utils import timezone
 from .ai_report_service import (
     AIReportError,
     _wait_for_request_slot,
-    generate_report,
     response_schema_for_profile,
     validate_report_payload,
 )
-from .ai_snapshot_service import calculate_data_fingerprint, get_report_status, serialize_report
-from .evidence_projection import COMPACT_PROFILE, STANDARD_PROFILE, project_evidence
+from .ai_snapshot_service import calculate_data_fingerprint, get_report_status
+from .evidence_projection import STANDARD_PROFILE, project_evidence
 from .models import SurveyAIReportSnapshot
 from .tests import AIReportTestCase, provider_report, source_snapshot
 
@@ -43,32 +41,6 @@ def evidence_source(count, *, kind="keyword_frequency", label="聚合證據"):
     return source
 
 
-def gemini_response(payload, *, finish_reason="STOP", prompt_tokens=700, candidates_tokens=250, thoughts_tokens=80):
-    return SimpleNamespace(
-        text=json.dumps(payload, ensure_ascii=False),
-        candidates=[SimpleNamespace(finish_reason=finish_reason)],
-        usage_metadata=SimpleNamespace(
-            prompt_token_count=prompt_tokens,
-            candidates_token_count=candidates_tokens,
-            thoughts_token_count=thoughts_tokens,
-            total_token_count=prompt_tokens + candidates_tokens + thoughts_tokens,
-        ),
-        sdk_http_response=SimpleNamespace(status_code=200),
-    )
-
-
-class ProviderFailure(Exception):
-    def __init__(self, code):
-        super().__init__(f"provider-{code}")
-        self.code = code
-
-
-@override_settings(
-    AI_REPORT_MAX_EVIDENCE_ITEMS=40,
-    AI_REPORT_MAX_ESTIMATED_INPUT_TOKENS=12000,
-    AI_REPORT_COMPACT_MAX_EVIDENCE_ITEMS=24,
-    AI_REPORT_COMPACT_MAX_ESTIMATED_INPUT_TOKENS=6000,
-)
 class EvidenceProjectionBoundaryTests(SimpleTestCase):
     @override_settings(AI_REPORT_REQUEST_INTERVAL_SECONDS=6)
     @patch("feedback.ai_report_service.time.sleep")
@@ -200,141 +172,8 @@ class EvidenceProjectionBoundaryTests(SimpleTestCase):
     AI_REPORT_COMPACT_MAX_ESTIMATED_INPUT_TOKENS=6000,
     AI_REPORT_RATE_LIMIT_BACKOFF_SECONDS=6,
 )
-class GenerationFallbackTests(AIReportTestCase):
-    def _successful_response(self):
-        return gemini_response(provider_report(self.survey.slug))
-
-    @patch("feedback.ai_report_service.create_gemini_client")
-    def test_standard_success_does_not_retry_and_records_usage(self, client_factory):
-        snapshot = self.make_snapshot()
-        client = client_factory.return_value
-        client.models.generate_content.return_value = self._successful_response()
-        result = generate_report(snapshot)
-        self.assertEqual(client.models.generate_content.call_count, 1)
-        self.assertEqual(result.ai_report["_generation"]["profile"], STANDARD_PROFILE)
-        metrics = result.source_snapshot["generation_metrics"]
-        self.assertEqual(len(metrics), 1)
-        self.assertEqual(metrics[0]["prompt_token_count"], 700)
-        self.assertEqual(metrics[0]["thinking_token_count"], 80)
-        self.assertEqual(metrics[0]["finish_reason"], "STOP")
-
-    @patch("feedback.ai_report_service.create_gemini_client")
-    def test_timeout_does_not_blindly_retry_when_provider_result_is_uncertain(self, client_factory):
-        snapshot = self.make_snapshot()
-        client = client_factory.return_value
-        client.models.generate_content.side_effect = [TimeoutError(), self._successful_response()]
-        with self.assertRaises(AIReportError) as raised:
-            generate_report(snapshot)
-        self.assertEqual(raised.exception.error_code, "timeout")
-        self.assertEqual(client.models.generate_content.call_count, 1)
-        snapshot.refresh_from_db()
-        self.assertEqual(snapshot.status, SurveyAIReportSnapshot.Status.FAILED)
-        self.assertEqual(len(snapshot.source_snapshot["generation_metrics"]), 1)
-
-    @patch("feedback.ai_report_service.time.sleep")
-    @patch("feedback.ai_report_service.create_gemini_client")
-    def test_rate_limit_uses_backoff_before_single_compact_retry(self, client_factory, sleep):
-        snapshot = self.make_snapshot()
-        client = client_factory.return_value
-        client.models.generate_content.side_effect = [ProviderFailure(429), self._successful_response()]
-        generate_report(snapshot)
-        self.assertEqual(client.models.generate_content.call_count, 2)
-        sleep.assert_called_once_with(6)
-
-    @patch("feedback.ai_report_service.create_gemini_client")
-    def test_auth_forbidden_and_model_not_found_do_not_retry(self, client_factory):
-        expected = {401: "authentication_error", 403: "forbidden", 404: "model_not_found"}
-        for index, (code, error_code) in enumerate(expected.items(), start=1):
-            with self.subTest(code=code):
-                snapshot = self.make_snapshot(fingerprint=str(index) * 64)
-                client = Mock()
-                client.models.generate_content.side_effect = ProviderFailure(code)
-                client_factory.return_value = client
-                with self.assertRaises(AIReportError) as raised:
-                    generate_report(snapshot)
-                self.assertEqual(raised.exception.error_code, error_code)
-                self.assertEqual(client.models.generate_content.call_count, 1)
-
-    @patch("feedback.ai_report_service.create_gemini_client")
-    def test_output_truncated_enters_compact_mode(self, client_factory):
-        snapshot = self.make_snapshot()
-        client = client_factory.return_value
-        client.models.generate_content.side_effect = [
-            gemini_response(provider_report(self.survey.slug), finish_reason="MAX_TOKENS"),
-            self._successful_response(),
-        ]
-        result = generate_report(snapshot)
-        self.assertEqual(result.ai_report["_generation"]["profile"], COMPACT_PROFILE)
-        self.assertEqual(result.source_snapshot["generation_metrics"][0]["finish_reason"], "MAX_TOKENS")
-
-    @patch("feedback.ai_report_service.create_gemini_client")
-    def test_compact_success_persists_profile_and_coverage(self, client_factory):
-        snapshot = self.make_snapshot()
-        snapshot.source_snapshot = evidence_source(79)
-        snapshot.source_snapshot["data_scope"]["survey_slug"] = self.survey.slug
-        snapshot.source_snapshot["evidence_catalog"][0]["id"] = "stats.wait.mean"
-        snapshot.save(update_fields=["source_snapshot"])
-        client = client_factory.return_value
-        invalid = provider_report(self.survey.slug)
-        invalid["executive_summary"] = "不合規數字 99"
-        client.models.generate_content.side_effect = [gemini_response(invalid), self._successful_response()]
-        result = generate_report(snapshot)
-        generation = result.ai_report["_generation"]
-        self.assertEqual(generation["profile"], COMPACT_PROFILE)
-        self.assertEqual(generation["total_evidence_count"], 79)
-        self.assertLessEqual(generation["selected_evidence_count"], 24)
-        serialized = serialize_report(result, is_current=True, cache_hit=False)
-        self.assertEqual(serialized["generation_profile"], COMPACT_PROFILE)
-        self.assertEqual(serialized["evidence_coverage"]["total"], 79)
-
-    @patch("feedback.ai_report_service.create_gemini_client")
-    def test_uncertain_timeout_preserves_previous_successful_report_without_retry(self, client_factory):
-        self.add_responses(count=3)
-        current_fingerprint = calculate_data_fingerprint(self.survey).value
-        previous = self.make_snapshot(status=SurveyAIReportSnapshot.Status.SUCCEEDED, fingerprint="1" * 64)
-        previous.ai_report = validate_report_payload(provider_report(self.survey.slug), previous.source_snapshot)
-        previous.generated_at = timezone.now()
-        previous.save(update_fields=["ai_report", "generated_at"])
-        current = self.make_snapshot(fingerprint=current_fingerprint)
-        client = client_factory.return_value
-        client.models.generate_content.side_effect = [TimeoutError(), ProviderFailure(503)]
-        with self.assertRaises(AIReportError) as raised:
-            generate_report(current)
-        self.assertEqual(raised.exception.error_code, "timeout")
-        self.assertEqual(client.models.generate_content.call_count, 1)
-        previous.refresh_from_db()
-        current.refresh_from_db()
-        self.assertEqual(previous.status, SurveyAIReportSnapshot.Status.SUCCEEDED)
-        self.assertEqual(current.status, SurveyAIReportSnapshot.Status.FAILED)
-        status = get_report_status(self.survey)
-        self.assertEqual(status["report"]["snapshot_id"], previous.pk)
-        self.assertEqual(status["freshness"]["latest_error_code"], "timeout")
-        self.assertTrue(status["freshness"]["latest_analysis_incomplete"])
-
-    @patch("feedback.ai_report_service.create_gemini_client")
-    def test_empty_response_and_unknown_provider_error_remain_distinct(self, client_factory):
-        empty_snapshot = self.make_snapshot(fingerprint="3" * 64)
-        client = Mock()
-        client.models.generate_content.return_value = SimpleNamespace(
-            text="",
-            candidates=[SimpleNamespace(finish_reason="STOP")],
-            usage_metadata=None,
-            sdk_http_response=SimpleNamespace(status_code=200),
-        )
-        client_factory.return_value = client
-        with self.assertRaises(AIReportError) as empty_error:
-            generate_report(empty_snapshot)
-        self.assertEqual(empty_error.exception.error_code, "empty_response")
-        self.assertEqual(client.models.generate_content.call_count, 1)
-
-        provider_snapshot = self.make_snapshot(fingerprint="4" * 64)
-        client = Mock()
-        client.models.generate_content.side_effect = RuntimeError("opaque provider failure")
-        client_factory.return_value = client
-        with self.assertRaises(AIReportError) as provider_error:
-            generate_report(provider_snapshot)
-        self.assertEqual(provider_error.exception.error_code, "provider_error")
-        self.assertEqual(client.models.generate_content.call_count, 1)
+class LegacyReportCompatibilityTests(AIReportTestCase):
+    """Validation and freshness of legacy single reports that may still exist in the database."""
 
     def test_chinese_numeric_claim_without_evidence_is_rejected(self):
         payload = provider_report(self.survey.slug)
@@ -343,23 +182,6 @@ class GenerationFallbackTests(AIReportTestCase):
             validate_report_payload(payload, source_snapshot(self.survey.slug))
         self.assertEqual(raised.exception.error_code, "schema_invalid")
         self.assertEqual(raised.exception.reason, "numeric_prose")
-
-    @patch("feedback.ai_report_service.create_gemini_client")
-    def test_privacy_safe_logs_do_not_include_prompt_snapshot_answer_or_key(self, client_factory):
-        snapshot = self.make_snapshot()
-        source = source_snapshot(self.survey.slug)
-        source["data_scope"]["survey_title"] = "PRIVATE_PROMPT_MARKER"
-        source["evidence_catalog"][0]["label"] = "PRIVATE_ANSWER_MARKER"
-        snapshot.source_snapshot = source
-        snapshot.save(update_fields=["source_snapshot"])
-        client_factory.return_value.models.generate_content.return_value = self._successful_response()
-        with self.assertLogs("feedback.ai_report_service", level="INFO") as captured:
-            generate_report(snapshot)
-        output = "\n".join(captured.output)
-        self.assertNotIn("PRIVATE_PROMPT_MARKER", output)
-        self.assertNotIn("PRIVATE_ANSWER_MARKER", output)
-        self.assertNotIn("configured", output)
-        self.assertIn("selected_evidence_count", output)
 
     def test_projection_version_change_makes_old_report_stale(self):
         self.add_responses(count=3)
