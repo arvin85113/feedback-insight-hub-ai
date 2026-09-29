@@ -1,0 +1,548 @@
+/* ==========================================================================
+   FeedBack IQ design layer
+   Loaded after app.css. Every rule here is a deliberate component decision
+   built on the tokens in app.css :root; legacy rules it supersedes can be
+   deleted from app.css over time.
+   ========================================================================== */
+
+/* ── Base ─────────────────────────────────────────────────────────────── */
+body {
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.65;
+    color: var(--c-ink-900);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+}
+
+body.dashboard-body {
+    background: var(--c-canvas);
+}
+
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+    border-radius: var(--radius-sm);
+}
+
+::selection {
+    background: var(--c-brand-200);
+}
+
+.section-kicker {
+    margin: 0 0 6px;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--c-brand-500);
+}
+
+/* ── Buttons ──────────────────────────────────────────────────────────── */
+.button {
+    gap: 6px;
+    min-height: 40px;
+    padding: 9px 18px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    font-size: 0.93rem;
+    font-weight: 500;
+    line-height: 1.2;
+    white-space: nowrap;
+    transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, box-shadow 140ms ease;
+}
+
+.button:hover {
+    transform: none;
+}
+
+.button-small {
+    min-height: 34px;
+    padding: 6px 14px;
+    font-size: 0.88rem;
+}
+
+.button-primary,
+.manager-shell .button-primary {
+    color: var(--c-on-brand);
+    background: var(--c-brand-700);
+    box-shadow: var(--shadow-sm);
+}
+
+.button-primary:hover,
+.manager-shell .button-primary:hover {
+    background: var(--c-brand-600);
+    color: var(--c-on-brand);
+}
+
+.button-ghost,
+.manager-shell .button-ghost {
+    color: var(--c-ink-700);
+    background: var(--c-surface);
+    border-color: var(--c-line-strong);
+    box-shadow: none;
+}
+
+.button-ghost:hover,
+.manager-shell .button-ghost:hover {
+    color: var(--c-ink-900);
+    background: var(--c-surface-subtle);
+    border-color: var(--c-ink-400);
+}
+
+.button-quiet {
+    color: var(--c-ink-500);
+    background: transparent;
+}
+
+.button-quiet:hover {
+    color: var(--c-ink-900);
+    background: var(--c-surface-muted);
+}
+
+.button:disabled,
+.button[aria-disabled="true"] {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* ── Form controls ────────────────────────────────────────────────────── */
+.manager-shell :where(input[type="text"], input[type="email"], input[type="number"], input[type="search"],
+    input[type="password"], input[type="date"], input[type="url"], select, textarea),
+.site-body :where(input[type="text"], input[type="email"], input[type="number"], input[type="password"], select, textarea) {
+    border: 1px solid var(--c-line-strong);
+    border-radius: var(--radius-sm);
+    background: var(--c-surface);
+    color: var(--c-ink-900);
+    transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.manager-shell :where(input, select, textarea):focus,
+.site-body :where(input, select, textarea):focus {
+    border-color: var(--c-brand-600);
+    box-shadow: var(--focus-ring);
+    outline: none;
+}
+
+/* ── Flash messages ───────────────────────────────────────────────────── */
+.flash-message {
+    padding: 12px 16px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--c-line);
+    border-left: 4px solid var(--c-brand-600);
+    background: var(--c-surface);
+    color: var(--c-ink-900);
+    box-shadow: var(--shadow-lg);
+}
+
+.flash-error {
+    border-left-color: var(--c-danger-500);
+}
+
+.flash-warning {
+    border-left-color: var(--c-warning-500);
+}
+
+/* ── Manager shell ────────────────────────────────────────────────────── */
+.manager-shell {
+    grid-template-columns: 248px minmax(0, 1fr);
+    background: var(--c-canvas);
+}
+
+.manager-sidebar {
+    display: flex;
+    flex-direction: column;
+    padding: 20px 14px;
+    background: var(--c-brand-900);
+    color: rgba(251, 250, 246, 0.9);
+}
+
+.manager-brand {
+    padding: 4px 8px 18px;
+    margin-bottom: 14px;
+    border-bottom: 1px solid rgba(251, 250, 246, 0.1);
+}
+
+.manager-nav {
+    gap: 2px;
+}
+
+.manager-shell .manager-nav-link {
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    color: rgba(251, 250, 246, 0.72);
+    font-size: 0.94rem;
+    transition: background-color 140ms ease, color 140ms ease;
+}
+
+.manager-shell .manager-nav-link:hover {
+    color: var(--c-on-brand);
+    background: rgba(251, 250, 246, 0.07);
+    transform: none;
+}
+
+.manager-shell .manager-nav-link.active {
+    color: var(--c-on-brand);
+    background: rgba(251, 250, 246, 0.12);
+    box-shadow: inset 3px 0 0 #8fc4a8;
+}
+
+.manager-shell .manager-nav-icon {
+    display: inline-grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    color: inherit;
+    opacity: 0.9;
+}
+
+.manager-sidebar-foot {
+    margin-top: auto;
+    padding: 12px 8px 0;
+    font-size: 0.8rem;
+    line-height: 1.6;
+    color: rgba(251, 250, 246, 0.5);
+}
+
+.manager-topbar {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    padding: 14px 32px;
+    background: rgba(246, 244, 238, 0.88);
+    border-bottom: 1px solid var(--c-line);
+    backdrop-filter: saturate(1.4) blur(12px);
+}
+
+.manager-topbar-title h1 {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    line-height: 1.3;
+}
+
+.manager-topbar-title p {
+    margin: 2px 0 0;
+    font-size: 0.85rem;
+    color: var(--c-ink-500);
+}
+
+.manager-topbar-actions {
+    gap: 8px;
+}
+
+.manager-content {
+    width: 100%;
+    max-width: 1320px;
+    margin: 0 auto;
+    padding: 28px 32px 56px;
+}
+
+.manager-lead,
+.manager-header p {
+    max-width: 72ch;
+    margin: 0;
+    color: var(--c-ink-500);
+}
+
+.manager-shell .manager-header {
+    margin-bottom: 20px;
+    padding: 0;
+    background: none;
+    border: 0;
+    box-shadow: none;
+}
+
+/* ── Surfaces ─────────────────────────────────────────────────────────── */
+.manager-shell .manager-panel,
+.manager-shell .surface-card,
+.manager-shell .manager-metric-card {
+    background: var(--c-surface);
+    border: 1px solid var(--c-line);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+}
+
+.manager-shell .manager-panel {
+    padding: 24px;
+}
+
+.manager-shell .panel-head h2,
+.manager-shell .manager-panel h2 {
+    font-size: 1.15rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+}
+
+.manager-metric-grid {
+    gap: 16px;
+}
+
+.manager-shell .manager-metric-card {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 20px 22px;
+}
+
+.manager-shell .manager-metric-card p {
+    margin: 0;
+    font-size: 0.86rem;
+    font-weight: 500;
+    color: var(--c-ink-500);
+}
+
+.manager-shell .manager-metric-card strong {
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+}
+
+.manager-shell .manager-metric-card small {
+    font-size: 0.82rem;
+    color: var(--c-ink-400);
+}
+
+/* ── Tables ───────────────────────────────────────────────────────────── */
+.manager-shell table {
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
+}
+
+.manager-shell th {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--c-ink-500);
+    text-align: left;
+}
+
+.manager-shell th,
+.manager-shell td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--c-line);
+}
+
+/* ── Analysis tab strip: opaque so scrolled content never shows through ── */
+.analytics-tab-nav {
+    top: 72px;
+    padding: 8px;
+    border: 1px solid var(--c-line);
+    border-radius: var(--radius-md);
+    background: var(--c-surface);
+    box-shadow: var(--shadow-md);
+}
+
+[id] {
+    scroll-margin-top: 140px;
+}
+
+/* ── Responsive ───────────────────────────────────────────────────────── */
+@media (max-width: 1100px) {
+    .manager-content {
+        padding: 22px 20px 48px;
+    }
+
+    .manager-topbar {
+        padding: 12px 20px;
+    }
+}
+
+@media (max-width: 860px) {
+    .manager-shell {
+        grid-template-columns: 1fr;
+        height: auto;
+        overflow: visible;
+    }
+
+    .manager-sidebar {
+        position: static;
+        height: auto;
+        padding: 12px;
+    }
+
+    .manager-brand {
+        padding-bottom: 12px;
+        margin-bottom: 8px;
+    }
+
+    .manager-nav {
+        display: flex;
+        gap: 4px;
+        overflow-x: auto;
+        scrollbar-width: none;
+    }
+
+    .manager-shell .manager-nav-link {
+        flex: 0 0 auto;
+        padding: 8px 12px;
+    }
+
+    .manager-sidebar-foot {
+        display: none;
+    }
+
+    .manager-main {
+        height: auto;
+        overflow: visible;
+    }
+
+    .manager-topbar {
+        top: 0;
+    }
+
+    .analytics-tab-nav {
+        top: 64px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* ── Metric grid: one row on wide screens, wraps naturally ─────────────── */
+.manager-shell .manager-metric-grid {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    margin-bottom: 20px;
+}
+
+/* ── Card family: one light border everywhere; colour carries meaning only ── */
+.manager-shell :is(.analytics-question-card, .method-router-card, .analytics-result-card,
+    .inference-group-body .analytics-result-card, .sentiment-category-row, .keyword-signal-row,
+    .keyword-rule-edit-form) {
+    border: 1px solid var(--c-line);
+    border-radius: var(--radius-md);
+    background: var(--c-surface);
+    box-shadow: var(--shadow-sm);
+    transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.manager-shell :is(.analytics-question-card, .method-router-card, .analytics-result-card):hover {
+    border-color: var(--c-brand-200);
+    box-shadow: var(--shadow-md);
+}
+
+.manager-shell :is(.analytics-meta-item, .analytics-metric-list div, .analytics-frequency-item,
+    .analytics-frequency-row span, .sentiment-total, .sentiment-category-badge, .builder-meta-link, .data-type-btn) {
+    border: 1px solid var(--c-line);
+}
+
+.manager-shell .record-row:is(.sentiment-category-positive, .sentiment-category-neutral, .sentiment-category-negative) {
+    border: 1px solid var(--c-line);
+    border-left: 4px solid var(--sentiment-accent, var(--c-line-strong));
+}
+
+.manager-shell .record-row.sentiment-category-positive { --sentiment-accent: #2f8a5b; }
+.manager-shell .record-row.sentiment-category-neutral { --sentiment-accent: var(--c-warning-500); }
+.manager-shell .record-row.sentiment-category-negative { --sentiment-accent: var(--c-danger-500); }
+
+.manager-shell :is(.ai-operations-panel, .dashboard-analysis-summary) {
+    border-top: 1px solid var(--c-line);
+}
+
+/* Tab pills (analysis steps, builder) */
+.manager-shell .analytics-tab {
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    color: var(--c-ink-500);
+}
+
+.manager-shell .analytics-tab:hover {
+    color: var(--c-ink-900);
+    background: var(--c-surface-muted);
+}
+
+.manager-shell .analytics-tab.analytics-tab-active,
+.manager-shell .analytics-tab.analytics-tab-active:hover {
+    color: var(--c-on-brand);
+    background: var(--c-brand-700);
+    border-color: var(--c-brand-700);
+}
+
+/* ── Text insights: keyword signals read as data, not as a wall of buttons ── */
+.manager-shell .keyword-signal-row {
+    padding: 14px 16px;
+    gap: 10px 12px;
+}
+
+.manager-shell .keyword-signal-category {
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--c-surface-muted);
+    color: var(--c-ink-500);
+    font-size: 0.74rem;
+    font-weight: 600;
+}
+
+.manager-shell .keyword-signal-word {
+    padding: 0;
+    border: 0;
+    background: none;
+    font-size: 1.6rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.manager-shell .keyword-signal-count {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--c-ink-700);
+    font-variant-numeric: tabular-nums;
+}
+
+.manager-shell .wordcloud-panel {
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--c-line);
+    background: var(--c-surface-subtle);
+}
+
+/* ── Destructive actions: clearly red, never the loudest element ─────────── */
+.button-danger,
+.manager-shell .button-danger {
+    color: var(--c-danger-700);
+    background: var(--c-surface);
+    border: 1px solid #e6c3bb;
+    box-shadow: none;
+}
+
+.button-danger:hover,
+.manager-shell .button-danger:hover {
+    color: var(--c-on-brand);
+    background: var(--c-danger-500);
+    border-color: var(--c-danger-500);
+}
+
+/* ── Page headers: the sticky topbar names the section, so headers carry
+      only the lead text, actions, or a detail page's own title. ──────────── */
+.manager-shell .manager-header > div > .section-kicker {
+    display: none;
+}
+
+.manager-shell .manager-header h1 {
+    margin: 0 0 6px;
+    font-size: 1.6rem;
+    font-weight: 700;
+    line-height: 1.3;
+    letter-spacing: 0.005em;
+}
+
+.manager-shell .manager-header.analytics-hero {
+    padding: 0;
+    background: none;
+    border: 0;
+    box-shadow: none;
+}

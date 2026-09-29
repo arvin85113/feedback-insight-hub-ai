@@ -12,10 +12,10 @@
                 <small>Manager Workspace</small>
             </div>
         </div>
-        <nav class="manager-nav">
+        <nav class="manager-nav" aria-label="管理端導覽">
             {% for route, label, icon in dashboard_nav %}
-                <a class="manager-nav-link {% if active_section == route %}active{% endif %}" href="{% url route %}">
-                    <span class="manager-nav-icon">{{ forloop.counter }}</span>
+                <a class="manager-nav-link {% if active_section == route %}active{% endif %}" href="{% url route %}"{% if active_section == route %} aria-current="page"{% endif %}>
+                    <span class="manager-nav-icon">{% include "feedback/_nav_icon.html" with name=icon %}</span>
                     <span>{{ label }}</span>
                 </a>
             {% endfor %}
@@ -27,20 +27,27 @@
 
     <div class="manager-main">
         <header class="manager-topbar">
-            <div>
-                <p class="section-kicker">Manager Workspace</p>
-                <strong>歡迎回來，{{ user.get_full_name|default:user.username }}，開始今天的工作。</strong>
+            <div class="manager-topbar-title">
+                <h1>{{ section_label }}</h1>
+                <p>歡迎回來，{{ user.get_full_name|default:user.username }}</p>
             </div>
             <div class="manager-topbar-actions">
-                <a class="button button-ghost" href="{% url 'feedback:home' %}">返回官網首頁</a>
+                <a class="button button-ghost button-small" href="{% url 'feedback:home' %}">返回官網</a>
                 <form method="post" action="{% url 'accounts:logout' %}">
                     {% csrf_token %}
-                    <button type="submit" class="button button-primary button-small">登出</button>
+                    <button type="submit" class="button button-quiet button-small">登出</button>
                 </form>
             </div>
         </header>
 
         <main class="manager-content">
+            {% if messages %}
+                <section class="flash-stack" aria-live="polite" aria-label="系統訊息">
+                    {% for message in messages %}
+                        <div class="flash-message flash-{{ message.tags|default:'info' }}">{{ message }}</div>
+                    {% endfor %}
+                </section>
+            {% endif %}
             {% block dashboard_content %}{% endblock %}
         </main>
     </div>

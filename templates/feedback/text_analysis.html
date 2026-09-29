@@ -95,7 +95,7 @@
                             <strong class="keyword-signal-word">{{ keyword.keyword }}</strong>
                         </div>
                         <span class="keyword-signal-count">{{ keyword.count }} 次</span>
-                        <a class="button button-primary button-small"
+                        <a class="button button-ghost button-small"
                         href="{% url 'feedback:improvement-create' selected_survey.slug %}?category={{ keyword.category }}&keyword={{ keyword.keyword }}">建立改善</a>
                     </article>
                 {% empty %}

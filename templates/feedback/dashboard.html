@@ -6,8 +6,7 @@
 {% block dashboard_page_header %}
 <section class="manager-header manager-header-inline">
     <div>
-        <p class="section-kicker">Manager Workspace</p>
-        <p>
+        <p class="manager-lead">
             這個首頁聚合近期回饋、改善任務與通知狀態，讓管理端能快速判斷目前最需要處理的問卷、
             哪些改善案應該優先推進，以及是否有顧客需要更新通知。
         </p>
@@ -775,7 +774,9 @@
 
     surveyButtons.forEach((button) => button.addEventListener('click', () => selectSurvey(button)));
     refreshButton.addEventListener('click', refreshStatus);
-    if (surveyButtons.length) selectSurvey(surveyButtons[0]);
+    // Open on the first survey with enough responses to analyse, not an empty one.
+    const initialSurvey = surveyButtons.find((button) => Number(button.dataset.validResponseCount) >= 3) || surveyButtons[0];
+    if (initialSurvey) selectSurvey(initialSurvey);
 })();
 </script>
 {% endblock %}
