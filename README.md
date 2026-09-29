@@ -89,7 +89,7 @@ ALLOWED_HOSTS=127.0.0.1,localhost
 
 # 僅本機 Gemini 工作台需要
 GOOGLE_API_KEY=
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-3.6-flash
 ```
 
 - 未設定 `DATABASE_URL` 時，開發環境可使用 SQLite；需要與網站共用資料時，設定受控的 PostgreSQL／Supabase 連線。
@@ -181,9 +181,10 @@ static/ templates/                Django 前端資產與樣板
 ## 相關文件
 
 - [系統架構](docs/architecture.md)
+- [技術展示](docs/technical-showcase.md)
 - [外部資料匯入與本機資料層](docs/external-dataset-import.md)
-- [後續工作與驗證證據](docs/next-actions.md)
-- [歷史變更](docs/CHANGELOG.md)
+- [現況與待辦](docs/next-actions.md)
+- [除錯筆記](docs/debugging-notes.md)
 
 ## 開發原則
 

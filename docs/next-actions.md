@@ -1,186 +1,51 @@
-# Feedback Insight Hub 下一階段行動計畫
+# 現況與待辦
 
-> 狀態：執行中；各階段仍以本文件的「實作進度」及測試證據判定。migration 與程式部署一般仍須分別查證；本次實際狀態記於下方。
-> 基準日期：2026-09-05。執行時仍以實際程式、Git 差異及驗證證據為準。
+只記錄**目前**狀態與未完成事項；完成的項目直接刪除，不保留歷史（歷史看 Git log）。
+實際程式、資料庫與驗證證據優先於本文件；標示「待確認」者不可當成事實。
 
-## 實作進度（2026-09-29）
+## 目前狀態（2026-09-29 查證）
 
-- 現況摘要（原 AGENTS.md「已確認現況」移入此處）：migration 0015～0019 已套用至設定的 Supabase；TripAdvisor 固定版本 201,295 列以本機 Parquet 分析；deterministic／AI 單次與持續輪詢 CLI 已存在但未安裝為服務；EXE 可列出 Supabase 問卷並兩段發布，安裝包、簽章與跨機器驗收未完成；模型訓練與預測延後。
-- 基線：`main`／`origin/main` 為 `da0f55e`；Render Dashboard 確認 `da0f55e` 為 Live（2026-09-08 自動部署，Free 方案閒置會休眠）。下方 2026-09-06 條目中的 HEAD `c8448b3`、「Render 部署與真實 Gemini 驗收仍未完成」已過時。
-- 正式 EXE 可見驗收：3 份問卷、201,444 筆；TripAdvisor 201,295 筆、本機完整資料集就緒，第一段與第二段皆顯示最新。Gemini 已於 2026-09-08 15:15～15:23 對三份問卷執行並發布（`gemini-2.5-flash`），桌面端「最新」判定需 AI manifest 與目前輸入／設定／管線及來源版本一致。
-- Gemini 2.5 Flash 預定於 2026-10-16～20 在 Vertex（已改名 Gemini Enterprise Agent Platform）停用；預設模型改為 `gemini-3.6-flash`，Gemini 3+ 改用 `GEMINI_THINKING_LEVEL`／`GEMINI_COMPACT_THINKING_LEVEL` 並沿用模型預設 temperature，`gemini-2.x` 仍用 thinking budget。換模型後既有 AI Stage 不再重用，需重跑 Gemini（付費）；正式 EXE 須重建才會使用新參數。
-- 部署安全網：Render 或 `DEBUG=False` 時缺 `DJANGO_SECRET_KEY` 會拒絕啟動，Render 預設 `DEBUG=False`；新增 `gunicorn.conf.py`（workers／timeout／preload／回收）、`LOGGING`，並固定 `jieba==0.42.1`。
-- 測試隔離：`config.settings_test`／`settings_postgres_test` 固定測試模型並使用假金鑰，不再讀入開發者 `.env` 的模型或真實金鑰；修正營運分析頁搬移後的過時測試。2026-09-29 本機 Python 3.12.14 於無 `.env` 的乾淨副本執行 `feedback accounts` 226 項通過（1 項略過）。
-- 新增 GitHub Actions CI：Python 3.12／3.13 執行 migration 檢查、system check 與全部 SQLite 測試，另以 PostgreSQL 17 服務執行併發測試；首次推送後才會有 CI 結果。
-- Web 啟動只載入 `jieba`、`google.genai`，pandas／scipy／duckdb 為延遲載入；拆分 web／worker 依賴主要縮短建置時間，列為後續項目。
-- Phase 2（同日）：移除 `ANALYSIS_READ_PUBLISHED_ONLY` 切換，本機與 Render 頁面一律只讀已發布結果；刪除 request-time 統計／文字 wrapper 及同步 Snapshot／Gemini POST 端點（UI 僅使用 GET 狀態端點）。AI 草稿匯入一律依發布指標判定最新；手動新增改善項目不會使已發布 synthesis 過期（與 Render 既有行為相同），是否應觸發版本失效待決定。
-- 桌面工作台的 Gemini「最新」判定加入模型名稱：`GEMINI_MODEL` 與已發布 AI 的 `model_name` 不同時顯示待更新，可用「只執行勾選問卷 Gemini」重跑。
-- Gemini prompt 改為 evidence-grounded：AI 文字可引用與所引 evidence 一致的數字（`feedback/ai_grounding.py`），prompt 改以品質目標為主並提高標準模式上限；stage prompt 版本由指令／schema／上限內容雜湊產生；無文字 evidence 時跳過文字階段呼叫。46 筆問卷（gemini-3.6-flash）試驗：發現引用具體數值、無被丟棄項目、呼叫由 3 次降為 2 次，結果已發布。
-- EXE 改為單一 windowed 版，警告與未預期錯誤寫入 `%LOCALAPPDATA%\FeedbackInsightHub\logs\desktop.log`；已刪除過時的診斷版封裝。AGENTS.md 精簡為長期規則，CLAUDE.md 以 `@AGENTS.md` 匯入同一份規則。
-- 舊版單次 `generate_report` 已無網頁呼叫端，但其限流／截斷／日誌隱私測試尚未移植到 AI Stage 流程，移植後再刪除。
+**部署**
+- `main` 由 GitHub Actions CI 驗證（Python 3.12／3.13 全套測試＋PostgreSQL 17 併發測試），合併後 Render 自動部署。
+  目前 Live 的 commit 以 Render Dashboard 為準。
+- 網站（本機與 Render）分析頁只讀已發布結果；`/healthz/`、`/healthz/db/` 健康檢查；資料庫無法連線時回 503 提示頁。
+- `.github/workflows/keepalive.yml` 每三天呼叫 `/healthz/db/`，避免 Supabase 因閒置暫停。
 
-## 實作進度（2026-09-06）
+**資料庫（Supabase 免費方案，上限 500 MB）**
+- 2026-09-29 實測 391 MB；其中約 377 MB 是早期匯入的 TripAdvisor 10 萬筆樣本
+  （`FeedbackSubmission`／`Answer`／`ImportedSubmissionSource`）。TripAdvisor 分析已改讀本機 Parquet，這批列不再使用。
+- 這批列已備份並驗證：`data/local/backups/supabase-tripadvisor-sample-20260929/`（Parquet＋`manifest.json`）。
 
-- 本次未提交基線位於 `main`，目前 HEAD 為 `c8448b3`；工作區含既有大量修改與未追蹤產物，後續提交前必須先依功能邊界分組審查，不可把所有差異一次視為單一乾淨提交。
-- 第一階段已建立 Git 忽略的 `.venv`：Python 3.12.14、Django 6.0.8、DuckDB 1.5.5、Pandas 3.0.5、SciPy 1.18.1，沿用 `requirements.txt`，未另行升級。
-- 隔離 SQLite 的 `feedback`／`accounts` 受影響範圍共 204 項通過，涵蓋背景分析、匯入、Worker、發布只讀頁、回覆冪等與封存語意；測試 DB 均建立後銷毀，未呼叫付費 API。另以唯讀交易驗證 Supabase 遷移後的核心列數與唯一性。
-- 第二階段第一批已實作：`SurveyAnalysisState` 保存輸入／設定／管線版本與各階段發布指標；`AnalysisJob` 保存來源版本、階段、租約、心跳、有限重試、取消與安全錯誤碼。
-- Django 回覆建立、Answer／題目／詞典變更可更新版本並合併待處理工作；既有批次匯入改為每批流程只排一個等價工作。發布時會在短交易內重查租約與版本，拒絕過期 Worker，且 mock 階段不得正式發布。
-- 第三階段第一批已實作：`run_analysis_worker_once` 僅領取 deterministic 工作，可從 Answer 或已登錄固定版本 Parquet 產生無原始評論的版本化本機產物；快取與輸入完整性通過後建立／重用 Snapshot，再以短交易發布統計／文字指標。`run_analysis_worker` 可供程序管理員持續輪詢，仍未安裝成 Windows／雲端服務。
-- 第四階段第一批已實作：`run_ai_worker_once` 只領取 AI synthesis 工作，未帶 `--allow-paid-ai` 時不領取；沿用既有三階段 schema／遮蔽證據與 Snapshot，provider timeout 等不確定狀態不盲目重呼。僅以 mock provider 測試，未呼叫真實 Gemini。
-- 第五階段第一批已實作：發布交易把有限的統計／文字及 AI 展示副本保存於 `SurveyAnalysisState`，排除大型 evidence catalog；統計、文字及 AI 狀態端點在 `ANALYSIS_READ_PUBLISHED_ONLY=True` 時只讀這些副本，不觸發 request-time 分析。同步 POST 在此模式只排背景工作；頁面顯示最新／等待新版及 AI 版本差異。本機預設關閉，Render blueprint 已啟用並部署。
-- `ANALYSIS_AUTO_AI_ENABLED=True` 時，AI 工作只會在 deterministic 發布交易成功後排入；AI Worker 會在 provider 呼叫前再次核對統計與文字版本，防止以舊 Snapshot 冒充新版分析。
-- 2026-09-07 已採混合資料層：網站問卷 Answer 保存於 Supabase；大型固定外部資料保留本機 Parquet，Supabase 保存問卷定義、工作狀態與版本化結果。桌面工作台依問卷 slug 選擇 AnswerInput 或 ParquetInput，兩者共用分析與發布流程。
-- 2026-09-06 桌面流程已拆成兩段：第一段發布統計／文字 Snapshot，第二段在管理員勾選 API 額度選項後執行 Gemini 並發布新 Stage；列表分別顯示兩段時間與新舊狀態。隔離測試驗證未啟用時不觸及 AI worker，啟用後保留原 Snapshot 並新增 synthesis Stage。
-- Django 已成為唯一後端與 ORM；舊第二服務、呼叫端、設定與依賴已移除。網站提交直接使用 Django domain service，並以回覆冪等鍵防止重送。
-- 新增明確隔離的 `config.settings_test`；2026-09-06 的 `feedback`／`accounts` 受影響範圍共 204 項測試通過，未呼叫真實 Gemini。
-- Windows 封裝已改用不依賴 Tcl/Tk 的 Dear PyGui；校正後 one-folder EXE 位於 `dist/FeedbackInsightHub/FeedbackInsightHub.exe`，smoke-test exit code 為 0，未包含 `.env`。新版 Supabase 畫面的實際正式連線、跨機器驗收、安裝包及程式碼簽章仍未完成。
-- `0015`～`0018` 已套用至設定的 Supabase：新增匯入來源、分析工作／發布狀態與 v2 生命週期欄位，既有 3／8／150／710 筆核心列數保持一致。程序服務安裝、Render 部署與真實 Gemini 驗收仍未完成。
-- 已新增 `config.settings_postgres_test` 與 PostgreSQL 專用雙 Worker 測試，強制使用獨立 `TEST_DATABASE_URL`、隔離確認旗標及測試用途資料庫名稱，避免誤接 `DATABASE_URL`。2026-09-06 使用臨時 PostgreSQL 17.11 隔離叢集執行 2 項測試，雙 Worker 原子領取、租約接手及舊租約發布拒絕均通過；測試資料庫、叢集與下載檔已停止並刪除，未連 Supabase。SQLite 跳過仍不視為通過。
-- Render 上線前檢查已移除 build 階段的 `ensure_superuser` 與 `fix_empty_slugs`，避免每次部署重設帳密或執行一次性資料修復；依賴、靜態檔與 migration 保留，並補齊反向代理 HTTPS、安全 Cookie 與動態 Render hostname 設定。提交 `43c9839` 已於 2026-09-06 23:20:40（GMT+8）自動部署為 Live，耗時 1 分 35 秒；公開首頁及 CSS 為 HTTP 200，暖機首頁三次中位數 0.141 秒，管理頁未登入時正確導向登入，HTTP 正確轉 HTTPS。
+**分析與 Gemini**
+- `GEMINI_MODEL=gemini-3.6-flash`（Vertex／Agent Platform express mode）；gemini-2.5-flash 預定 2026-10 停用。
+- Prompt 為 evidence-grounded：AI 文字中的數字須能對應所引用 evidence（`feedback/ai_grounding.py`）。
+- 已用新 prompt 發布 Gemini 的問卷：「2026 Q1 跨部門…」（46 筆）。TripAdvisor 與飲料店問卷的 Gemini 結果仍是舊模型與舊 prompt，
+  桌面工作台會顯示「待更新」。
+- TripAdvisor 來源：本機 clean Parquet 201,295 筆，已登錄為外部分析來源。
 
-隔離 PostgreSQL 可用後，只執行 `feedback.test_analysis_jobs_postgres`；使用 `config.settings_postgres_test`，並明確提供 `TEST_DATABASE_URL` 與 `TEST_DATABASE_CONFIRM_ISOLATED=1`。該角色必須能讓 Django 測試流程建立及銷毀測試資料庫，且不得指向正式 Supabase。
+**桌面工作台／EXE**
+- `dist/FeedbackInsightHub/` 為單一 windowed 版；錯誤寫入 `%LOCALAPPDATA%\FeedbackInsightHub\logs\desktop.log`。
+- `dist/FeedbackInsightHub.bak-20260908/` 是舊版備份，確認新版正常後可刪除。
+- `.venv` 建立在 Codex 內建的 Python 3.12 runtime 上；Render 使用 Python 3.13。
 
-## 目標
+## 待辦（依優先順序）
 
-建立可持續的流程：
-
-`收資料 → 背景統計與文字分析 → 既有 schema／Gemini → 版本化發布 → Render 快速展示`
-
-本階段完成後，分析頁只讀已發布結果；問卷收集、權限、管理設定與工作排程仍保留必要讀寫。
-模型訓練與預測延後；Windows GUI 與 one-folder EXE 原型已完成本機封裝驗證，正式安裝包與跨機器驗收仍待後續處理。
-
-## 已有基礎
-
-- TripAdvisor 固定版本 raw／clean／report／manifest 已建立，共 201,295 列；不再要求把完整列匯入 Supabase。
-- `AnalysisInput`、資料庫串流 `AnswerInput`、`ParquetInput` 已存在；2026-09-07 已用 ParquetInput 完成 201,295 筆第一階段正式發布。
-- 本機管線已能重用統計、文字分析及既有 AI schema，並產生 `ai_mode=mock` 的版本化本機產物。
-- `SurveyAIReportSnapshot`／`SurveyAIAnalysisStage` 已提供指紋、版本、revision 與成功結果重用。
-- 預設設定下網頁仍保留 request 內重運算及同步 Gemini POST；背景 Job／單次 Worker 與可選發布只讀路徑已存在，但 migration、常駐執行、正式切換與部署尚未完成。
-- `hotel_id` 在此資料版本每值一列，不可用於飯店群組切分。
-
-## 第一階段：建立可信的執行基準
-
-1. 找出並沿用已安裝完整專案依賴的 Python 環境；不因缺套件就直接升級全部依賴。
-2. 確認測試設定固定指向隔離 SQLite 或專用測試 PostgreSQL，禁止連正式 Supabase。
-3. 只補缺失或受本階段修改影響的 targeted tests；已確認且輸入、程式與環境未變的資料層驗證不重跑。
-4. 記錄 Python 與關鍵套件版本、測試命令、結果及時間，作為後續修改的比較基準。
-5. 若同一環境根因修正兩次仍失敗，保存證據並停止擴大處理。
-
-完成條件：
-
-- 受影響的共用分析、工作與發布測試具有本次可重現的通過證據；沿用資料層既有驗證時須記錄其輸入與程式未變。
-- 測試過程沒有正式 DB、網路付費 API、寄信或改善項目副作用。
-
-## 第二階段：定義工作與發布合約
-
-1. 盤點現有 Snapshot／AI Stage 狀態與唯一約束，確認哪些欄位可直接重用。
-2. 定義統一的分析來源識別：來源類型、來源版本、clean hash、管線版本及輸入指紋；回覆新增／修改／刪除須更新輸入版本，分析題目、詞典或管線變更須更新設定／管線版本。
-3. 版本更新與工作排程在來源交易成功後觸發；批次匯入期間合併相同來源與目標版本的工作，避免逐列排程。
-4. GET 只讀既存版本與發布指標，不以全量 Answer 或 Parquet 掃描判斷是否需要重算。
-5. 定義最小工作狀態：等待、執行、成功、失敗、取消；包含 owner、租約、心跳、嘗試次數及安全錯誤碼。
-6. 定義原子領取、租約到期、有限重試與取消語意，避免兩個 Worker 同時發布同一工作。
-7. 若執行途中來源版本變更，舊工作結果保留為歷史但不得標為最新；交易成功後必須確保新版工作已排入或已有等價待處理工作。
-8. 雲端正式結果位置選定為 Supabase PostgreSQL 的既有 `SurveyAIReportSnapshot`／`SurveyAIAnalysisStage`；Render 只讀其中有限大小的展示 payload 與發布指標。
-9. 決定外部資料如何關聯既有 Snapshot；優先延伸共用來源合約，避免建立 TripAdvisor 專用核心模型。
-10. 定義發布前置條件：工作所有權仍有效、輸入與管線版本未變、上游階段完整、輸出 schema 驗證通過。
-11. 本機原子改名只代表本機產物完成；結果上傳並驗證後，才在短交易內重查租約／版本並更新最新發布指標。
-12. 只有確定需要保存的新狀態才修改 models 並產生 migration；本階段先審查 migration，不套用開發或正式 DB。
-
-完成條件：
-
-- 工作、來源、結果及版本之間有單一且可測試的權威關係。
-- 過期 Worker、重複請求與已取消工作不能覆蓋較新的成功結果。
-- 來源交易提交後必有對應新版工作，批次操作不產生大量等價工作。
-- mock、真實 Gemini 與正式發布狀態在資料與 UI 合約上可清楚區分。
-
-## 第三階段：本機 Worker／CLI
-
-1. 將現有單次本機分析包成可領取工作的 CLI／service，Worker 僅主動向外連線。
-2. 以 `AnalysisInput` 從 Supabase Answer 串流必要欄位，保存固定輸入版本後執行統計與文字分析；外部資料須先匯入成一般問卷。
-3. 長工作定期更新心跳與進度，於階段邊界檢查取消旗標。
-4. 每一階段先寫暫存產物，驗證 schema、hash 與版本後完成本機產物；雲端發布另依上傳、驗證與短交易流程執行。
-5. 本機離線時保留最後成功結果；新工作維持等待，不切換至 Render 重算。
-6. 限制 log 只含工作 ID、版本、計數、耗時及安全錯誤碼，不輸出評論、user ID 或憑證。
-7. 統計與文字階段可在各自驗證通過後先發布；AI 使用獨立狀態及版本繼續處理。
-8. AI 失敗時保留新版統計／文字與上一版成功 AI，展示資料須明確標示兩者來源版本及生成時間不同。
-
-Targeted tests：
-
-- 兩個 Worker 只能有一個成功領取。
-- 租約續期、逾期接手、取消及有限重試符合定義。
-- 純計算與一般狀態測試可用 SQLite；原子領取、租約接手、過期 Worker 發布防護必須使用隔離 PostgreSQL，不以 SQLite 通過推定正式 DB 行為。
-- 輸入檔於分析中變更時拒絕發布。
-- 中斷只留下未發布暫存產物；重跑可安全恢復。
-- 相同輸入與管線版本命中快取，不重算全量資料。
-- 回覆或分析設定於工作途中變更時，舊結果不會成為最新，且新版工作已排入。
-
-## 第四階段：Gemini 與版本化發布
-
-1. 先把統計與文字聚合結果轉成既有 evidence／AI Stage schema；文字證據須先遮蔽，並限制證據數量、單筆長度及總長度，可在限制內包含必要的完整短評論。
-2. 開發驗證預設 mock；真實付費 API 只有在任務授權後啟用。
-3. 產品運行時，由管理員設定資料範圍、模型、額度與自動分析開關；啟用後可依設定呼叫 Gemini。
-4. 沿用既有設定入口與必要欄位，不為自動額度另建大型管理 UI。
-5. AI API 呼叫重試與一般工作重試分開計數及判斷；timeout、連線中斷等結果不確定狀態不得盲目重呼。
-6. 不宣稱跨資料庫與外部 API 可保證付費呼叫 exactly-once；保存請求識別、狀態與供人工判斷的安全證據，降低重複付費風險。
-7. Gemini 輸出必須通過 structured output、evidence refs、長度及列舉值驗證。
-8. 發布保存來源版本、管線／prompt／schema／模型版本、生成時間、耗時及結果 hash。
-9. mock 結果只供測試及格式驗證，不得作為正式 AI 結論發布。
-10. 寄信與建立改善項目使用獨立授權及操作，不由分析成功自動觸發。
-
-完成條件：
-
-- mock 與付費 API 路徑使用相同驗證與發布合約。
-- Gemini 無法取得原始識別資訊；文字證據均已遮蔽並受數量與長度上限約束。
-- 發布失敗不影響上一版成功 Snapshot。
-
-## 第五階段：Render 快速展示
-
-1. 統計、文字與 AI 分析頁改讀 Supabase 中既有 Snapshot／Stage 的最新發布指標與有限大小展示 payload，不在 request 內掃描全量資料或呼叫 Gemini。
-2. Render 不下載全量原文、大型 evidence catalog 或本機分析產物；需要的明細先在背景工作中裁切、遮蔽及彙整。
-3. 沒有新成功結果時顯示最後成功版本、資料時間、狀態與限制；不得用 Render 即時計算補位。
-4. 統計／文字已有新版而 AI 失敗或仍執行時，展示新版統計／文字與上一版成功 AI，清楚標示版本差異。
-5. 管理員可沿用既有設定啟用自動分析範圍／額度，並查看等待、執行、失敗及取消狀態。
-6. 問卷提交、登入權限、設定與排程保留必要讀寫；正式流程只使用 Django。
-7. 部署前確認依賴鎖定、migration 目標與 Render 回復方案，避免網站程式落後於已套用 schema。
-
-完成條件：
-
-- 分析頁的回應時間不隨 201,295 列資料量線性增加。
-- request 路徑沒有 DuckDB 全量掃描、NLP、訓練或 Gemini 呼叫。
-- 權限、版本標示、離線狀態及最後成功結果可由 targeted tests 驗證。
-
-## 最終端到端驗收
-
-1. 在已授權環境記錄 migration 產生、審查、套用及回復方案；正式 DB 套用與部署須另有任務授權。
-2. 在已授權的真實 API 環境驗證：建立新回覆 → 交易後自動排程 → Worker 領取 → 統計／文字發布 → 真實 Gemini → Render 顯示新版。
-3. 驗證本機離線時新工作等待且最後成功結果可讀；恢復連線後可續行。
-4. 驗證 AI 失敗仍保留新版統計／文字及上一版 AI，且版本差異顯示正確。
-5. 驗證重新整理頁面不觸發重算，舊 Worker 不能覆蓋新版發布指標。
-6. 分別記錄 Render 冷啟動與暖機後的頁面耗時、查詢次數及 payload 大小。
-7. 部署前保存 DB／發布狀態回復點；若 migration、Worker 或展示驗收失敗，依回復方案恢復上一版程式及發布指標。
-
-完成條件：
-
-- 端到端證據含輸入版本、工作 ID、階段版本、發布時間及 Render 顯示版本，且不含敏感原文或憑證。
-- 真實 API 與正式部署步驟只在對應任務已授權的環境執行。
+1. **合併進行中的 PR**：#5（問卷列表「編輯設定」入口）、#6（外部資料集問卷顯示資料集筆數）。
+2. **移除 Supabase 的 TripAdvisor 樣本列**（需授權）：#6 部署後，於單一交易依序刪除 `Answer` → `ImportedSubmissionSource`
+   → `FeedbackSubmission`，筆數須與備份一致才 commit；接著 `VACUUM FULL` 三張表並重測容量。保留 `DatasetImportBatch` 紀錄。
+3. **重跑 Gemini**（付費，需授權）：TripAdvisor 與飲料店問卷改用 gemini-3.6-flash 與新 prompt。
+4. **機器學習**：先決定目標（展示或實用）、運算資源（CPU／GPU）、EXE 大小容忍度；建議起點為關鍵驅動因子分析與
+   TF-IDF＋邏輯迴歸文字分類，使用依日期的固定切分，並與現行詞典方法比較。
+5. **為 ML 調整 schema**（需 migration 與授權）：`Answer` 加數值欄位、選項表（穩定 key）、題目版本、
+   模型預測另存一表（含模型版本）、指標歷史表；模型產物與向量留在本機，Supabase 只存中繼資料與彙總。
+6. **本機 Worker 服務化**：以工作排程器或 Windows 服務定期執行 `run_analysis_worker`；安裝包與簽章。
+7. **文字分析效能**：TripAdvisor 全量文字階段約 21.6 秒，瓶頸在逐筆處理與重複斷詞，可改為分批平行處理。
+8. **歷史版本比較介面**（依賴第 5 項的指標歷史表）。
+9. **清理舊版單次 AI 報告的顯示相容程式**（`ai_report_service` 驗證器、舊草稿匯入 view、`get_report_status` 等）。
+10. **待決定**：手動新增改善項目是否應讓已發布的 AI synthesis 過期（會觸發付費重跑）。
+11. **環境**：以獨立 Python 3.13 重建 `.venv`，擺脫對 Codex runtime 的依賴。
+12. **UI 小項**：文字雲調色盤仍是舊的橘／藍色系，與品牌綠不一致。
 
 ## 延後範圍
 
-- 預測 A：五個構面預測 overall，Dummy＋簡單模型，以 MAE 評估。
-- 預測 B：text 預測低分，Dummy＋簡單模型，以 Macro-F1、低分 Recall、混淆矩陣評估。
-- 固定 train／validation／test、模型產物及實驗登錄。
-- Windows 安裝包／程式碼簽章／跨機器驗收、雲端發布操作，以及更細粒度的長工作進度與取消。
-
-模型項目須在背景分析與發布流程穩定後另立執行計畫；桌面封裝在目前 GUI targeted tests 與本機資料驗證通過後繼續。
-
-## 執行與查核索引
-
-- 資料版本、下載、清理與隱私：[external-dataset-import.md](external-dataset-import.md)
-- 代理邊界與安全規則：[AGENTS.md](../AGENTS.md)
-- 現行系統與 UI：[architecture.md](architecture.md)
-- 產品與 AI 流程：[README.md](../README.md)
-- 實際依賴：[requirements.txt](../requirements.txt)
-- 部署腳本：[build.sh](../build.sh) 與 [render.yaml](../render.yaml)
-
-每一階段開始前重新確認 git status 與受影響程式；只跑相關測試，不重跑輸入、程式及環境皆未變的昂貴驗證。
+預測模型的正式上線、多組織（owner）資料隔離，需各自的規格文件後再開始。
