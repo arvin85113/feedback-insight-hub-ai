@@ -15,8 +15,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 3.12 matches the local worker/EXE build; 3.13 matches Render.
-        python-version: ["3.12", "3.13"]
+        # Render, the local .venv and the Windows EXE all run Python 3.13.
+        python-version: ["3.13"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

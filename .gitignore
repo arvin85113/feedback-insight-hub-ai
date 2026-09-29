@@ -9,7 +9,7 @@ GeminiAPI.txt
 dist/
 build/
 .pytest_cache/
-.venv/
+.venv*/
 venv/
 .mypy_cache/
 .ruff_cache/
