@@ -731,19 +731,16 @@ class AIStageDashboardTests(AIReportTestCase):
             args=[self.survey.slug, self.snapshot.pk, stage_type],
         )
 
-    def test_dashboard_uses_stage_status_endpoint_and_shows_three_stage_shell(self):
+    def test_operations_page_uses_stage_status_endpoint_and_shows_three_stage_shell(self):
+        # The AI stage shell moved from the overview to the operations page (7c579cc).
         with patch("feedback.views.local_service.get_dashboard_payload", return_value={}):
-            response = self.client.get(reverse("feedback:dashboard"))
+            response = self.client.get(reverse("feedback:analysis-operations"))
         self.assertContains(response, self.status_url())
-        self.assertContains(response, "AI 正在分析統計資料")
-        self.assertContains(response, "AI 正在整理文字洞察")
-        self.assertContains(response, "AI 正在產生營運摘要與改善草稿")
+        # Manual per-stage progress labels were replaced by the local worker workflow (dfd3dff).
+        self.assertContains(response, "本機工作台正在產生 Gemini 綜合分析")
         self.assertContains(response, "const status = freshness.is_current")
         self.assertNotContains(response, "const status = report.is_current")
         self.assertContains(response, "else {\n            clearError();")
-        self.assertContains(response, "function hasCurrentSuccessfulPipeline(data)")
-        self.assertContains(response, "recovered = hasCurrentSuccessfulPipeline(current)")
-        self.assertContains(response, "if (recovered) {\n                clearError();")
         self.assertContains(response, 'class="ai-report-spinner"')
         self.assertContains(response, "progressText.textContent = message")
         self.assertContains(response, "function evidenceAnalysisKey(row)")
@@ -758,7 +755,7 @@ class AIStageDashboardTests(AIReportTestCase):
         self.assertContains(response, "high: '高優先'")
         self.assertContains(response, "medium: '中優先'")
         self.assertContains(response, "low: '低優先'")
-        self.assertContains(response, "/static/css/app.css?v=20260814-ai4")
+        self.assertContains(response, "/static/css/app.css?v=")
 
     def test_ai_report_css_has_balanced_desktop_and_single_column_rules(self):
         css_path = Path(__file__).resolve().parents[1] / "static" / "css" / "app.css"

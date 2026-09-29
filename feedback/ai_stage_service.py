@@ -14,7 +14,13 @@ from django.utils import timezone
 from google.genai import types
 
 from . import ai_statistics_service, ai_synthesis_service, ai_text_service
-from .ai_report_service import AIReportError, _provider_error, _wait_for_request_slot, create_gemini_client
+from .ai_report_service import (
+    AIReportError,
+    _provider_error,
+    _wait_for_request_slot,
+    create_gemini_client,
+    generation_options,
+)
 from .ai_snapshot_service import (
     SNAPSHOT_SCHEMA_VERSION,
     build_evidence_coverage,
@@ -516,12 +522,6 @@ def _attempt_config(
     evidence_aliases,
     evidence_aliases_bound,
 ):
-    if profile == COMPACT_PROFILE:
-        thinking_budget = settings.GEMINI_COMPACT_THINKING_BUDGET
-        output_tokens = settings.GEMINI_COMPACT_MAX_OUTPUT_TOKENS
-    else:
-        thinking_budget = settings.GEMINI_THINKING_BUDGET
-        output_tokens = settings.GEMINI_MAX_OUTPUT_TOKENS
     response_schema = module.response_schema_for_profile(profile)
     response_schema = _describe_evidence_aliases(response_schema, evidence_aliases)
     return types.GenerateContentConfig(
@@ -530,9 +530,7 @@ def _attempt_config(
             profile,
             evidence_aliases_bound=evidence_aliases_bound,
         ),
-        temperature=0.2,
-        max_output_tokens=output_tokens,
-        thinking_config=types.ThinkingConfig(thinking_budget=thinking_budget),
+        **generation_options(profile),
         response_mime_type="application/json",
         response_schema=response_schema,
         http_options=types.HttpOptions(

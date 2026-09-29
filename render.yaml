@@ -3,7 +3,7 @@ services:
     name: feedback-insight-hub
     runtime: python
     buildCommand: "bash build.sh"
-    startCommand: "python -m gunicorn config.wsgi:application"
+    startCommand: "python -m gunicorn -c gunicorn.conf.py config.wsgi:application"
     plan: free
     envVars:
       - key: PYTHON_VERSION

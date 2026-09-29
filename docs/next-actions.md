@@ -3,6 +3,16 @@
 > 狀態：執行中；各階段仍以本文件的「實作進度」及測試證據判定。migration 與程式部署一般仍須分別查證；本次實際狀態記於下方。
 > 基準日期：2026-09-05。執行時仍以實際程式、Git 差異及驗證證據為準。
 
+## 實作進度（2026-09-29）
+
+- 基線：`main`／`origin/main` 為 `da0f55e`；Render Dashboard 確認 `da0f55e` 為 Live（2026-09-08 自動部署，Free 方案閒置會休眠）。下方 2026-09-06 條目中的 HEAD `c8448b3`、「Render 部署與真實 Gemini 驗收仍未完成」已過時。
+- 正式 EXE 可見驗收：3 份問卷、201,444 筆；TripAdvisor 201,295 筆、本機完整資料集就緒，第一段與第二段皆顯示最新。Gemini 已於 2026-09-08 15:15～15:23 對三份問卷執行並發布（`gemini-2.5-flash`），桌面端「最新」判定需 AI manifest 與目前輸入／設定／管線及來源版本一致。
+- Gemini 2.5 Flash 預定於 2026-10-16～20 在 Vertex（已改名 Gemini Enterprise Agent Platform）停用；預設模型改為 `gemini-3.6-flash`，Gemini 3+ 改用 `GEMINI_THINKING_LEVEL`／`GEMINI_COMPACT_THINKING_LEVEL` 並沿用模型預設 temperature，`gemini-2.x` 仍用 thinking budget。換模型後既有 AI Stage 不再重用，需重跑 Gemini（付費）；正式 EXE 須重建才會使用新參數。
+- 部署安全網：Render 或 `DEBUG=False` 時缺 `DJANGO_SECRET_KEY` 會拒絕啟動，Render 預設 `DEBUG=False`；新增 `gunicorn.conf.py`（workers／timeout／preload／回收）、`LOGGING`，並固定 `jieba==0.42.1`。
+- 測試隔離：`config.settings_test`／`settings_postgres_test` 固定測試模型並使用假金鑰，不再讀入開發者 `.env` 的模型或真實金鑰；修正營運分析頁搬移後的過時測試。2026-09-29 本機 Python 3.12.14 於無 `.env` 的乾淨副本執行 `feedback accounts` 226 項通過（1 項略過）。
+- 新增 GitHub Actions CI：Python 3.12／3.13 執行 migration 檢查、system check 與全部 SQLite 測試，另以 PostgreSQL 17 服務執行併發測試；首次推送後才會有 CI 結果。
+- Web 啟動只載入 `jieba`、`google.genai`，pandas／scipy／duckdb 為延遲載入；拆分 web／worker 依賴主要縮短建置時間，列為後續項目。
+
 ## 實作進度（2026-09-06）
 
 - 本次未提交基線位於 `main`，目前 HEAD 為 `c8448b3`；工作區含既有大量修改與未追蹤產物，後續提交前必須先依功能邊界分組審查，不可把所有差異一次視為單一乾淨提交。

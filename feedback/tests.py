@@ -9,11 +9,13 @@ from django.contrib.auth import get_user_model
 from django.db.models.query import QuerySet
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
+from google.genai import types
 
 from .ai_report_service import (
     AIReportError,
     _provider_error,
     create_gemini_client,
+    generation_options,
     generate_report,
     validate_report_payload,
 )
@@ -28,7 +30,7 @@ from .ai_snapshot_service import (
     format_p_value,
     serialize_evidence_for_display,
 )
-from .evidence_projection import project_evidence
+from .evidence_projection import COMPACT_PROFILE, STANDARD_PROFILE, project_evidence
 from .local_service import _round_p_value, build_stats_payload, build_text_analysis_payload
 from .models import (
     Answer,
@@ -769,6 +771,31 @@ class StructuredReportTests(AIReportTestCase):
     def test_express_mode_client_factory(self, client_class):
         create_gemini_client()
         client_class.assert_called_once_with(vertexai=True, api_key="configured")
+
+    @override_settings(
+        GEMINI_MODEL="gemini-3.6-flash",
+        GEMINI_THINKING_LEVEL="low",
+        GEMINI_COMPACT_THINKING_LEVEL="minimal",
+        GEMINI_TEMPERATURE=None,
+        GEMINI_MAX_OUTPUT_TOKENS=4096,
+        GEMINI_COMPACT_MAX_OUTPUT_TOKENS=2048,
+    )
+    def test_gemini_3_options_use_thinking_level_and_default_temperature(self):
+        standard = generation_options(STANDARD_PROFILE)
+        compact = generation_options(COMPACT_PROFILE)
+        self.assertIsNone(standard["temperature"])
+        self.assertEqual(standard["thinking_config"].thinking_level, types.ThinkingLevel.LOW)
+        self.assertIsNone(standard["thinking_config"].thinking_budget)
+        self.assertEqual(standard["max_output_tokens"], 4096)
+        self.assertEqual(compact["thinking_config"].thinking_level, types.ThinkingLevel.MINIMAL)
+        self.assertEqual(compact["max_output_tokens"], 2048)
+
+    @override_settings(GEMINI_MODEL="gemini-2.5-flash", GEMINI_TEMPERATURE=None, GEMINI_THINKING_BUDGET=512)
+    def test_gemini_2_options_keep_legacy_thinking_budget(self):
+        options = generation_options(STANDARD_PROFILE)
+        self.assertEqual(options["temperature"], 0.2)
+        self.assertEqual(options["thinking_config"].thinking_budget, 512)
+        self.assertIsNone(options["thinking_config"].thinking_level)
 
     @override_settings(
         GOOGLE_API_KEY="configured",

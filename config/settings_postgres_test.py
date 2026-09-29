@@ -35,3 +35,6 @@ if not any(marker in database_name for marker in ("test", "isolated", "sandbox",
 
 DATABASES = {"default": test_database}
 EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+
+GEMINI_MODEL = "gemini-2.5-flash"
+GOOGLE_API_KEY = "test-key-not-a-real-credential"

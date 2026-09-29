@@ -584,18 +584,37 @@ def _profile_instruction(profile):
     )
 
 
+def uses_legacy_thinking_budget(model_name=None):
+    """Gemini 2.x uses token budgets; Gemini 3+ uses thinking levels."""
+
+    return (model_name or settings.GEMINI_MODEL).startswith("gemini-2.")
+
+
+def generation_options(profile):
+    """Model-family specific sampling and thinking options shared by all AI calls."""
+
+    compact = profile == COMPACT_PROFILE
+    output_tokens = settings.GEMINI_COMPACT_MAX_OUTPUT_TOKENS if compact else settings.GEMINI_MAX_OUTPUT_TOKENS
+    if uses_legacy_thinking_budget():
+        thinking_budget = settings.GEMINI_COMPACT_THINKING_BUDGET if compact else settings.GEMINI_THINKING_BUDGET
+        return {
+            "temperature": 0.2 if settings.GEMINI_TEMPERATURE is None else settings.GEMINI_TEMPERATURE,
+            "max_output_tokens": output_tokens,
+            "thinking_config": types.ThinkingConfig(thinking_budget=thinking_budget),
+        }
+    level = settings.GEMINI_COMPACT_THINKING_LEVEL if compact else settings.GEMINI_THINKING_LEVEL
+    # Gemini 3 is tuned for its default temperature; only override when configured.
+    return {
+        "temperature": settings.GEMINI_TEMPERATURE,
+        "max_output_tokens": output_tokens,
+        "thinking_config": types.ThinkingConfig(thinking_level=level.upper()),
+    }
+
+
 def _attempt_config(profile):
-    if profile == COMPACT_PROFILE:
-        thinking_budget = settings.GEMINI_COMPACT_THINKING_BUDGET
-        output_tokens = settings.GEMINI_COMPACT_MAX_OUTPUT_TOKENS
-    else:
-        thinking_budget = settings.GEMINI_THINKING_BUDGET
-        output_tokens = settings.GEMINI_MAX_OUTPUT_TOKENS
     return types.GenerateContentConfig(
         system_instruction=f"{SYSTEM_INSTRUCTION}\n{_profile_instruction(profile)}",
-        temperature=0.2,
-        max_output_tokens=output_tokens,
-        thinking_config=types.ThinkingConfig(thinking_budget=thinking_budget),
+        **generation_options(profile),
         response_mime_type="application/json",
         response_schema=response_schema_for_profile(profile),
         http_options=types.HttpOptions(
