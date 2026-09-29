@@ -150,6 +150,8 @@ EXE 再從 `%LOCALAPPDATA%\FeedbackInsightHub\datasets.json` 讀取該不可變�
 - 營運分析、統計、文字與 AI 展示僅讀已發布 payload。
 - 網頁不掃描全量回覆、不訓練模型，也不呼叫 Gemini。
 
+健康檢查：`/healthz/`（不碰資料庫）與 `/healthz/db/`（資料庫往返）。資料庫無法連線時頁面回傳 503 與自動重新整理的提示頁，而非伺服器錯誤。`.github/workflows/keepalive.yml` 每三天呼叫 `/healthz/db/`，避免 Supabase 免費方案因閒置暫停；已暫停的專案仍需在 Supabase 手動恢復。
+
 ## 專案結構
 
 ```text

@@ -1,0 +1,22 @@
+name: Keep database awake
+
+# The free Supabase plan pauses a project after about a week without activity.
+# A lightweight database round-trip every few days keeps it running; it does
+# not resume a project that is already paused (restore that in Supabase).
+on:
+  schedule:
+    - cron: "17 3 */3 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Database health check
+        # Render's free instance may need ~60s to wake, so allow a long timeout.
+        run: |
+          curl --fail --silent --show-error --max-time 120 --retry 3 --retry-delay 30 \
+            https://feedback-insight-hub-ai.onrender.com/healthz/db/
