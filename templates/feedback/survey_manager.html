@@ -72,7 +72,7 @@
                             {% if survey.category %}
                                 <span class="pill pill-category">{{ survey.category.name }}</span>
                             {% endif %}
-                            <p>{{ survey.description|default:"此問卷已建立，可進一步設定題目、流程與分享方式。" }}</p>
+                            <p class="survey-row-description">{{ survey.description|default:"此問卷已建立，可進一步設定題目、流程與分享方式。" }}</p>
                             <div class="survey-stat-chips">
                                 <span class="survey-stat-chip">
                                     <span class="survey-stat-chip-label">題目</span>
@@ -121,6 +121,8 @@
                     </span>
                     {% if survey.slug %}
                     <div class="survey-link-group">
+                        <a class="button button-primary button-small survey-edit-link"
+                           href="{% url 'feedback:survey-builder' survey.slug %}?tab=settings">編輯設定</a>
                         <div class="qr-popover-wrapper">
                             <button type="button" class="button button-ghost button-small qr-trigger" aria-label="QR Code" aria-expanded="false">
                                 QRcode
