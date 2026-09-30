@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block body_class %}public-body auth-public-body{% endblock %}
+{% block shell %}
+<main class="auth-layout auth-page-public">
+    <section class="auth-card">
+        {% if messages %}
+            {% for message in messages %}<div class="flash-message flash-{{ message.tags|default:'info' }}">{{ message }}</div>{% endfor %}
+        {% endif %}
+        {% block body %}{% block content %}{% endblock %}{% endblock %}
+    </section>
+</main>
+{% endblock %}

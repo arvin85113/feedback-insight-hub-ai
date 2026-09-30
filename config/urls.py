@@ -13,7 +13,10 @@ urlpatterns = [
 ]
 
 if settings.IS_NODE:
+    from node.setup_views import setup_view
+
     urlpatterns += [
+        path("setup/", setup_view, name="node-setup"),
         # The node has no public landing page; "/" opens the console.
         path("", RedirectView.as_view(pattern_name="node:overview", permanent=False)),
         path("node/", include("node.urls")),

@@ -213,4 +213,5 @@ if IS_NODE:
         }
     }
     INSTALLED_APPS += ["organizations", "node"]
+    MIDDLEWARE.append("node.middleware.SetupRequiredMiddleware")
     NODE_SETUP_GATE = True
