@@ -52,6 +52,18 @@ try {
         --specpath (Join-Path $ProjectRoot "build") `
         --collect-data feedback `
         --collect-all dearpygui `
+        --collect-all allauth `
+        --add-data "$ProjectRoot\templates;templates" `
+        --add-data "$ProjectRoot\static;static" `
+        --hidden-import pystray._win32 `
+        --hidden-import cheroot.wsgi `
+        --collect-submodules whitenoise `
+        --collect-submodules accounts `
+        --collect-submodules config `
+        --collect-submodules desktop_app `
+        --collect-submodules feedback `
+        --collect-submodules node `
+        --collect-submodules organizations `
         @PipelineDataArgs `
         --hidden-import config.settings `
         --hidden-import accounts `

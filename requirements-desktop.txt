@@ -1,4 +1,5 @@
 -r requirements.txt
+-r requirements-node.txt
 
 # Runtime UI and Windows packaging dependencies; installed separately from the web service.
 dearpygui>=2,<3

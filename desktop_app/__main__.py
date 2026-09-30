@@ -50,20 +50,24 @@ def _load_external_environment():
     return None
 
 
-def _configure_file_logging(*, local_app_data=None):
+def _configure_file_logging(*, local_app_data=None, log_dir=None, filename="desktop.log"):
     """Write warnings and crashes to a rotating log, replacing the console build.
 
     The windowed EXE has no console, so this file is the diagnostic channel.
-    Log records never include credentials (see ``main``).
+    Log records never include credentials (see ``main``).  The launcher and the
+    worker are separate processes, so each gets its own file to avoid two
+    processes rotating the same log.
     """
 
     import logging
     from logging.handlers import RotatingFileHandler
 
-    root = Path(local_app_data or os.getenv("LOCALAPPDATA", "").strip() or Path.cwd())
-    log_dir = root / "FeedbackInsightHub" / "logs"
+    if log_dir is None:
+        root = Path(local_app_data or os.getenv("LOCALAPPDATA", "").strip() or Path.cwd())
+        log_dir = root / "FeedbackInsightHub" / "logs"
+    log_dir = Path(log_dir)
     log_dir.mkdir(parents=True, exist_ok=True)
-    handler = RotatingFileHandler(log_dir / "desktop.log", maxBytes=1_000_000, backupCount=3, encoding="utf-8")
+    handler = RotatingFileHandler(log_dir / filename, maxBytes=1_000_000, backupCount=3, encoding="utf-8")
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
     logging.getLogger().addHandler(handler)
 
@@ -71,37 +75,101 @@ def _configure_file_logging(*, local_app_data=None):
         logging.getLogger("desktop_app").critical("uncaught exception", exc_info=(exc_type, exc, traceback))
         sys.__excepthook__(exc_type, exc, traceback)
 
+    def log_thread_crash(args):
+        # The console server and supervisor run in threads; without this their
+        # crashes only reach a stderr that the windowed EXE does not have.
+        logging.getLogger("desktop_app").critical(
+            "uncaught exception in thread %s",
+            getattr(args.thread, "name", "?"),
+            exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
+        )
+
+    import threading
+
     sys.excepthook = log_uncaught
-    return log_dir / "desktop.log"
+    threading.excepthook = log_thread_crash
+    return log_dir / filename
+
+
+ROLE_FLAGS = (
+    ("--worker", "worker"),
+    ("--legacy-workbench", "legacy"),
+    ("--smoke-test", "smoke"),
+)
+
+
+def select_role(argv):
+    for flag, role in ROLE_FLAGS:
+        if flag in argv:
+            return role
+    return "launcher"
+
+
+def prepare_environment(role, environ=None):
+    """Node roles run on local data only; the workbench keeps its cloud .env."""
+
+    environ = os.environ if environ is None else environ
+    if role in {"launcher", "worker"}:
+        environ["DEPLOYMENT_MODE"] = "node"
+        return None
+    environ["DEPLOYMENT_MODE"] = "cloud"
+    loaded = _load_external_environment()
+    desktop_database_url = environ.get("FEEDBACK_HUB_DATABASE_URL", "").strip()
+    if desktop_database_url and not environ.get("DATABASE_URL", "").strip():
+        environ["DATABASE_URL"] = desktop_database_url
+    return loaded
+
+
+def _run_smoke_test():
+    import django
+
+    django.setup()
+    _configure_file_logging()
+    import dearpygui.dearpygui as dpg
+    import pystray  # noqa: F401 - bundled for the node launcher
+    from cheroot import wsgi  # noqa: F401 - bundled for the node launcher
+    from django.template.loader import get_template
+
+    from desktop_app.app import FeedbackInsightDesktop
+    from feedback.background_analysis import PROFILE_PATH, pipeline_version
+
+    for template in ("feedback/dashboard_base.html", "node/overview.html", "node/setup.html", "account/login.html"):
+        get_template(template)
+    profile = json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
+    pipeline_version(profile)
+    dpg.create_context()
+    try:
+        application = FeedbackInsightDesktop()
+        application._configure_style()
+        application._build()
+    finally:
+        dpg.destroy_context()
 
 
 def main():
+    role = select_role(sys.argv[1:])
     # Deployment credentials remain external to the bundle and are never logged.
-    _load_external_environment()
-    desktop_database_url = os.getenv("FEEDBACK_HUB_DATABASE_URL", "").strip()
-    if desktop_database_url and not os.getenv("DATABASE_URL", "").strip():
-        os.environ["DATABASE_URL"] = desktop_database_url
+    prepare_environment(role)
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
+    if role == "smoke":
+        _run_smoke_test()
+        return
+    if role in {"launcher", "worker"}:
+        from desktop_app import node_launcher
+
+        # Each runner calls django.setup() and then configures its own log file.
+        if role == "launcher":
+            node_launcher.run_launcher()
+            return
+        from desktop_app.node_runtime import exit_code_of
+
+        # A supervised child must exit on a crash so the launcher can restart it.
+        sys.exit(exit_code_of(node_launcher.run_worker))
     import django
 
     django.setup()
     # After Django's LOGGING so the file handler is not reset by dictConfig.
     _configure_file_logging()
-    if "--smoke-test" in sys.argv:
-        import dearpygui.dearpygui as dpg
-        from desktop_app.app import FeedbackInsightDesktop
-        from feedback.background_analysis import PROFILE_PATH, pipeline_version
-
-        profile = json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
-        pipeline_version(profile)
-        dpg.create_context()
-        try:
-            application = FeedbackInsightDesktop()
-            application._configure_style()
-            application._build()
-        finally:
-            dpg.destroy_context()
-        return
     from desktop_app.app import main as run_app
 
     run_app()

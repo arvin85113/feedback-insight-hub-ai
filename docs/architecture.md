@@ -52,6 +52,12 @@ Shared DB:
   - production: Supabase PostgreSQL
 ```
 
+同一套程式另有本機節點模式（`DEPLOYMENT_MODE=node`）：EXE 以 cheroot 在 `127.0.0.1` 提供主控台、
+本機 SQLite 為資料庫、allauth 本機帳號登入，並監督 `run_analysis_worker` 子程序（以 `run\worker.heartbeat` 回報狀態）。
+`cloud` 模式不載入 `node`、`organizations` 與 allauth，也沒有 `/setup/`、`/node/` 網址。
+設計與範圍見 [架構總覽](superpowers/specs/2026-09-30-local-node-architecture-design.md)、
+[主控台與登入](superpowers/specs/2026-09-30-local-node-console-and-auth-design.md)。
+
 網站與本機工作台共用 Django models、工作協調與分析輸入契約，不維護第二套 HTTP domain service 或 ORM 鏡像。
 
 ---

@@ -157,3 +157,25 @@ class ExistingConsoleTests(SimpleTestCase):
             self.assertIsNone(existing_console(paths, probe=lambda target: False))
             paths.port_file.write_text("garbage", encoding="utf-8")
             self.assertIsNone(existing_console(paths, probe=lambda target: True))
+
+
+class WorkerProcessHelpersTests(SimpleTestCase):
+    def test_command_output_goes_to_the_log_when_there_is_no_console(self):
+        from desktop_app.node_runtime import LogStream
+
+        with self.assertLogs("desktop_app.node.worker", level="INFO") as captured:
+            stream = LogStream("desktop_app.node.worker")
+            stream.write('{"status": "started"}\n')
+            stream.flush()
+        self.assertEqual(captured.records[0].getMessage(), '{"status": "started"}')
+
+    def test_crash_is_logged_and_becomes_an_exit_code(self):
+        from desktop_app.node_runtime import exit_code_of
+
+        def boom():
+            raise RuntimeError("worker failed")
+
+        with self.assertLogs("desktop_app.node_runtime", level="ERROR") as captured:
+            self.assertEqual(exit_code_of(boom), 1)
+        self.assertIn("worker failed", captured.output[0] + str(captured.records[0].exc_info))
+        self.assertEqual(exit_code_of(lambda: None), 0)

@@ -105,6 +105,35 @@ class WorkerSupervisor:
             pass
 
 
+class LogStream:
+    """File-like sink for management command output in the windowed EXE (no stdout)."""
+
+    def __init__(self, logger_name):
+        self._logger = logging.getLogger(logger_name)
+
+    def write(self, text):
+        for line in text.splitlines():
+            if line.strip():
+                self._logger.info(line)
+
+    def flush(self):
+        pass
+
+    def isatty(self):
+        return False
+
+
+def exit_code_of(run):
+    """Run a child role; a crash becomes a logged exit code instead of a blocking error dialog."""
+
+    try:
+        run()
+    except Exception:
+        logger.exception("node process crashed")
+        return 1
+    return 0
+
+
 def http_probe(url, timeout=1.0):
     try:
         with urllib.request.urlopen(url, timeout=timeout) as response:
