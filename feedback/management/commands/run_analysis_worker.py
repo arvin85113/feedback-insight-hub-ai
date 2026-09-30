@@ -20,6 +20,7 @@ from feedback.analysis_worker import (
     execute_deterministic_job,
 )
 from feedback.models import AnalysisJob
+from feedback.worker_heartbeat import write_heartbeat
 
 
 class Command(BaseCommand):
@@ -35,6 +36,7 @@ class Command(BaseCommand):
         parser.add_argument("--manifest")
         parser.add_argument("--mapping")
         parser.add_argument("--once", action="store_true", help="只輪詢一次，供健康檢查與測試")
+        parser.add_argument("--heartbeat-file", help="本機節點監督用的心跳檔路徑")
 
     def _event(self, **payload):
         self.stdout.write(json.dumps(payload, ensure_ascii=False))
@@ -124,8 +126,15 @@ class Command(BaseCommand):
             source_ref, manifest, mapping = external_values
             external_inputs[source_ref] = ExternalInputSpec(Path(manifest), Path(mapping))
 
+        heartbeat_file = options.get("heartbeat_file")
+
+        def beat(state):
+            if heartbeat_file:
+                write_heartbeat(heartbeat_file, state)
+
         self._event(status="started", paid_ai=bool(options["allow_paid_ai"]))
         while True:
+            beat("idle")
             job = claim_next_job(
                 options["worker_id"],
                 lease_seconds=lease_seconds,
@@ -133,6 +142,7 @@ class Command(BaseCommand):
                 external_source_refs=external_inputs.keys(),
             )
             if job:
+                beat("busy")
                 self._event(
                     **self._run_deterministic(
                         job,
@@ -148,10 +158,12 @@ class Command(BaseCommand):
                     executor=AnalysisJob.Executor.AI,
                 )
                 if job:
+                    beat("busy")
                     self._event(**self._run_ai(job, lease_seconds=lease_seconds))
             if options["once"]:
                 if not job:
                     self._event(status="idle")
+                beat("idle")
                 return
             if not job:
                 time.sleep(poll_seconds)

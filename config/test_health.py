@@ -4,6 +4,8 @@ from django.db import OperationalError
 from django.test import TestCase
 from django.urls import reverse
 
+from feedback.test_utils import cloud_only
+
 
 class HealthCheckTests(TestCase):
     def test_liveness_never_needs_the_database(self):
@@ -20,6 +22,7 @@ class HealthCheckTests(TestCase):
         self.assertNotIn("secret", response.content.decode())
 
 
+@cloud_only
 class DatabaseUnavailableMiddlewareTests(TestCase):
     def test_unreachable_database_renders_503_page(self):
         with patch("feedback.views.HomeView.get", side_effect=OperationalError("connection refused")), patch(

@@ -1,0 +1,5 @@
+# Local node launcher: WSGI server with TLS on Windows, tray icon, credential vault.
+cheroot==10.0.1
+keyring==25.7.0
+Pillow==12.3.0
+pystray==0.19.5

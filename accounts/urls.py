@@ -1,5 +1,7 @@
+from django.conf import settings
 from django.contrib.auth import views as auth_views
 from django.urls import path, reverse_lazy
+from django.views.generic import RedirectView
 
 from .views import (
     CustomerSignUpView,
@@ -9,6 +11,7 @@ from .views import (
     customer_preferences_view,
     customer_profile_view,
     resend_verification_view,
+    signup_unavailable,
     verify_email_view,
 )
 
@@ -65,3 +68,10 @@ urlpatterns = [
     path("verify-email/<str:token>/", verify_email_view, name="verify-email"),
     path("resend-verification/", resend_verification_view, name="resend-verification"),
 ]
+
+if settings.IS_NODE:
+    # Local node: sign-in is allauth's, and there is no public sign-up.
+    urlpatterns = [pattern for pattern in urlpatterns if pattern.name not in {"login", "signup"}] + [
+        path("login/", RedirectView.as_view(pattern_name="account_login", query_string=True), name="login"),
+        path("signup/", signup_unavailable, name="signup"),
+    ]

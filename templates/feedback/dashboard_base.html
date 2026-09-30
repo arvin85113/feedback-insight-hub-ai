@@ -10,7 +10,7 @@
             <div class="manager-brand-icon">FI</div>
             <div>
                 <strong>FeedBack IQ</strong>
-                <small>Manager Workspace</small>
+                <small>{% if is_node %}Local Node{% else %}Manager Workspace{% endif %}</small>
             </div>
         </div>
         <nav class="manager-nav" aria-label="管理端導覽">
@@ -33,7 +33,7 @@
                 <p>歡迎回來，{{ user.get_full_name|default:user.username }}</p>
             </div>
             <div class="manager-topbar-actions">
-                <a class="button button-ghost button-small" href="{% url 'feedback:home' %}">返回官網</a>
+                {% if not is_node %}<a class="button button-ghost button-small" href="{% url 'feedback:home' %}">返回官網</a>{% endif %}
                 <form method="post" action="{% url 'accounts:logout' %}">
                     {% csrf_token %}
                     <button type="submit" class="button button-quiet button-small">登出</button>

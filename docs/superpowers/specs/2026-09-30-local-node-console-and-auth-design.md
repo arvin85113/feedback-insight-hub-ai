@@ -28,7 +28,7 @@
 - `config/settings.py` 新增 `DEPLOYMENT_MODE`（`cloud` 預設、`node`），以環境變數設定；不另建設定檔。
 - `node` 模式時：
   - 資料庫預設為 `%LOCALAPPDATA%\FeedbackInsightHub\data\node.sqlite3`，啟用 WAL（`init_command`／`transaction_mode` 設定），
-    可由 `DATABASE_URL` 改為 PostgreSQL。
+    可由 `NODE_DATABASE_URL` 改為 PostgreSQL（不讀 `DATABASE_URL`，避免開發機 `.env` 的 Supabase 連線被誤用）。
   - `SECRET_KEY` 讀自 `secrets\secret_key`（首次啟動產生，檔案 ACL 只允許目前 Windows 帳號）。
   - `ALLOWED_HOSTS` 預設為 `127.0.0.1`、`localhost`；開放區域網路時加入選定的位址。
   - `INSTALLED_APPS` 加入 `node`、`organizations`、allauth 相關 app；URL 只在此模式掛載 `/setup/`、`/node/…`、allauth 路由。
@@ -54,6 +54,7 @@
 | 路徑 | 內容 | 權限 |
 |---|---|---|
 | `data\` | `node.sqlite3` | 目前帳號 |
+| `data\artifacts\` | Worker 版本化分析產物 | 目前帳號 |
 | `secrets\` | `secret_key` | 僅目前帳號 |
 | `tls\` | 自簽憑證與私鑰 | 僅目前帳號 |
 | `setup\token` | 一次性設定權杖（設定完成即刪除） | 僅目前帳號 |

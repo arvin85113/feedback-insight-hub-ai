@@ -7,7 +7,7 @@
     <title>{% block title %}FeedBack IQ{% endblock %}</title>
     <meta name="description" content="{% block meta_description %}登入制顧客回饋與改善追蹤平台。{% endblock %}">
     <link rel="stylesheet" href="{% static 'css/app.css' %}?v=20260929-ui2">
-    <link rel="stylesheet" href="{% static 'css/ui.css' %}?v=20260929-ui4">
+    <link rel="stylesheet" href="{% static 'css/ui.css' %}?v=20260930-node1">
 </head>
 <body class="{% block body_class %}public-body{% endblock %}">
     <nav class="public-nav-shell" aria-label="公開頁導覽">
@@ -36,7 +36,7 @@
                     </form>
                 {% else %}
                     <a class="public-nav-login" href="{% url 'accounts:login' %}">登入</a>
-                    <a class="public-btn" href="{% url 'accounts:signup' %}">建立帳號</a>
+                    {% if not is_node %}<a class="public-btn" href="{% url 'accounts:signup' %}">建立帳號</a>{% endif %}
                 {% endif %}
             </div>
         </div>

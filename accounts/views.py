@@ -6,6 +6,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import PasswordResetForm
 from django.contrib.auth.views import LoginView, LogoutView
+from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
 from django.views.generic import CreateView
@@ -234,3 +235,7 @@ def customer_profile_view(request):
         form = CustomerProfileForm(instance=request.user)
 
     return render(request, "accounts/profile.html", {"form": form})
+
+
+def signup_unavailable(request):
+    raise Http404("本機節點不開放公開註冊")

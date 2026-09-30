@@ -1,0 +1,20 @@
+{% extends "feedback/dashboard_base.html" %}
+
+{% block title %}設定 | FeedBack IQ{% endblock %}
+
+{% block dashboard_content %}
+<section class="manager-panel">
+    <h2>組織</h2>
+    <form method="post" class="form-stack">
+        {% csrf_token %}
+        {{ form.name.errors }}
+        <label for="{{ form.name.id_for_label }}">{{ form.name.label }}</label>
+        {{ form.name }}
+        <button type="submit" class="button button-primary">儲存</button>
+    </form>
+</section>
+<section class="manager-panel">
+    <h2>資料位置</h2>
+    <p><code>{{ data_root }}</code></p>
+</section>
+{% endblock %}

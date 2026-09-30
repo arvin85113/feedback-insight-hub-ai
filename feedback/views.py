@@ -2,6 +2,7 @@ import uuid
 from datetime import timedelta
 from urllib.parse import urlencode
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.core.mail import send_mail
@@ -183,6 +184,10 @@ class CustomerRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
         return self.request.user.is_authenticated and not self.request.user.is_manager
 
 
+NODE_CONSOLE_NAV = [("node:overview", "節點總覽", "server")]
+NODE_CONSOLE_NAV_TAIL = [("node:settings", "設定", "gear")]
+
+
 class DashboardBaseMixin(ManagerRequiredMixin):
     dashboard_nav = [
         ("feedback:dashboard", "營運總覽", "grid"),
@@ -196,12 +201,18 @@ class DashboardBaseMixin(ManagerRequiredMixin):
 
     active_section = ""
 
+    def get_dashboard_nav(self):
+        if settings.IS_NODE:
+            return NODE_CONSOLE_NAV + self.dashboard_nav + NODE_CONSOLE_NAV_TAIL
+        return self.dashboard_nav
+
     def get_dashboard_base_context(self):
+        nav = self.get_dashboard_nav()
         return {
-            "dashboard_nav": self.dashboard_nav,
+            "dashboard_nav": nav,
             "active_section": self.active_section,
             "section_label": next(
-                (label for route, label, _icon in self.dashboard_nav if route == self.active_section),
+                (label for route, label, _icon in nav if route == self.active_section),
                 "管理工作區",
             ),
             "survey_list": analysis_visible_surveys().order_by("title"),
