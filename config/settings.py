@@ -212,6 +212,22 @@ if IS_NODE:
             },
         }
     }
-    INSTALLED_APPS += ["organizations", "node"]
+    INSTALLED_APPS += ["allauth", "allauth.account", "organizations", "node"]
+    MIDDLEWARE.append("allauth.account.middleware.AccountMiddleware")
     MIDDLEWARE.append("node.middleware.SetupRequiredMiddleware")
+    AUTHENTICATION_BACKENDS = [
+        "django.contrib.auth.backends.ModelBackend",
+        "allauth.account.auth_backends.AuthenticationBackend",
+    ]
+    ACCOUNT_ADAPTER = "node.adapters.NodeAccountAdapter"
+    ACCOUNT_LOGIN_METHODS = {"email"}
+    ACCOUNT_SIGNUP_FIELDS = ["email*", "password1*", "password2*"]
+    ACCOUNT_EMAIL_VERIFICATION = "none"
+    ACCOUNT_SESSION_REMEMBER = True
+    LOGIN_URL = "account_login"
+    LOGIN_REDIRECT_URL = "node:overview"
+    LOGOUT_REDIRECT_URL = "account_login"
+    # Idle timeout: every request pushes expiry forward by SESSION_COOKIE_AGE.
+    SESSION_COOKIE_AGE = int(os.getenv("NODE_SESSION_IDLE_SECONDS", str(4 * 3600)))
+    SESSION_SAVE_EVERY_REQUEST = True
     NODE_SETUP_GATE = True

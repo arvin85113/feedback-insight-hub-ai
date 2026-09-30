@@ -35,6 +35,9 @@ def complete_setup(*, organization_name, email, password, request=None):
         is_superuser=True,
         is_email_verified=True,
     )
+    from allauth.account.models import EmailAddress
+
+    EmailAddress.objects.create(user=owner, email=email, primary=True, verified=True)
     organization = Organization.objects.create(name=organization_name)
     OrganizationMembership.objects.create(
         user=owner, organization=organization, role=OrganizationMembership.Role.OWNER

@@ -1,0 +1,20 @@
+{% extends "node/auth_base.html" %}
+{% block title %}登入主控台 | FeedBack IQ{% endblock %}
+{% block content %}
+<p class="section-kicker">Local Node</p>
+<h1>登入主控台</h1>
+<form method="post" action="{% url 'account_login' %}" class="form-stack">
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    <label for="{{ form.login.id_for_label }}">Email</label>
+    {{ form.login }}
+    {{ form.login.errors }}
+    <label for="{{ form.password.id_for_label }}">密碼</label>
+    {{ form.password }}
+    {{ form.password.errors }}
+    {% if redirect_field_value %}
+        <input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}">
+    {% endif %}
+    <button type="submit" class="button button-primary">登入</button>
+</form>
+{% endblock %}

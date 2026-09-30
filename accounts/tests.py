@@ -2,7 +2,10 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 
+from feedback.test_utils import cloud_only
 
+
+@cloud_only
 class SharedLoginEntryTests(TestCase):
     """Managers and customers share one login page; routing follows the account's role."""
 

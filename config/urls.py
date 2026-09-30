@@ -17,6 +17,7 @@ if settings.IS_NODE:
 
     urlpatterns += [
         path("setup/", setup_view, name="node-setup"),
+        path("auth/", include("allauth.urls")),
         # The node has no public landing page; "/" opens the console.
         path("", RedirectView.as_view(pattern_name="node:overview", permanent=False)),
         path("node/", include("node.urls")),
