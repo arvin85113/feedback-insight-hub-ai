@@ -1,7 +1,12 @@
 import re
+from unittest import skipUnless
 
 from django.conf import settings
 from django.contrib.staticfiles import finders
+
+# Features that exist only on the public cloud site (landing page, customer
+# sign-up, the shared login entry).  The local node CI job skips them.
+cloud_only = skipUnless(settings.DEPLOYMENT_MODE == "cloud", "雲端模式專用功能")
 
 
 def page_with_scripts(response):

@@ -31,6 +31,26 @@ jobs:
       - name: Tests (isolated in-memory SQLite, mocked Gemini)
         run: python manage.py test feedback accounts config --settings=config.settings_test
 
+  node-mode:
+    name: Django tests (local node mode)
+    runs-on: ubuntu-latest
+    env:
+      DEPLOYMENT_MODE: node
+      FEEDBACK_HUB_NODE_HOME: ${{ github.workspace }}/.ci-node-home
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - name: Check for missing migrations
+        run: python manage.py makemigrations --check --dry-run --settings=config.settings_test
+      - name: Django system check
+        run: python manage.py check --settings=config.settings_test
+      - name: Tests (node mode, isolated in-memory SQLite)
+        run: python manage.py test feedback accounts config node organizations --settings=config.settings_test
+
   postgres-concurrency:
     name: PostgreSQL 17 queue concurrency
     runs-on: ubuntu-latest
