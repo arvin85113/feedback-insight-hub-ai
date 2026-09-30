@@ -21,3 +21,6 @@ GEMINI_MODEL = "gemini-2.5-flash"
 GOOGLE_API_KEY = "test-key-not-a-real-credential"
 LOGGING["root"]["level"] = "WARNING"  # noqa: F405
 LOGGING["loggers"]["feedback"]["level"] = "WARNING"  # noqa: F405
+
+# Existing suites exercise pages directly; node setup tests switch the gate back on.
+NODE_SETUP_GATE = False

@@ -9,6 +9,11 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+DEPLOYMENT_MODE = os.getenv("DEPLOYMENT_MODE", "cloud").strip().lower() or "cloud"
+if DEPLOYMENT_MODE not in {"cloud", "node"}:
+    raise ImproperlyConfigured("DEPLOYMENT_MODE must be 'cloud' or 'node'.")
+IS_NODE = DEPLOYMENT_MODE == "node"
+
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "").strip()
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash").strip() or "gemini-3.6-flash"
 GEMINI_TIMEOUT_SECONDS = int(os.getenv("GEMINI_TIMEOUT_SECONDS", "45"))
@@ -37,12 +42,19 @@ _IS_RENDER_RUNTIME = bool(RENDER_EXTERNAL_HOSTNAME) or os.getenv("RENDER", "").l
 ANALYSIS_AUTO_AI_ENABLED = os.getenv("ANALYSIS_AUTO_AI_ENABLED", "False").lower() == "true"
 
 # Local development defaults to DEBUG; a deployed runtime must opt in explicitly.
-DEBUG = os.getenv("DEBUG", "False" if _IS_RENDER_RUNTIME else "True").lower() == "true"
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "").strip()
-if not SECRET_KEY:
-    if _IS_RENDER_RUNTIME or not DEBUG:
-        raise ImproperlyConfigured("DJANGO_SECRET_KEY must be set when DEBUG is off or on Render.")
-    SECRET_KEY = "dev-secret-key-change-me"
+DEBUG = os.getenv("DEBUG", "False" if (_IS_RENDER_RUNTIME or IS_NODE) else "True").lower() == "true"
+if IS_NODE:
+    from config.node_paths import NodePaths, load_or_create_secret_key
+
+    NODE_PATHS = NodePaths.from_environment()
+    NODE_PATHS.ensure()
+    SECRET_KEY = load_or_create_secret_key(NODE_PATHS.secret_key_file)
+else:
+    SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "").strip()
+    if not SECRET_KEY:
+        if _IS_RENDER_RUNTIME or not DEBUG:
+            raise ImproperlyConfigured("DJANGO_SECRET_KEY must be set when DEBUG is off or on Render.")
+        SECRET_KEY = "dev-secret-key-change-me"
 ALLOWED_HOSTS = [host for host in os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1,testserver,.onrender.com").split(",") if host]
 if RENDER_EXTERNAL_HOSTNAME and RENDER_EXTERNAL_HOSTNAME not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
@@ -176,3 +188,28 @@ LOGGING = {
         "feedback": {"handlers": ["console"], "level": LOG_LEVEL, "propagate": False},
     },
 }
+
+if IS_NODE:
+    # Local node: browsers on this machine only, plain HTTP on loopback.
+    ALLOWED_HOSTS = ["127.0.0.1", "localhost"]
+    CSRF_TRUSTED_ORIGINS = []
+    SECURE_SSL_REDIRECT = False
+    SESSION_COOKIE_SECURE = False
+    CSRF_COOKIE_SECURE = False
+    # Only NODE_DATABASE_URL: a developer .env points DATABASE_URL at Supabase.
+    _node_database_url = os.getenv("NODE_DATABASE_URL", "").strip()
+    DATABASES = {
+        "default": dj_database_url.parse(_node_database_url, conn_max_age=600)
+        if _node_database_url
+        else {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": NODE_PATHS.database_file,
+            "OPTIONS": {
+                "init_command": "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;",
+                "transaction_mode": "IMMEDIATE",
+                "timeout": 20,
+            },
+        }
+    }
+    INSTALLED_APPS += ["organizations", "node"]
+    NODE_SETUP_GATE = True
