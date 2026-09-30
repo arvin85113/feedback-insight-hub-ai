@@ -1,6 +1,7 @@
 import io
 import json
 import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
 from django.core.management import call_command
@@ -8,6 +9,7 @@ from django.test import TestCase
 
 from .analysis_jobs import schedule_survey_analysis, suppress_analysis_scheduling
 from .models import AnalysisJob, Answer, FeedbackSubmission, Question, Survey
+from .worker_heartbeat import read_heartbeat
 
 
 class ContinuousWorkerCommandTests(TestCase):
@@ -60,3 +62,40 @@ class ContinuousWorkerCommandTests(TestCase):
             )
         self.assertEqual(AnalysisJob.objects.get().status, AnalysisJob.Status.PENDING)
         self.assertIn('"status": "idle"', output.getvalue())
+
+    def test_heartbeat_file_reports_idle_after_an_empty_poll(self):
+        with tempfile.TemporaryDirectory() as directory:
+            heartbeat = Path(directory) / "worker.heartbeat"
+            call_command(
+                "run_analysis_worker",
+                worker_id="loop-worker",
+                output=directory,
+                once=True,
+                heartbeat_file=str(heartbeat),
+                stdout=io.StringIO(),
+            )
+            self.assertEqual(read_heartbeat(heartbeat)["state"], "idle")
+
+    def test_heartbeat_is_busy_while_a_job_runs(self):
+        schedule_survey_analysis(self.survey.pk, change="input")
+        seen = []
+        with tempfile.TemporaryDirectory() as directory:
+            heartbeat = Path(directory) / "worker.heartbeat"
+            from feedback.management.commands import run_analysis_worker as module
+
+            original = module.Command._run_deterministic
+
+            def spy(command, job, **kwargs):
+                seen.append(read_heartbeat(heartbeat)["state"])
+                return original(command, job, **kwargs)
+
+            with patch.object(module.Command, "_run_deterministic", spy):
+                call_command(
+                    "run_analysis_worker",
+                    worker_id="loop-worker",
+                    output=directory,
+                    once=True,
+                    heartbeat_file=str(heartbeat),
+                    stdout=io.StringIO(),
+                )
+        self.assertEqual(seen, ["busy"])
