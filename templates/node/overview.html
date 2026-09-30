@@ -1,0 +1,43 @@
+{% extends "feedback/dashboard_base.html" %}
+
+{% block title %}節點總覽 | FeedBack IQ{% endblock %}
+
+{% block dashboard_content %}
+<section class="manager-header manager-header-inline">
+    <div>
+        <p class="section-kicker">Local Node</p>
+        <p>{{ organization.name|default:"尚未設定組織" }} · 資料位置 <code>{{ data_root }}</code></p>
+    </div>
+</section>
+
+{% if pending %}
+<section class="manager-panel node-pending" aria-label="待處理事項">
+    <h2>待處理事項</h2>
+    <ul>{% for message in pending %}<li>{{ message }}</li>{% endfor %}</ul>
+</section>
+{% endif %}
+
+<section class="node-status-grid" aria-label="節點狀態">
+    {% for item in status_items %}
+    <article class="summary-card node-status-card node-status-{{ item.state }}">
+        <span class="info-label">{{ item.label }}</span>
+        <strong>{{ item.summary }}</strong>
+    </article>
+    {% endfor %}
+</section>
+
+<section class="manager-panel">
+    <h2>最近活動</h2>
+    <div class="record-list">
+        {% for event in recent_events %}
+        <div class="record-row">
+            <strong>{{ event.label }}</strong>
+            <span>{{ event.actor_email|default:event.target }}</span>
+            <span>{{ event.created_at|date:"m/d H:i" }}</span>
+        </div>
+        {% empty %}
+        <p>目前沒有紀錄。</p>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}

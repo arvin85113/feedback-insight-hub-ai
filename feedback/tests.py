@@ -11,6 +11,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from google.genai import types
 
+from .test_utils import cloud_only
 from .ai_report_service import (
     AIReportError,
     _provider_error,
@@ -60,6 +61,7 @@ EMPTY_TEXT = {
 }
 
 
+@cloud_only
 class PublicHomeTests(TestCase):
     def setUp(self):
         user_model = get_user_model()

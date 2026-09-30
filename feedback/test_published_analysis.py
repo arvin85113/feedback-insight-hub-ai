@@ -206,7 +206,8 @@ class PublishedAnalysisReadTests(TestCase):
         self.assertContains(response, "營運總覽")
         self.assertContains(response, "改善追蹤")
         self.assertEqual(response.context["active_section"], "feedback:improvement-list")
-        self.assertEqual(len(response.context["dashboard_nav"]), 7)
+        feedback_nav = [route for route, _, _ in response.context["dashboard_nav"] if route.startswith("feedback:")]
+        self.assertEqual(len(feedback_nav), 7)
 
     def test_dashboard_links_to_dedicated_analysis_page(self):
         self.client.force_login(self.manager)
@@ -236,7 +237,7 @@ class PublishedAnalysisReadTests(TestCase):
         self.assertIn("此為 AI 建議草稿，尚未建立改善追蹤項目", page)
         self.assertEqual(response.context["active_section"], "feedback:analysis-operations")
         self.assertEqual(
-            [route for route, _, _ in response.context["dashboard_nav"][:3]],
+            [route for route, _, _ in response.context["dashboard_nav"] if route.startswith("feedback:")][:3],
             ["feedback:dashboard", "feedback:analysis-operations", "feedback:survey-manager"],
         )
 

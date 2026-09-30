@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'css/app.css' %}?v=20260929-ui2">
-    <link rel="stylesheet" href="{% static 'css/ui.css' %}?v=20260929-ui4">
+    <link rel="stylesheet" href="{% static 'css/ui.css' %}?v=20260930-node1">
     {% block extra_head %}{% endblock %}
 </head>
 <body class="{% block body_class %}site-body{% endblock %}">
@@ -45,7 +45,7 @@
                     </form>
                 {% else %}
                     <a href="{% url 'accounts:login' %}">登入</a>
-                    <a class="button button-primary button-small" href="{% url 'accounts:signup' %}">建立帳號</a>
+                    {% if not is_node %}<a class="button button-primary button-small" href="{% url 'accounts:signup' %}">建立帳號</a>{% endif %}
                 {% endif %}
             </nav>
         </div>

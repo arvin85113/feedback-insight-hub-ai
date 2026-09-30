@@ -688,3 +688,16 @@ body.dashboard-body {
     -webkit-box-orient: vertical;
     overflow: hidden;
 }
+
+/* Local node console status cards */
+.node-status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.node-status-card { border-left: 4px solid var(--c-line); }
+.node-status-ok { border-left-color: var(--c-brand-600); }
+.node-status-warn { border-left-color: var(--c-warning-500); }
+.node-status-off { border-left-color: var(--c-ink-400); }
+.node-pending { border-left: 4px solid var(--c-warning-500); }

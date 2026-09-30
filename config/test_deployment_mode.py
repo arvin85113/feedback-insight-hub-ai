@@ -6,7 +6,9 @@ import tempfile
 from pathlib import Path
 
 from django.conf import settings
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, TestCase
+
+from feedback.test_utils import cloud_only
 
 PROBE = (
     "import json, django; from django.conf import settings; django.setup();"
@@ -61,3 +63,10 @@ class CloudModeTests(SimpleTestCase):
         if not settings.IS_NODE:
             self.assertNotIn("node", settings.INSTALLED_APPS)
             self.assertNotIn("organizations", settings.INSTALLED_APPS)
+
+
+@cloud_only
+class CloudHidesNodeConsoleTests(TestCase):
+    def test_node_urls_do_not_exist_on_the_cloud_site(self):
+        self.assertEqual(self.client.get("/node/").status_code, 404)
+        self.assertEqual(self.client.get("/setup/").status_code, 404)
