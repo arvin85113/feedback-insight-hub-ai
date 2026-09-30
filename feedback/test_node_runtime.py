@@ -179,3 +179,48 @@ class WorkerProcessHelpersTests(SimpleTestCase):
             self.assertEqual(exit_code_of(boom), 1)
         self.assertIn("worker failed", captured.output[0] + str(captured.records[0].exc_info))
         self.assertEqual(exit_code_of(lambda: None), 0)
+
+
+class InstanceLockTests(SimpleTestCase):
+    def test_second_holder_is_refused_until_the_first_releases(self):
+        from desktop_app.node_runtime import acquire_instance_lock
+
+        with tempfile.TemporaryDirectory() as directory:
+            lock_path = Path(directory) / "run" / "launcher.lock"
+            first = acquire_instance_lock(lock_path)
+            self.assertIsNotNone(first)
+            self.assertIsNone(acquire_instance_lock(lock_path))
+            first.close()
+            again = acquire_instance_lock(lock_path)
+            self.assertIsNotNone(again)
+            again.close()
+
+
+class ParentWatchTests(SimpleTestCase):
+    def test_worker_exits_when_its_launcher_is_gone(self):
+        from desktop_app.node_runtime import watch_parent
+
+        states = iter([True, True, False])
+        exits = []
+        watch_parent(123, alive=lambda pid: next(states), on_orphan=lambda: exits.append("exit"), wait=lambda: False)
+        self.assertEqual(exits, ["exit"])
+
+    def test_process_alive_tells_running_from_finished(self):
+        import os
+        import subprocess
+        import sys
+
+        from desktop_app.node_runtime import process_alive
+
+        self.assertTrue(process_alive(os.getpid()))
+        finished = subprocess.run([sys.executable, "-c", "pass"])
+        self.assertEqual(finished.returncode, 0)
+        child = subprocess.Popen([sys.executable, "-c", "pass"])
+        child.wait()
+        self.assertFalse(process_alive(child.pid))
+
+    def test_worker_command_carries_the_launcher_pid(self):
+        self.assertEqual(
+            worker_command(executable="C:/app/FIH.exe", frozen=True, parent_pid=42),
+            ["C:/app/FIH.exe", "--worker", "--parent-pid", "42"],
+        )

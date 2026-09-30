@@ -8,6 +8,7 @@ from pathlib import Path
 from desktop_app.__main__ import (
     _configure_file_logging,
     _external_env_candidates,
+    parent_pid_from,
     prepare_environment,
     select_role,
 )
@@ -106,6 +107,11 @@ class RoleSelectionTests(unittest.TestCase):
         self.assertEqual(select_role(["--worker"]), "worker")
         self.assertEqual(select_role(["--legacy-workbench"]), "legacy")
         self.assertEqual(select_role(["--smoke-test"]), "smoke")
+
+    def test_parent_pid_is_read_from_the_worker_arguments(self):
+        self.assertEqual(parent_pid_from(["--worker", "--parent-pid", "4242"]), 4242)
+        self.assertIsNone(parent_pid_from(["--worker"]))
+        self.assertIsNone(parent_pid_from(["--worker", "--parent-pid", "nope"]))
 
     def test_node_roles_never_load_the_external_cloud_env(self):
         environ = {}

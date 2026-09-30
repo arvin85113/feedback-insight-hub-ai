@@ -4,6 +4,7 @@ Kept free of pystray/cheroot imports so it is unit-testable on any OS.
 """
 
 import logging
+import os
 import subprocess
 import sys
 import time
@@ -39,15 +40,79 @@ def setup_url(base_url, token):
     return f"{base_url}setup/?{urlencode({'token': token})}"
 
 
-def worker_command(*, executable=None, frozen=None):
+def worker_command(*, executable=None, frozen=None, parent_pid=None):
     executable = executable or sys.executable
     frozen = getattr(sys, "frozen", False) if frozen is None else frozen
-    return [executable, "--worker"] if frozen else [executable, "-m", "desktop_app", "--worker"]
+    command = [executable, "--worker"] if frozen else [executable, "-m", "desktop_app", "--worker"]
+    if parent_pid is not None:
+        command += ["--parent-pid", str(parent_pid)]
+    return command
 
 
 def start_worker_process():
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    return subprocess.Popen(worker_command(), creationflags=flags)
+    return subprocess.Popen(worker_command(parent_pid=os.getpid()), creationflags=flags)
+
+
+def acquire_instance_lock(path):
+    """Hold an OS lock for the launcher's lifetime; None when another launcher holds it.
+
+    The OS releases the lock when the process dies, so a crash never leaves it stale.
+    """
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = open(path, "a+b")  # noqa: SIM115 - kept open for the process lifetime
+    try:
+        if os.name == "nt":
+            import msvcrt
+
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        return None
+    return handle
+
+
+def process_alive(pid):
+    if os.name == "nt":
+        import ctypes
+
+        synchronize, wait_timeout = 0x00100000, 0x00000102
+        kernel32 = ctypes.windll.kernel32
+        process = kernel32.OpenProcess(synchronize, False, int(pid))
+        if not process:
+            return False
+        try:
+            return kernel32.WaitForSingleObject(process, 0) == wait_timeout
+        finally:
+            kernel32.CloseHandle(process)
+    try:
+        os.kill(int(pid), 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def watch_parent(parent_pid, *, alive=process_alive, on_orphan=None, wait=None, interval=5):
+    """Stop the worker once the launcher that supervises it is gone.
+
+    ``wait`` returns True to stop watching (e.g. ``threading.Event().wait``).
+    """
+
+    on_orphan = on_orphan or (lambda: os._exit(0))
+    wait = wait or (lambda: time.sleep(interval) or False)
+    while alive(parent_pid):
+        if wait():
+            return
+    logger.warning("launcher %s is gone; worker exiting", parent_pid)
+    on_orphan()
 
 
 class WorkerSupervisor:

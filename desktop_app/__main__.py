@@ -105,6 +105,16 @@ def select_role(argv):
     return "launcher"
 
 
+def parent_pid_from(argv):
+    if "--parent-pid" not in argv:
+        return None
+    index = argv.index("--parent-pid") + 1
+    try:
+        return int(argv[index])
+    except (IndexError, ValueError):
+        return None
+
+
 def prepare_environment(role, environ=None):
     """Node roles run on local data only; the workbench keeps its cloud .env."""
 
@@ -164,7 +174,8 @@ def main():
         from desktop_app.node_runtime import exit_code_of
 
         # A supervised child must exit on a crash so the launcher can restart it.
-        sys.exit(exit_code_of(node_launcher.run_worker))
+        parent_pid = parent_pid_from(sys.argv[1:])
+        sys.exit(exit_code_of(lambda: node_launcher.run_worker(parent_pid=parent_pid)))
     import django
 
     django.setup()

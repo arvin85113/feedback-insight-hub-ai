@@ -4,14 +4,16 @@ import logging
 import os
 import socket
 import threading
+import time
 import webbrowser
 
 logger = logging.getLogger("desktop_app.node")
 
 SUPERVISE_INTERVAL_SECONDS = 5
+STARTUP_WAIT_SECONDS = 60
 
 
-def run_worker():
+def run_worker(parent_pid=None):
     import django
 
     django.setup()
@@ -19,10 +21,13 @@ def run_worker():
     from django.core.management import call_command
 
     from desktop_app.__main__ import _configure_file_logging
-    from desktop_app.node_runtime import LogStream
+    from desktop_app.node_runtime import LogStream, watch_parent
 
     paths = settings.NODE_PATHS
     _configure_file_logging(log_dir=paths.logs_dir, filename="worker.log")
+    if parent_pid is not None:
+        # A killed launcher must not leave an unsupervised worker on the database.
+        threading.Thread(target=watch_parent, args=(parent_pid,), name="parent-watch", daemon=True).start()
     call_command(
         "run_analysis_worker",
         worker_id=f"node-{socket.gethostname()}"[:64],
@@ -48,6 +53,7 @@ def run_launcher():
     from desktop_app.__main__ import _configure_file_logging
     from desktop_app.node_runtime import (
         WorkerSupervisor,
+        acquire_instance_lock,
         bind_server,
         console_url,
         existing_console,
@@ -58,10 +64,17 @@ def run_launcher():
 
     paths = settings.NODE_PATHS
     _configure_file_logging(log_dir=paths.logs_dir, filename="node.log")
-    running = existing_console(paths)
-    if running:
-        # A second double-click: show the running console instead of a second server.
-        webbrowser.open(running)
+    instance_lock = acquire_instance_lock(paths.run_dir / "launcher.lock")
+    if instance_lock is None:
+        # Another launcher owns this node (autostart plus a double-click, or an
+        # impatient second click): wait for its console and show it instead.
+        for _attempt in range(STARTUP_WAIT_SECONDS):
+            running = existing_console(paths)
+            if running:
+                webbrowser.open(running)
+                return
+            time.sleep(1)
+        logger.warning("another launcher holds the lock but its console did not answer")
         return
 
     # The node owns its local database; bring the schema up to date before serving.
