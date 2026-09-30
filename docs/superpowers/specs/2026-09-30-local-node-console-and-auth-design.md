@@ -54,7 +54,7 @@
 | 路徑 | 內容 | 權限 |
 |---|---|---|
 | `data\` | `node.sqlite3` | 目前帳號 |
-| `datartifacts` | Worker 版本化分析產物 | 目前帳號 |
+| `data\artifacts\` | Worker 版本化分析產物 | 目前帳號 |
 | `secrets\` | `secret_key` | 僅目前帳號 |
 | `tls\` | 自簽憑證與私鑰 | 僅目前帳號 |
 | `setup\token` | 一次性設定權杖（設定完成即刪除） | 僅目前帳號 |
