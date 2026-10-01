@@ -21,7 +21,7 @@ from .ai_report_service import (
     create_gemini_client,
     generation_options,
 )
-from .ai_grounding import ungrounded_numbers
+from .ai_grounding import UngroundedNumbers, ungrounded_numbers
 from .ai_snapshot_service import (
     SNAPSHOT_SCHEMA_VERSION,
     build_evidence_coverage,
@@ -254,8 +254,9 @@ def _validate_text(value, max_length=800, *, evidence=()):
         or len(value) > max_length
     ):
         raise ValueError("invalid_text")
-    if ungrounded_numbers(value, evidence):
-        raise ValueError("ungrounded_number")
+    invented = ungrounded_numbers(value, evidence)
+    if invented:
+        raise UngroundedNumbers("ungrounded_number", invented)
     return value.strip()
 
 
@@ -443,23 +444,35 @@ def _normalize_provider_refs(value, evidence_by_id):
     return normalized
 
 
+MAX_RECORDED_NUMBERS = 20
+
+
 def _sanitize_provider_payload(payload, stage, evidence_by_id, module, profile):
-    """Discard only unpublishable individual findings, never the evidence."""
+    """Discard only unpublishable individual findings, never the evidence.
+
+    Returns the sanitized payload, discard counts by reason, and the invented
+    number tokens that caused discards (numbers only, for diagnosis).
+    """
     if not isinstance(payload, Mapping):
-        return payload, {}
+        return payload, {}, []
     sanitized = copy.deepcopy(payload)
     discarded = Counter()
+    invented = []
+
+    def discard(exc):
+        discarded[_safe_validation_reason(exc)] += 1
+        invented.extend(getattr(exc, "numbers", ()))
 
     if stage.stage_type in (
         SurveyAIAnalysisStage.StageType.STATISTICS,
         SurveyAIAnalysisStage.StageType.TEXT,
     ):
         if set(sanitized) != set(module.SECTIONS):
-            return sanitized, {}
+            return sanitized, {}, []
         for section in module.SECTIONS:
             rows = sanitized.get(section)
             if not isinstance(rows, list) or len(rows) > module.PROFILE_LIMITS[profile]["findings"]:
-                return sanitized, {}
+                return sanitized, {}, []
             accepted = []
             for row in rows:
                 candidate = copy.deepcopy(row)
@@ -476,12 +489,18 @@ def _sanitize_provider_payload(payload, stage, evidence_by_id, module, profile):
                         max_limitations=module.PROFILE_LIMITS[profile]["limitations"],
                     )
                 except ValueError as exc:
-                    discarded[_safe_validation_reason(exc)] += 1
+                    discard(exc)
                     continue
                 accepted.append(candidate)
             sanitized[section] = accepted
     elif stage.stage_type == SurveyAIAnalysisStage.StageType.SYNTHESIS:
-        for section in ("combined_findings", "improvement_drafts"):
+        # Same rule as the other stages: one unpublishable finding or draft (for
+        # example an invented target number) is dropped, not the whole stage.
+        validators = {
+            "combined_findings": module.validate_combined_finding,
+            "improvement_drafts": module.validate_improvement_draft,
+        }
+        for section, validate in validators.items():
             rows = sanitized.get(section)
             if not isinstance(rows, list):
                 continue
@@ -499,10 +518,15 @@ def _sanitize_provider_payload(payload, stage, evidence_by_id, module, profile):
                     discarded["invalid_evidence_refs"] += 1
                     continue
                 candidate["evidence_refs"] = refs
+                try:
+                    validate(candidate, evidence_by_id, profile=profile)
+                except ValueError as exc:
+                    discard(exc)
+                    continue
                 accepted.append(candidate)
             sanitized[section] = accepted
 
-    return sanitized, dict(sorted(discarded.items()))
+    return sanitized, dict(sorted(discarded.items())), invented[:MAX_RECORDED_NUMBERS]
 
 
 def _restore_canonical_evidence_refs(validated, alias_to_canonical, evidence_by_id):
@@ -622,7 +646,7 @@ def _run_stage_attempt(client, stage, stage_input, evidence_by_id, module, *, pr
                 http_status=metrics["http_status"],
             )
         payload = _response_payload(response)
-        payload, discarded_reasons = _sanitize_provider_payload(
+        payload, discarded_reasons, discarded_numbers = _sanitize_provider_payload(
             payload,
             stage,
             provider_evidence_by_id,
@@ -631,6 +655,8 @@ def _run_stage_attempt(client, stage, stage_input, evidence_by_id, module, *, pr
         )
         metrics["discarded_finding_reasons"] = discarded_reasons
         metrics["discarded_finding_count"] = sum(discarded_reasons.values())
+        if discarded_numbers:
+            metrics["discarded_ungrounded_numbers"] = discarded_numbers
         if stage.stage_type == SurveyAIAnalysisStage.StageType.SYNTHESIS:
             validated = module.validate_output(
                 payload,
@@ -662,6 +688,9 @@ def _run_stage_attempt(client, stage, stage_input, evidence_by_id, module, *, pr
             http_status=metrics["http_status"],
         )
         metrics["exception_class"] = type(exc).__name__
+        numbers = getattr(exc, "numbers", None)
+        if numbers:
+            metrics["ungrounded_numbers"] = list(numbers)[:MAX_RECORDED_NUMBERS]
     except StageError as exc:
         safe_error = exc
         metrics["exception_class"] = type(exc).__name__
@@ -712,6 +741,7 @@ def _stage_token_metrics(attempts, *, profile=None, retry_count=0):
         "evidence_aliases_bound": final.get("evidence_aliases_bound", False),
         "discarded_finding_count": final.get("discarded_finding_count", 0),
         "discarded_finding_reasons": final.get("discarded_finding_reasons", {}),
+        "discarded_ungrounded_numbers": final.get("discarded_ungrounded_numbers", []),
         "attempts": attempts,
     }
 

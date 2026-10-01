@@ -460,6 +460,41 @@ class AIStageServiceTests(AIReportTestCase):
             ["stats.wait.mean"],
         )
 
+    @override_settings(AI_REPORT_REQUEST_INTERVAL_SECONDS=0)
+    def test_synthesis_drops_only_the_draft_with_an_invented_target(self):
+        self.create_upstream_stages()
+        payload = synthesis_payload()
+        payload["improvement_drafts"][0]["acceptance_criteria"] = ["三個月內平均分提升至 9.9 分"]
+        with patch("feedback.ai_stage_service.create_gemini_client") as client_factory:
+            client_factory.return_value.models.generate_content.return_value = provider_response(payload)
+            generate_stage(self.snapshot, SurveyAIAnalysisStage.StageType.SYNTHESIS)
+        stage = self.snapshot.analysis_stages.filter(stage_type="synthesis").latest("id")
+        self.assertEqual(stage.status, SurveyAIAnalysisStage.Status.SUCCEEDED)
+        self.assertEqual(client_factory.return_value.models.generate_content.call_count, 1)
+        self.assertEqual([draft["title"] for draft in stage.output_json["improvement_drafts"]], ["建立持續追蹤"])
+        self.assertEqual(stage.token_metrics["discarded_finding_reasons"], {"invalid_acceptance": 1})
+        self.assertEqual(stage.token_metrics["discarded_ungrounded_numbers"], ["9.9"])
+
+    @override_settings(AI_REPORT_REQUEST_INTERVAL_SECONDS=0)
+    def test_stage_failure_records_the_rejected_numbers(self):
+        self.create_upstream_stages()
+        payload = synthesis_payload()
+        payload["executive_summary"] = "整體滿意度只有 1.23 分。"
+        with patch("feedback.ai_stage_service.create_gemini_client") as client_factory:
+            client_factory.return_value.models.generate_content.return_value = provider_response(payload)
+            with self.assertRaises(StageError):
+                generate_stage(self.snapshot, SurveyAIAnalysisStage.StageType.SYNTHESIS)
+        stage = self.snapshot.analysis_stages.filter(stage_type="synthesis").latest("id")
+        attempt = stage.token_metrics["attempts"][0]
+        self.assertEqual(attempt["validation_reason"], "invalid_summary")
+        self.assertEqual(attempt["ungrounded_numbers"], ["1.23"])
+
+    def test_acceptance_criteria_carry_the_number_rule(self):
+        items = ai_synthesis_service.RESPONSE_SCHEMA["properties"]["improvement_drafts"]["items"]
+        description = items["properties"]["acceptance_criteria"]["items"]["description"]
+        self.assertIn("數字只能照抄", description)
+        self.assertIn("目標值", description)
+
     def test_synthesis_accepts_numeric_evidence_ids(self):
         evidence_id = "test.test-1.p_value"
         payload = synthesis_payload()

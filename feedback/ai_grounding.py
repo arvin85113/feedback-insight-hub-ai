@@ -44,7 +44,10 @@ def grounded_numbers(evidence_rows):
             if number is None:
                 continue
             values.append(number)
-            if abs(number) <= 1:
+            if number < 0:
+                # Prose usually states the sign in words ("負相關"), so it quotes the magnitude.
+                values.append(-number)
+            elif number <= 1:
                 values.append(number * 100)  # proportions quoted as percentages
         if row.get("metric_type") == "p_value" or row.get("kind") == "statistical_test":
             values.extend(_P_VALUE_THRESHOLDS)
@@ -59,6 +62,18 @@ def _token_is_grounded(token, values, literals):
     number = float(plain)
     decimals = len(plain.split(".", 1)[1]) if "." in plain else 0
     return any(round(value, decimals) == number for value in values)
+
+
+class UngroundedNumbers(ValueError):
+    """Validation failure caused by invented figures.
+
+    ``str(exc)`` stays the short reason code used in metrics; ``numbers`` keeps
+    only the offending number tokens (never surrounding text) for diagnosis.
+    """
+
+    def __init__(self, reason, numbers):
+        super().__init__(reason)
+        self.numbers = list(numbers)
 
 
 def ungrounded_numbers(text, evidence_rows):

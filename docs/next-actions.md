@@ -20,8 +20,10 @@
 **分析與 Gemini**
 - `GEMINI_MODEL=gemini-3.6-flash`（Vertex／Agent Platform express mode）；gemini-2.5-flash 預定 2026-10 停用。
 - Prompt 為 evidence-grounded：AI 文字中的數字須能對應所引用 evidence（`feedback/ai_grounding.py`）。
-- 已用新 prompt 發布 Gemini 的問卷：「2026 Q1 跨部門…」（46 筆）。TripAdvisor 與飲料店問卷的 Gemini 結果仍是舊模型與舊 prompt，
-  桌面工作台會顯示「待更新」。
+- TripAdvisor（201,295 筆，現行管線）與飲料店問卷的三段 Gemini 結果皆為 gemini-3.6-flash、綜合解析 prompt `4-29b4625aa1`。
+  「2026 Q1 跨部門…」（46 筆）仍是前一版綜合解析 prompt（`4-e242379872`），桌面工作台會顯示「待更新」。
+- 驗證規則：綜合解析與其他兩段一致，單一不合格的發現或改善草稿只捨棄該項（原因記於 `discarded_finding_reasons`）；
+  未對應 evidence 的數字記於 `ungrounded_numbers`／`discarded_ungrounded_numbers`（只存數字）。負值 evidence 可引用其絕對值。
 - TripAdvisor 來源：本機 clean Parquet 201,295 筆，已登錄為外部分析來源。
 
 **桌面工作台／EXE**
@@ -31,10 +33,11 @@
 
 ## 待辦（依優先順序）
 
-0. **本機節點計畫 B**：Google 登入（桌面用戶端＋PKCE、只限受邀 Email）、成員邀請頁、兩步驟驗證、重新驗證、
-   擁有權轉移、區域網路 HTTPS 與防火牆、keyring 保存金鑰、登入鎖定稽核、SQLite 鎖定／損毀說明頁與自訂 404 頁、
-   總覽的「擁有者未啟用兩步驟驗證」提醒。之後依架構總覽的子專案順序（2b 部門權限、8 雲端連線、9 改善任務）。
-1. **重跑 Gemini**（付費，需授權）：TripAdvisor 與飲料店問卷改用 gemini-3.6-flash 與新 prompt。
+0. **作品展示優先**（目標職位：AI 應用工程師）：LLM 評估實驗（同一批 evidence、同一套 grounding 檢查，比較 Gemini 與本機
+   Ollama 模型的格式合格率、grounding 通過率、延遲與成本）→ 一頁案例說明。
+1. **重跑 Gemini**（付費，需授權）：「2026 Q1 跨部門…」問卷的綜合解析改用目前 prompt。
+- **暫停**：本機節點計畫 B 與雲端同步（規格 `2026-10-01-cloud-sync-design.md`、C1 計畫草稿）保留為設計資產，不實作，
+  待有實際使用需求再恢復。
 2. **機器學習**：先決定目標（展示或實用）、運算資源（CPU／GPU）、EXE 大小容忍度；建議起點為關鍵驅動因子分析與
    TF-IDF＋邏輯迴歸文字分類，使用依日期的固定切分，並與現行詞典方法比較。
 3. **為 ML 調整 schema**（需 migration 與授權）：`Answer` 加數值欄位、選項表（穩定 key）、題目版本、
