@@ -6,6 +6,8 @@
 
 回饋洞察 AI 平台整合問卷收集、外部資料匯入、統計分析、文字洞察、Gemini 解析與改善追蹤，協助管理者從回饋中找出問題、查看分析依據，再決定改善措施。
 
+> **第一次看這個專案？** 先讀 [案例說明](docs/case-study.md)（問題、我的角色、設計取捨），再看 [AI 輸出評估](docs/ai-eval.md)（如何讓 LLM 寫的數字可以被信任）。
+
 網站負責問卷、權限、資料收集與結果展示；Windows 本機工作台負責統計、文字分析及經管理者啟用的 Gemini 解析。資料與歷史結果保存在 Supabase PostgreSQL，Render 上的分析頁讀取已發布結果。
 
 ## 目前功能
@@ -193,6 +195,8 @@ static/ templates/                Django 前端資產與樣板
 
 ## 相關文件
 
+- [案例說明](docs/case-study.md)
+- [AI 輸出評估](docs/ai-eval.md)
 - [系統架構](docs/architecture.md)
 - [技術展示](docs/technical-showcase.md)
 - [外部資料匯入與本機資料層](docs/external-dataset-import.md)
