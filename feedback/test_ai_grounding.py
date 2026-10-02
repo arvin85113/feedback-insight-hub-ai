@@ -1,6 +1,6 @@
 from django.test import SimpleTestCase
 
-from .ai_grounding import ungrounded_numbers
+from .ai_grounding import UngroundedNumbers, ungrounded_numbers
 
 
 EVIDENCE = [
@@ -44,3 +44,26 @@ class GroundedNumberTests(SimpleTestCase):
     def test_thousands_separator_and_p_value_thresholds(self):
         evidence = [{"kind": "statistical_test", "metric_type": "p_value", "value": 0.0002, "sample_size": 201295}]
         self.assertEqual(ungrounded_numbers("樣本 201,295 筆，p < 0.001", evidence), [])
+
+
+class NegativeValueTests(SimpleTestCase):
+    """The sign of a coefficient is usually stated in words ("負相關"), so prose quotes its magnitude."""
+
+    CORRELATION = [{"id": "test.test-5.statistic", "kind": "statistical_test", "metric_type": "statistic",
+                    "label": "滿意度 與 等候時間：Spearman 相關", "value": -0.6235, "sample_size": 103}]
+
+    def test_magnitude_of_a_negative_value_is_grounded(self):
+        self.assertEqual(ungrounded_numbers("兩者呈負相關（0.6235）", self.CORRELATION), [])
+        self.assertEqual(ungrounded_numbers("係數約 0.62", self.CORRELATION), [])
+        self.assertEqual(ungrounded_numbers("相關係數 -0.6235", self.CORRELATION), [])
+
+    def test_other_magnitudes_are_still_rejected(self):
+        self.assertEqual(ungrounded_numbers("係數 0.7", self.CORRELATION), ["0.7"])
+        self.assertEqual(ungrounded_numbers("有 62.35% 的人", self.CORRELATION), ["62.35"])
+
+class UngroundedNumbersErrorTests(SimpleTestCase):
+    def test_reason_stays_the_message_and_numbers_ride_along(self):
+        error = UngroundedNumbers("invalid_acceptance", ["9.9", "30"])
+        self.assertIsInstance(error, ValueError)
+        self.assertEqual(str(error), "invalid_acceptance")
+        self.assertEqual(error.numbers, ["9.9", "30"])

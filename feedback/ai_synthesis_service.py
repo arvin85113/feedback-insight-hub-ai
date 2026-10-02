@@ -4,7 +4,7 @@ import json
 import uuid
 from collections.abc import Mapping
 
-from .ai_grounding import ungrounded_numbers
+from .ai_grounding import UngroundedNumbers, ungrounded_numbers
 
 
 SCHEMA_VERSION = "3"
@@ -52,7 +52,18 @@ IMPROVEMENT_DRAFT_SCHEMA = {
         "related_category": {"type": "string", "description": "簡短分類。"},
         "priority": {"type": "string", "enum": ["high", "medium", "low"]},
         "rationale": {"type": "string", "description": "提出此改善的原因。"},
-        "acceptance_criteria": {"type": "array", "items": {"type": "string"}, "maxItems": 4},
+        "acceptance_criteria": {
+            "type": "array",
+            "items": {
+                "type": "string",
+                "description": (
+                    "可觀察的驗收方式，寫追蹤的指標與方向，不訂新的目標值"
+                    "（例如寫「追蹤清潔度平均分是否高於目前水準」，不要寫「提升至 4.5 分」）；"
+                    "數字只能照抄引用 evidence。"
+                ),
+            },
+            "maxItems": 4,
+        },
         "evidence_refs": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 4},
         "data_limitations": {"type": "array", "items": {"type": "string"}, "maxItems": 3},
     },
@@ -151,13 +162,11 @@ def build_input(statistics_stage, text_stage, improvements, data_scope):
 
 
 def _text(value, max_length, reason, evidence=()):
-    if (
-        not isinstance(value, str)
-        or not value.strip()
-        or len(value) > max_length
-        or ungrounded_numbers(value, evidence)
-    ):
+    if not isinstance(value, str) or not value.strip() or len(value) > max_length:
         raise ValueError(reason)
+    invented = ungrounded_numbers(value, evidence)
+    if invented:
+        raise UngroundedNumbers(reason, invented)
     return value.strip()
 
 
@@ -187,6 +196,64 @@ def _stable_draft_id(input_hash, index, draft):
     return str(uuid.uuid5(uuid.NAMESPACE_URL, f"feedback-ai:{input_hash}:{index}:{digest}"))
 
 
+def validate_combined_finding(row, evidence_by_id, *, profile="standard"):
+    limits = PROFILE_LIMITS[profile]
+    finding_keys = {"title", "source_stages", "priority", "rationale", "evidence_refs", "data_limitations"}
+    if not isinstance(row, Mapping) or set(row) != finding_keys or row.get("priority") not in PRIORITIES:
+        raise ValueError("invalid_combined_finding")
+    source_stages = row.get("source_stages")
+    if not isinstance(source_stages, list) or not source_stages or not set(source_stages) <= {"statistics", "text"}:
+        raise ValueError("invalid_source_stages")
+    refs = _refs(row.get("evidence_refs"), evidence_by_id, limits["evidence_refs"])
+    cited = [evidence_by_id[ref] for ref in refs]
+    return {
+        "title": _text(row.get("title"), 180, "invalid_finding_title", cited),
+        "source_stages": list(dict.fromkeys(source_stages)),
+        "priority": row["priority"],
+        "rationale": _text(row.get("rationale"), limits["rationale_length"], "invalid_rationale", cited),
+        "evidence_refs": refs,
+        "evidence": cited,
+        "data_limitations": _text_list(
+            row.get("data_limitations"), limits["limitations"], 400, "invalid_limitations", cited
+        ),
+    }
+
+
+DRAFT_KEYS = {
+    "title",
+    "summary",
+    "related_category",
+    "priority",
+    "rationale",
+    "acceptance_criteria",
+    "evidence_refs",
+    "data_limitations",
+}
+
+
+def validate_improvement_draft(row, evidence_by_id, *, profile="standard"):
+    limits = PROFILE_LIMITS[profile]
+    if not isinstance(row, Mapping) or set(row) != DRAFT_KEYS or row.get("priority") not in PRIORITIES:
+        raise ValueError("invalid_draft")
+    refs = _refs(row.get("evidence_refs"), evidence_by_id, limits["evidence_refs"])
+    cited = [evidence_by_id[ref] for ref in refs]
+    return {
+        "title": _text(row.get("title"), 255, "invalid_draft_title", cited),
+        "summary": _text(row.get("summary"), limits["summary_length"], "invalid_draft_summary", cited),
+        "related_category": _text(row.get("related_category"), 100, "invalid_category", cited),
+        "priority": row["priority"],
+        "rationale": _text(row.get("rationale"), limits["rationale_length"], "invalid_rationale", cited),
+        "acceptance_criteria": _text_list(
+            row.get("acceptance_criteria"), limits["acceptance_criteria"], 300, "invalid_acceptance", cited
+        ),
+        "evidence_refs": refs,
+        "evidence": cited,
+        "data_limitations": _text_list(
+            row.get("data_limitations"), limits["limitations"], 400, "invalid_limitations", cited
+        ),
+    }
+
+
 def validate_output(payload, evidence_by_id, input_hash, *, profile="standard"):
     limits = PROFILE_LIMITS[profile]
     all_evidence = list(evidence_by_id.values())
@@ -213,88 +280,13 @@ def validate_output(payload, evidence_by_id, input_hash, *, profile="standard"):
     findings = payload.get("combined_findings")
     if not isinstance(findings, list) or len(findings) > limits["findings"]:
         raise ValueError("invalid_combined_findings")
-    finding_keys = {"title", "source_stages", "priority", "rationale", "evidence_refs", "data_limitations"}
     for row in findings:
-        if not isinstance(row, Mapping) or set(row) != finding_keys or row.get("priority") not in PRIORITIES:
-            raise ValueError("invalid_combined_finding")
-        source_stages = row.get("source_stages")
-        if not isinstance(source_stages, list) or not source_stages or not set(source_stages) <= {"statistics", "text"}:
-            raise ValueError("invalid_source_stages")
-        refs = _refs(row.get("evidence_refs"), evidence_by_id, limits["evidence_refs"])
-        cited = [evidence_by_id[ref] for ref in refs]
-        result["combined_findings"].append(
-            {
-                "title": _text(row.get("title"), 180, "invalid_finding_title", cited),
-                "source_stages": list(dict.fromkeys(source_stages)),
-                "priority": row["priority"],
-                "rationale": _text(
-                    row.get("rationale"),
-                    limits["rationale_length"],
-                    "invalid_rationale",
-                    cited,
-                ),
-                "evidence_refs": refs,
-                "evidence": cited,
-                "data_limitations": _text_list(
-                    row.get("data_limitations"),
-                    limits["limitations"],
-                    400,
-                    "invalid_limitations",
-                    cited,
-                ),
-            }
-        )
+        result["combined_findings"].append(validate_combined_finding(row, evidence_by_id, profile=profile))
     drafts = payload.get("improvement_drafts")
     if not isinstance(drafts, list) or len(drafts) > limits["drafts"]:
         raise ValueError("invalid_drafts")
-    draft_keys = {
-        "title",
-        "summary",
-        "related_category",
-        "priority",
-        "rationale",
-        "acceptance_criteria",
-        "evidence_refs",
-        "data_limitations",
-    }
     for index, row in enumerate(drafts, start=1):
-        if not isinstance(row, Mapping) or set(row) != draft_keys or row.get("priority") not in PRIORITIES:
-            raise ValueError("invalid_draft")
-        refs = _refs(row.get("evidence_refs"), evidence_by_id, limits["evidence_refs"])
-        cited = [evidence_by_id[ref] for ref in refs]
-        validated = {
-            "title": _text(row.get("title"), 255, "invalid_draft_title", cited),
-            "summary": _text(
-                row.get("summary"),
-                limits["summary_length"],
-                "invalid_draft_summary",
-                cited,
-            ),
-            "related_category": _text(row.get("related_category"), 100, "invalid_category", cited),
-            "priority": row["priority"],
-            "rationale": _text(
-                row.get("rationale"),
-                limits["rationale_length"],
-                "invalid_rationale",
-                cited,
-            ),
-            "acceptance_criteria": _text_list(
-                row.get("acceptance_criteria"),
-                limits["acceptance_criteria"],
-                300,
-                "invalid_acceptance",
-                cited,
-            ),
-            "evidence_refs": refs,
-            "evidence": cited,
-            "data_limitations": _text_list(
-                row.get("data_limitations"),
-                limits["limitations"],
-                400,
-                "invalid_limitations",
-                cited,
-            ),
-        }
+        validated = validate_improvement_draft(row, evidence_by_id, profile=profile)
         validated["draft_id"] = _stable_draft_id(input_hash, index, validated)
         result["improvement_drafts"].append(validated)
     return result
