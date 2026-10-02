@@ -64,6 +64,12 @@ def _token_is_grounded(token, values, literals):
     return any(round(value, decimals) == number for value in values)
 
 
+def number_tokens(text):
+    """Arabic-numeral tokens in ``text`` (the same tokens the grounding check inspects)."""
+
+    return _NUMBER_TOKEN_RE.findall(text)
+
+
 class UngroundedNumbers(ValueError):
     """Validation failure caused by invented figures.
 

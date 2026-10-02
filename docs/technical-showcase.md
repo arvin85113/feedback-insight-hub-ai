@@ -13,7 +13,7 @@
 | 大型資料 | DuckDB＋本機 Parquet | 20 萬筆評論不進雲端資料庫，只發布有限結果 |
 | AI | Gemini（Vertex express mode） | 結構化輸出＋後端驗證，只由本機工作台呼叫 |
 | 桌面 | Dear PyGui＋PyInstaller one-folder EXE | 不依賴 Tcl/Tk，可在管理者電腦執行重運算 |
-| 部署 | Render（Gunicorn＋WhiteNoise）、GitHub Actions CI | 合併到 `main` 前必須通過兩個 Python 版本的全套測試 |
+| 部署 | Render（Gunicorn＋WhiteNoise）、GitHub Actions CI | 合併到 `main` 前必須通過全套測試（雲端與本機節點兩種模式）與 PostgreSQL 併發測試 |
 
 ## 2. 架構：網站收資料，本機算，版本化發布
 
@@ -52,7 +52,10 @@
 - 每階段使用 JSON schema 結構化輸出；後端再驗證引用的 evidence ID、長度與數量上限。
 - **數字必須有依據**：AI 文字中的數字只能是所引用 evidence 的數值、樣本數或標籤中的數字，
   自行推算的比例或目標值會被拒絕（[ai_grounding](../feedback/ai_grounding.py)）。
+- 單一不合格的發現或改善草稿只捨棄該項並記錄原因；被擋下的數字記入 metrics（只存數字），失敗可直接診斷。
+- 負值 evidence（例如相關係數 −0.6235）可引用其絕對值，方向由文字表達。
 - Prompt、schema 與上限的內容雜湊構成 stage 版本；修改 prompt 不會誤用舊結果。
+- 評估工具以固定測試案例比較不同寫法（[AI 輸出評估](ai-eval.md)、[ai_eval](../feedback/ai_eval/)）。
 - 輸出截斷、格式錯誤或限流時以精簡模式重試一次；逾時等結果不確定的錯誤不盲目重試。
 - 沒有文字 evidence 時跳過文字階段呼叫；mock 結果不得正式發布。
 
