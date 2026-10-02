@@ -107,6 +107,38 @@ python manage.py runserver
 
 開啟 `http://127.0.0.1:8000/`。本機網站與 Render 使用相同的分析展示流程：頁面只讀已發布結果，統計、文字與 Gemini 由本機工作台或 Worker 產生並發布。
 
+### 在另一台電腦接續開發
+
+Git 只帶走程式與文件；以下三樣只在原本的開發機上，需另外搬移（例如 USB），**不要上傳到公開位置**：
+
+| 項目 | 放置位置 | 備註 |
+|---|---|---|
+| `.env` | 專案根目錄 | 含資料庫連線與 Gemini 金鑰；與原機共用同一個 Supabase，寫入會影響正式網站 |
+| 本機資料包（`data/local/` 的 TripAdvisor clean／manifest／report／分析產物、`ai-eval/`） | 解壓到專案根目錄 | 評論正文仍可能含個資；不含 raw（有 `user_id`） |
+| `%LOCALAPPDATA%\FeedbackInsightHub\datasets.json` | 新電腦同一路徑 | 本機工作台用來找 TripAdvisor 資料；`root` 改成新電腦的專案路徑 |
+
+```powershell
+winget install Python.Python.3.13
+git clone https://github.com/arvin85113/feedback-insight-hub-ai.git
+cd feedback-insight-hub-ai
+py -3.13 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements-desktop.txt
+# 放入 .env 與解壓本機資料包後：
+.\.venv\Scripts\python.exe manage.py check
+.\.venv\Scripts\python.exe manage.py test feedback accounts config --settings=config.settings_test
+```
+
+`datasets.json` 內容（`root` 換成實際路徑；`source_version` 必須與登錄值一致）：
+
+```json
+{"datasets": [{"source_ref": "jniimi/tripadvisor-review-rating",
+  "source_version": "1a1b7077c997eb496e402c6e9c97d91989eb24bb:tripadvisor-clean-v1:8892cf5be77ea70df321aa05c090ea86d76a0d7fbbe10cf620e408e0ba0309c5",
+  "root": "C:\\Projects\\feedback-insight-hub-ai\\data\\local\\tripadvisor-review-rating"}]}
+```
+
+若沒有資料包，可用 `prepare_local_dataset`（見 [外部資料交接](docs/external-dataset-import.md)）重新下載並驗證 TripAdvisor 資料；
+內容雜湊會與原機相同。
+
 ## Windows 本機節點與 EXE
 
 同一個 EXE 依參數切換角色：
