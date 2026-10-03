@@ -10,7 +10,15 @@ from organizations.models import Organization, OrganizationMembership
 from .audit import ACTION_LABELS, ORGANIZATION_RENAMED, record
 from .forms import OrganizationSettingsForm
 from .models import NodeAuditEvent
-from .status import cloud_status, database_status, disk_status, lan_status, pending_items, worker_status
+from .status import (
+    cloud_status,
+    database_status,
+    disk_status,
+    inbox_status,
+    lan_status,
+    pending_items,
+    worker_status,
+)
 
 Role = OrganizationMembership.Role
 
@@ -36,7 +44,14 @@ class OverviewView(NodeConsoleMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         paths = settings.NODE_PATHS
-        items = [database_status(), worker_status(paths), disk_status(paths), lan_status(), cloud_status()]
+        items = [
+            database_status(),
+            worker_status(paths),
+            disk_status(paths),
+            lan_status(),
+            cloud_status(),
+            inbox_status(),
+        ]
         events = list(NodeAuditEvent.objects.all()[:10])
         for event in events:
             event.label = ACTION_LABELS.get(event.action, event.action)

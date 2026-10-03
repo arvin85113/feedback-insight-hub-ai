@@ -4,19 +4,39 @@ import logging
 import threading
 from datetime import timedelta
 
+from django.db import transaction
 from django.utils import timezone
 
 from .client import TRANSIENT, UNAUTHORIZED, CloudError, NotLinked, backoff_seconds, client_for_link
 from .definitions import sync_definitions
-from .models import CloudLink, StaleLink
+from .inbox import sync_inbox
+from .models import CloudLink, StaleLink, SurveySyncState
 
 logger = logging.getLogger(__name__)
 _cycle_lock = threading.Lock()
 
 
-def _record_success(link, now):
+def _apply_abandoned(heartbeat):
+    from feedback.models import Survey
+
+    for row in heartbeat.get("surveys", []):
+        abandoned = row.get("abandoned_sequences") or []
+        survey = Survey.objects.filter(uuid=row.get("survey_uuid")).first()
+        if survey is None or not abandoned:
+            continue
+        with transaction.atomic():
+            state, _ = SurveySyncState.objects.select_for_update().get_or_create(survey=survey)
+            state.abandoned_sequences = sorted(
+                set(state.abandoned_sequences) | {s for s in abandoned if s > state.synced_through_sequence}
+            )
+            state.save(update_fields=["abandoned_sequences"])
+            SurveySyncState.advance(survey)
+
+
+def _record_success(link, now, heartbeat):
     CloudLink.update_if_current(
         link.generation,
+        inbox_status=heartbeat.get("inbox") or {},
         last_success_at=now,
         last_error_kind="",
         last_error_message="",
@@ -54,7 +74,9 @@ def run_cycle(*, force=False, now=None):
     try:
         client = client_for_link(link)
         sync_definitions(client, link)
-        client.post("heartbeat/")
+        sync_inbox(client)
+        heartbeat = client.post("heartbeat/") or {}
+        _apply_abandoned(heartbeat)
     except NotLinked:
         return "not_linked"
     except StaleLink:
@@ -65,7 +87,7 @@ def run_cycle(*, force=False, now=None):
         _record_failure(link, error, now)
         return error.kind
     else:
-        _record_success(link, now)
+        _record_success(link, now, heartbeat)
         return "ok"
     finally:
         _cycle_lock.release()

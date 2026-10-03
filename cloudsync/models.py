@@ -22,6 +22,8 @@ class CloudLink(models.Model):
     last_error_message = models.CharField(max_length=255, blank=True)
     consecutive_failures = models.PositiveIntegerField(default=0)
     next_attempt_at = models.DateTimeField(null=True, blank=True)
+    # Last heartbeat's inbox figures (pending, capacity, oldest pending, deadline state).
+    inbox_status = models.JSONField(default=dict, blank=True)
 
     def save(self, *args, **kwargs):
         self.pk = 1

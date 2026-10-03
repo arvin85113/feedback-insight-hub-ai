@@ -6,6 +6,11 @@
     {% if link.is_linked %}
         <p>已連結 <code>{{ link.api_url }}</code>（節點 {{ link.node_uuid }}）</p>
         <p>上次成功同步：{{ link.last_success_at|date:"Y/m/d H:i"|default:"尚未同步" }}</p>
+        {% if inbox %}
+        <p>收件匣：待收 {{ inbox.pending_count }} 筆 · 衝突 {{ inbox.quarantined_count|default:0 }} 筆 · 占用 {{ inbox.occupied_count }} / {{ inbox.max_count }} 筆{% if inbox.oldest_pending_at %} · 最舊待收 {{ inbox.oldest_pending_at }}{% endif %}</p>
+        {% if inbox.deadline_state == "critical" %}<p class="flash-message flash-error">最舊待收已超過 30 天，請立即同步。</p>{% elif inbox.deadline_state == "warn" %}<p class="flash-message flash-error">最舊待收已超過 25 天。</p>{% endif %}
+        {% endif %}
+        {% if unconfirmed_acks %}<p class="flash-message flash-error">{{ unconfirmed_acks }} 筆回覆已寫入本機，但雲端未確認同步，需人工處理。</p>{% endif %}
         {% if link.last_error_kind %}<p class="flash-message flash-error">最近錯誤：{{ link.last_error_kind }}　{{ link.last_error_message }}</p>{% endif %}
         <form method="post" class="form-inline">{% csrf_token %}
             <button type="submit" name="action" value="sync-now" class="button button-primary">立即同步</button>

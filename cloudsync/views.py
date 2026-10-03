@@ -9,7 +9,7 @@ from organizations.models import OrganizationMembership
 
 from .client import CloudClient, CloudError
 from .forms import ConnectForm
-from .models import CloudLink
+from .models import CloudLink, PendingAck
 from .runner import run_cycle
 from .tokens import delete_token, save_token
 
@@ -22,6 +22,8 @@ class ConnectionView(NodeConsoleMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["link"] = CloudLink.load()
+        context["inbox"] = context["link"].inbox_status or {}
+        context["unconfirmed_acks"] = PendingAck.objects.exclude(last_status="").count()
         context.setdefault("form", ConnectForm())
         return context
 

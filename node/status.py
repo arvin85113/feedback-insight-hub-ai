@@ -94,11 +94,29 @@ def cloud_status(link=None):
     return StatusItem("cloud", "雲端連線", "ok", f"已連線 · 上次同步 {minutes} 分鐘前")
 
 
+def inbox_status(link=None):
+    from cloudsync.models import CloudLink, PendingAck
+
+    link = CloudLink.load() if link is None else link
+    if not link.is_linked:
+        return StatusItem("inbox", "收件匣", "off", "未連線")
+    inbox = link.inbox_status or {}
+    pending = int(inbox.get("pending_count") or 0)
+    if inbox.get("deadline_state") in ("warn", "critical"):
+        return StatusItem("inbox", "收件匣", "warn", f"待收 {pending} 筆，最舊一筆已超過處理期限")
+    if int(inbox.get("quarantined_count") or 0):
+        return StatusItem("inbox", "收件匣", "warn", f"待收 {pending} 筆，有衝突項目待處理")
+    if PendingAck.objects.exclude(last_status="").exists():
+        return StatusItem("inbox", "收件匣", "warn", f"待收 {pending} 筆，有回覆尚未確認同步")
+    return StatusItem("inbox", "收件匣", "ok", f"待收 {pending} 筆")
+
+
 PENDING_MESSAGES = {
     "worker": "分析 Worker 需要處理：請從系統匣結束並重新開啟程式，再查看日誌。",
     "disk": "磁碟剩餘空間不足 2 GB，分析產物可能無法寫入。",
     "database": "資料庫無法連線，請查看日誌。",
     "cloud": "雲端同步需要處理：請到「雲端連線」查看。",
+    "inbox": "收件匣需要處理：請到「雲端連線」查看待收期限與衝突項目。",
 }
 
 
