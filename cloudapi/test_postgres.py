@@ -142,58 +142,49 @@ class InboxCapacityPostgreSQLTests(_InboxPostgreSQLCase):
         self.assertEqual(InboxCounter.objects.get().occupied_count, 3)
 
 
-@override_settings(CLOUD_INBOX_ENABLED=True)
-class SemanticLockRacePostgreSQLTests(_InboxPostgreSQLCase):
-    def test_first_answer_and_semantic_edit_are_serialized(self):
-        import uuid
+class PublishRacePostgreSQLTests(_InboxPostgreSQLCase):
+    """Publishing and a draft save on the same version are serialized; the later one gets a 409 (spec §7.1)."""
 
-        from django.contrib.auth import get_user_model
+    def test_publish_and_draft_save_are_serialized(self):
+        from cloudapi.definition import add_question, serialize_definition, update_survey
+        from cloudapi.errors import VersionConflict
+        from feedback.models import Survey
 
-        from cloudapi.definition import serialize_definition, update_question
-        from cloudapi.errors import SemanticLockViolation
-        from cloudapi.inbox import DefinitionOutdated, accept_submission
-        from cloudapi.models import SubmissionReceipt
-        from feedback.models import Question
-
-        survey, question = self.make_inbox_survey("single_choice", "nominal", "A\nB")
-        user = get_user_model().objects.create_user(username="racer", password="x")
+        ChangeClock.objects.get_or_create(pk=1)
+        survey = Survey.objects.create(title="草稿", slug="pg-publish")
         definition = serialize_definition(survey)
-        update_question(definition, str(question.uuid), {"options_text": "A\nB\nC"})
+        add_question(definition, {"title": "Q", "kind": "short_text"})
+        change_definition(survey.uuid, expected_version=0, definition=definition)
+        survey.refresh_from_db()
+        version = survey.definition_version
+        publish = serialize_definition(survey)
+        publish["published"] = True
+        rename = serialize_definition(survey)
+        update_survey(rename, {"title": "改名"})
         barrier, outcomes = threading.Barrier(2), {}
 
-        def answer():
+        def write(name, payload):
             try:
                 barrier.wait(10)
-                accept_submission(survey, user=user, submission_uuid=uuid.uuid4(), form_version=1,
-                                  consent_follow_up=False, answers={str(question.uuid): "A"})
-                outcomes["answer"] = "ok"
-            except DefinitionOutdated:
-                outcomes["answer"] = "outdated"
+                change_definition(survey.uuid, expected_version=version, definition=payload)
+                outcomes[name] = "ok"
+            except VersionConflict:
+                outcomes[name] = "conflict"
             finally:
                 close_old_connections()
 
-        def edit():
-            try:
-                barrier.wait(10)
-                change_definition(survey.uuid, expected_version=1, definition=definition)
-                outcomes["edit"] = "ok"
-            except SemanticLockViolation:
-                outcomes["edit"] = "locked"
-            finally:
-                close_old_connections()
-
-        threads = [threading.Thread(target=answer), threading.Thread(target=edit)]
+        threads = [threading.Thread(target=write, args=("publish", publish)),
+                   threading.Thread(target=write, args=("rename", rename))]
         for thread in threads:
             thread.start()
         for thread in threads:
             thread.join(30)
-        question.refresh_from_db()
-        if outcomes == {"answer": "ok", "edit": "locked"}:
-            self.assertEqual((question.options_text, question.has_received_answer), ("A\nB", True))
+        self.assertEqual(sorted(outcomes.values()), ["conflict", "ok"])
+        survey.refresh_from_db()
+        if outcomes["publish"] == "ok":
+            self.assertEqual((survey.title, survey.published_version), ("草稿", version + 1))
         else:
-            self.assertEqual(outcomes, {"answer": "outdated", "edit": "ok"})
-            self.assertFalse(SubmissionReceipt.objects.exists())
-            self.assertFalse(question.has_received_answer)
+            self.assertEqual((survey.title, survey.published_version), ("改名", None))
 
 
 @override_settings(CLOUD_INBOX_ENABLED=True)

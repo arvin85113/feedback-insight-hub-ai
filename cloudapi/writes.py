@@ -1,19 +1,29 @@
-"""Cloud-side writes to node-owned survey definitions.
+"""Controlled writes to survey definitions (survey builder spec §7.1).
 
-Every change locks the survey row, checks the expected version and the
-semantic lock, writes the models, then records an immutable revision and a
-SurveyChange whose sequence number comes from the locked ChangeClock row, so
-sequence order equals commit order (spec §4).
+Every entry point goes through `_locked_write`: lock the survey row, check the
+expected version and the lifecycle rules, write the models, then record an
+immutable revision (every version, every survey) and, for node-owned surveys,
+a SurveyChange whose sequence comes from the locked ChangeClock row so sequence
+order equals commit order.
 """
 
+import contextlib
+import secrets
+import string
+
+from django.conf import settings
 from django.db import transaction
-from django.utils.text import slugify
+from django.utils import timezone
 
-from feedback.models import Question, Survey
+from feedback.analysis_jobs import suppress_analysis_scheduling
+from feedback.models import Survey
 
-from .definition import SEMANTIC_FIELDS, apply_definition, serialize_definition, validate_definition
-from .errors import SemanticLockViolation, VersionConflict
+from .definition import apply_definition, frozen_fields_changed, serialize_definition, validate_definition
+from .errors import DefinitionError, PublishBlocked, PublishedLocked, VersionConflict
 from .models import ChangeClock, SurveyChange, SurveyDefinitionRevision
+
+SLUG_ALPHABET = string.ascii_lowercase + string.digits
+ANALYSIS_FIELDS = ("analysis_enabled", "archived_at")
 
 
 def tick_clock():
@@ -23,44 +33,98 @@ def tick_clock():
     return clock.value
 
 
-def record_revision(survey):
+def record_version(survey):
     """Freeze the definition written in this transaction. Callers return this revision's
     definition instead of re-serializing later, so a reply never mixes versions."""
 
     revision = SurveyDefinitionRevision.objects.create(
         survey=survey, version=survey.definition_version, definition=serialize_definition(survey)
     )
-    SurveyChange.objects.create(seq=tick_clock(), survey=survey, definition_version=survey.definition_version)
+    if survey.owner_node_id:
+        SurveyChange.objects.create(seq=tick_clock(), survey=survey, definition_version=survey.definition_version)
     return revision
 
 
-def unique_slug(text):
-    base = (slugify(text) or "survey")[:40]
-    slug, counter = base, 2
-    while Survey.objects.filter(slug=slug).exists():
-        slug = f"{base}-{counter}"
-        counter += 1
-    return slug
+def random_slug():
+    while True:
+        slug = "".join(secrets.choice(SLUG_ALPHABET) for _ in range(8))
+        if not Survey.objects.filter(slug=slug).exists():
+            return slug
 
 
-def check_semantic_lock(survey, definition):
-    incoming = {str(item["uuid"]): item for item in definition["questions"]}
-    for question in survey.questions.filter(has_received_answer=True):
-        item = incoming.get(str(question.uuid))
-        if item is not None and any(item[field] != getattr(question, field) for field in SEMANTIC_FIELDS):
-            raise SemanticLockViolation(str(question.uuid))
+def _locked_write(survey, *, expected_version, definition, prepare=None):
+    """Shared body of every controlled entry point. `survey` is locked (or new and unsaved)."""
+
+    if expected_version is not None and survey.definition_version != expected_version:
+        raise VersionConflict(survey.definition_version)
+    if prepare is not None:
+        definition = prepare(survey, definition)
+    version = survey.definition_version + 1 if survey.pk else 1
+    draft = survey.pk is None or survey.published_version is None
+    # Drafts have no replies, so their edits and their publish schedule no analysis (spec §7.2).
+    with suppress_analysis_scheduling() if draft else contextlib.nullcontext():
+        apply_definition(survey, definition, version=version)
+    return record_version(survey)
+
+
+def _lifecycle(survey, definition):
+    """Server-owned publish fields: carried over, or set on the draft → published transition."""
+
+    definition = dict(definition)
+    next_version = survey.definition_version + 1
+    definition.update(
+        published_version=survey.published_version,
+        published_at=survey.published_at.isoformat() if survey.published_at else None,
+        analysis_definition_version=survey.analysis_definition_version,
+    )
+    if survey.published_version is not None:
+        if frozen_fields_changed(serialize_definition(survey), definition):
+            raise PublishedLocked()
+        current = serialize_definition(survey)
+        if any(current[field] != definition[field] for field in ANALYSIS_FIELDS):
+            definition["analysis_definition_version"] = next_version
+        return definition
+    if definition["published"]:
+        if not definition["questions"]:
+            raise DefinitionError("至少需要一題才能發布")
+        if survey.owner_node_id and not settings.CLOUD_INBOX_ENABLED:
+            raise PublishBlocked()
+        definition.update(
+            published_version=next_version,
+            published_at=timezone.now().isoformat(),
+            analysis_definition_version=next_version,
+        )
+    return definition
 
 
 @transaction.atomic
 def change_definition(survey_uuid, *, expected_version, definition):
     definition = validate_definition(definition)
     survey = Survey.objects.select_for_update().get(uuid=survey_uuid)
-    if survey.definition_version != expected_version:
-        raise VersionConflict(survey.definition_version)
-    check_semantic_lock(survey, definition)
-    apply_definition(survey, {**definition, "survey_uuid": str(survey.uuid), "slug": survey.slug},
-                     version=survey.definition_version + 1)
-    return record_revision(survey)
+    publishing = survey.published_version is None and definition["published"]
+    revision = _locked_write(
+        survey,
+        expected_version=expected_version,
+        definition={**definition, "survey_uuid": str(survey.uuid), "slug": survey.slug},
+        prepare=_lifecycle,
+    )
+    if publishing and survey.owner_node_id:
+        Survey.objects.filter(pk=survey.pk).update(inbox_since=timezone.now())
+    return revision
+
+
+def _draft(definition):
+    return {**definition, "published": False, "published_version": None, "published_at": None,
+            "analysis_definition_version": None}
+
+
+@transaction.atomic
+def create_survey(definition):
+    """Cloud website: a new draft owned by no node (spec §7.1)."""
+
+    definition = validate_definition(definition)
+    survey = Survey(uuid=definition["survey_uuid"], slug=random_slug())
+    return _locked_write(survey, expected_version=None, definition={**_draft(definition), "slug": survey.slug})
 
 
 @transaction.atomic
@@ -72,17 +136,15 @@ def create_node_survey(node, definition):
             raise PermissionError("survey belongs to another node")
         revision = SurveyDefinitionRevision.objects.get(survey=existing, version=existing.definition_version)
         return revision, False
-    slug = unique_slug(definition["slug"] or definition["title"])
-    survey = Survey(uuid=definition["survey_uuid"], owner_node=node, slug=slug)
-    apply_definition(survey, {**definition, "slug": slug}, version=1)
-    return record_revision(survey), True
+    survey = Survey(uuid=definition["survey_uuid"], owner_node=node, slug=random_slug())
+    return _locked_write(survey, expected_version=None, definition={**_draft(definition), "slug": survey.slug}), True
 
 
 @transaction.atomic
 def assign_survey_to_node(survey, node):
     survey = Survey.objects.select_for_update().get(pk=survey.pk)
+    if survey.published_version is not None:
+        raise PublishedLocked()
     survey.owner_node = node
-    survey.definition_version += 1
-    survey.save(update_fields=["owner_node", "definition_version"])
-    Question.objects.filter(survey=survey, answers__isnull=False).update(has_received_answer=True)
-    return record_revision(survey)
+    survey.save(update_fields=["owner_node"])
+    return _locked_write(survey, expected_version=survey.definition_version, definition=serialize_definition(survey))

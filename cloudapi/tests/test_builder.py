@@ -48,15 +48,16 @@ class CloudBuilderForNodeSurveysTests(TestCase):
         self.question.refresh_from_db()
         self.assertTrue(self.question.is_active)
 
-    def test_semantic_edit_of_answered_question_is_refused(self):
-        Answer.objects.create(submission=FeedbackSubmission.objects.create(survey=self.survey), question=self.question, value="x")
-        Question.objects.filter(pk=self.question.pk).update(has_received_answer=True)
+    def test_question_edit_of_published_survey_is_refused(self):
+        from feedback.test_utils import published
+
+        published(self.survey)
         response = self.client.post(self.url, {
             "definition_version": 1, "action": "edit-question", "question_uuid": str(self.question.uuid),
             "question_id": self.question.pk, "title": "Q", "help_text": "", "kind": "long_text", "data_type": "text",
             "options_text": "", "is_required": "on", "order": 1,
         }, follow=True)
-        self.assertContains(response, "此題已有回覆，請新增題目取代並停用舊題")
+        self.assertContains(response, "問卷已發布，題目不能修改；請複製為新草稿")
         self.question.refresh_from_db()
         self.assertEqual(self.question.kind, "short_text")
 

@@ -23,26 +23,12 @@ class SchemaTests(TestCase):
 
 
 class EnableInboxCommandTests(TestCase):
-    def setUp(self):
+    """The inbox now starts when a node-owned survey is published (builder spec §4.3)."""
+
+    @override_settings(CLOUD_SYNC_PROTOTYPE_ENABLED=True, CLOUD_INBOX_ENABLED=True)
+    def test_command_is_retired(self):
         node, _ = NodeDevice.issue("office")
         assign_survey_to_node(Survey.objects.create(title="S", slug="s"), node)
-
-    def test_refuses_when_either_switch_is_off(self):
-        for switches in ({"CLOUD_SYNC_PROTOTYPE_ENABLED": False, "CLOUD_INBOX_ENABLED": True},
-                         {"CLOUD_SYNC_PROTOTYPE_ENABLED": True, "CLOUD_INBOX_ENABLED": False}):
-            with self.subTest(switches), override_settings(**switches), self.assertRaises(CommandError):
-                call_command("enable_survey_inbox", survey="s")
+        with self.assertRaisesMessage(CommandError, "已改為發布時設定收件匣，請改用發布"):
+            call_command("enable_survey_inbox", survey="s")
         self.assertIsNone(Survey.objects.get(slug="s").inbox_since)
-
-    @override_settings(CLOUD_SYNC_PROTOTYPE_ENABLED=True, CLOUD_INBOX_ENABLED=True)
-    def test_sets_inbox_since_once(self):
-        call_command("enable_survey_inbox", survey="s")
-        first = Survey.objects.get(slug="s").inbox_since
-        call_command("enable_survey_inbox", survey="s")
-        self.assertEqual(Survey.objects.get(slug="s").inbox_since, first)
-
-    @override_settings(CLOUD_SYNC_PROTOTYPE_ENABLED=True, CLOUD_INBOX_ENABLED=True)
-    def test_requires_owner_node(self):
-        Survey.objects.create(title="P", slug="p")
-        with self.assertRaises(CommandError):
-            call_command("enable_survey_inbox", survey="p")

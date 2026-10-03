@@ -508,15 +508,14 @@ class SurveyCreateView(DashboardBaseMixin, CreateView):
                 messages.error(self.request, "表單已過期，請重新開啟建立問卷頁。")
                 return self.form_invalid(form)
             data = form.cleaned_data
-            definition = {
-                "survey_uuid": survey_uuid, "version": 0, "title": data["title"], "slug": "",
-                "description": data.get("description", ""), "is_active": data.get("is_active", True),
-                "analysis_enabled": data.get("analysis_enabled", True),
-                "thank_you_email_enabled": data.get("thank_you_email_enabled", True),
-                "improvement_tracking_enabled": True,
-                "category": data["category"].name if data.get("category") else None,
-                "archived_at": None, "questions": [],
-            }
+            from cloudapi.definition import blank_definition
+
+            definition = blank_definition(
+                survey_uuid, title=data["title"], description=data.get("description", ""),
+                is_active=data.get("is_active", True), analysis_enabled=data.get("analysis_enabled", True),
+                thank_you_email_enabled=data.get("thank_you_email_enabled", True),
+                category=data["category"].name if data.get("category") else None,
+            )
             try:
                 self.object = create_survey(definition)
             except DefinitionCommitError as exc:

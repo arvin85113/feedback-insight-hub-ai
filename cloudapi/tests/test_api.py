@@ -14,9 +14,15 @@ QUESTION = {"title": "Q", "help_text": "", "kind": "short_text", "data_type": "t
 
 
 def blank(uuid_text, title="S"):
-    return {"survey_uuid": uuid_text, "version": 0, "title": title, "slug": "", "description": "", "is_active": True,
-            "analysis_enabled": True, "thank_you_email_enabled": True, "improvement_tracking_enabled": True,
-            "category": None, "archived_at": None, "questions": []}
+    from cloudapi.definition import blank_definition
+
+    return blank_definition(uuid_text, title=title)
+
+
+def blank_v1(uuid_text, title="S"):
+    return {key: value for key, value in blank(uuid_text, title).items()
+            if key not in ("schema_version", "published", "published_version", "published_at",
+                           "analysis_definition_version", "next_question_number")}
 
 
 @cloud_only
@@ -62,7 +68,7 @@ class NodeApiTests(TestCase):
         self.assertEqual([c["definition"]["version"] for c in changes["changes"]], [2])
         self.assertFalse(changes["has_more"])
 
-    def test_put_conflict_and_semantic_lock(self):
+    def test_put_conflict(self):
         survey = create_node_survey(self.node, blank("33333333-3333-3333-3333-333333333333"))[0].survey
         definition = serialize_definition(survey)
         add_question(definition, {**QUESTION, "kind": "single_choice", "data_type": "nominal", "options_text": "A"})
@@ -70,11 +76,6 @@ class NodeApiTests(TestCase):
         stale = self.call("put", f"surveys/{survey.uuid}/", {"expected_version": 1, "definition": definition})
         self.assertEqual((stale.status_code, stale.json()["current_version"]), (409, 2))
 
-        Question.objects.filter(survey=survey).update(has_received_answer=True)
-        definition = serialize_definition(Survey.objects.get(pk=survey.pk))
-        definition["questions"][0]["choices"].append({"code": "", "label": "B", "excluded": False, "score": None})
-        locked = self.call("put", f"surveys/{survey.uuid}/", {"expected_version": 2, "definition": definition})
-        self.assertEqual(locked.status_code, 422)
 
     def test_invalid_definition_is_400_and_not_stored(self):
         bad = blank("abababab-abab-abab-abab-abababababab")
@@ -108,3 +109,33 @@ class NodeApiTests(TestCase):
         self.assertEqual(body["node_uuid"], str(self.node.uuid))
         self.node.refresh_from_db()
         self.assertIsNotNone(self.node.last_seen_at)
+
+
+@cloud_only
+@override_settings(CLOUD_SYNC_PROTOTYPE_ENABLED=True)
+class NodeApiLifecycleTests(TestCase):
+    def setUp(self):
+        self.node, self.token = NodeDevice.issue("office")
+
+    def call(self, method, path, body):
+        return getattr(self.client, method)(BASE + path, data=json.dumps(body), content_type="application/json",
+                                            HTTP_AUTHORIZATION=f"Bearer {self.token}")
+
+    def test_api_rejects_v1_writes(self):
+        response = self.call("post", "surveys/", blank_v1("55555555-5555-5555-5555-555555555555"))
+        self.assertEqual((response.status_code, response.json()["error"]), (400, "schema_version"))
+
+    def test_api_returns_published_locked_422(self):
+        from cloudapi.definition import blank_definition
+        from feedback.test_utils import published
+
+        survey = create_node_survey(self.node, blank_definition("66666666-6666-6666-6666-666666666666"))[0].survey
+        definition = serialize_definition(survey)
+        add_question(definition, {"title": "Q", "kind": "short_text"})
+        self.call("put", f"surveys/{survey.uuid}/", {"expected_version": 1, "definition": definition})
+        survey = published(Survey.objects.get(pk=survey.pk))
+        definition = serialize_definition(survey)
+        definition["title"] = "改名"
+        response = self.call("put", f"surveys/{survey.uuid}/",
+                             {"expected_version": survey.definition_version, "definition": definition})
+        self.assertEqual((response.status_code, response.json()["error"]), (422, "published_locked"))

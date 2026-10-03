@@ -26,8 +26,15 @@ from feedback.question_schema import (
 from .errors import DefinitionError
 
 SCHEMA_VERSION = 2
-# Removed together with the semantic lock (survey builder plan Task 4).
-SEMANTIC_FIELDS = ("kind", "data_type", "choices")
+# Survey settings a published survey may still change (builder spec §4.2); everything else is frozen.
+WHITELIST_FIELDS = (
+    "is_active",
+    "archived_at",
+    "category",
+    "analysis_enabled",
+    "thank_you_email_enabled",
+    "improvement_tracking_enabled",
+)
 SURVEY_FIELDS = (
     "title",
     "slug",
@@ -86,6 +93,38 @@ def definition_from_fields(survey, questions, category_name):
             for question in questions
         ],
     }
+
+
+def blank_definition(survey_uuid, *, title="S", description="", category=None, is_active=True,
+                     analysis_enabled=True, thank_you_email_enabled=True, improvement_tracking_enabled=True):
+    """A new, empty draft definition (version 0) in the current schema."""
+
+    return {
+        "schema_version": SCHEMA_VERSION, "survey_uuid": str(survey_uuid), "version": 0, "title": title, "slug": "",
+        "description": description, "is_active": is_active, "analysis_enabled": analysis_enabled,
+        "thank_you_email_enabled": thank_you_email_enabled,
+        "improvement_tracking_enabled": improvement_tracking_enabled, "category": category, "archived_at": None,
+        "published": False, "published_version": None, "published_at": None, "analysis_definition_version": None,
+        "next_question_number": 1, "questions": [],
+    }
+
+
+def frozen_fields_changed(current, incoming):
+    """True when a published survey's definition changes outside the whitelist (spec §4.2)."""
+
+    if not incoming["published"]:
+        return True
+    if any(current[field] != incoming[field] for field in ("title", "description")):
+        return True
+    current_questions = {item["uuid"]: item for item in current["questions"]}
+    incoming_questions = {str(item["uuid"]): item for item in incoming["questions"]}
+    if current_questions.keys() != incoming_questions.keys():
+        return True
+    return any(
+        current_questions[key][field] != incoming_questions[key][field]
+        for key in current_questions
+        for field in QUESTION_FIELDS
+    )
 
 
 def serialize_definition(survey):

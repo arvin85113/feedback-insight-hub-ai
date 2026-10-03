@@ -5,7 +5,7 @@ from unittest.mock import patch
 from django.test import TestCase, override_settings
 
 from cloudapi.definition import add_question, serialize_definition, update_question
-from cloudapi.errors import SemanticLockViolation, VersionConflict
+from cloudapi.errors import PublishedLocked, VersionConflict
 from cloudsync.models import CloudLink
 from cloudsync.runner import run_cycle
 from cloudsync.survey_write import node_commit
@@ -25,6 +25,37 @@ survey = Survey.objects.create(title="門市問卷", slug="{slug}")
 Question.objects.create(survey=survey, title="感想", kind="long_text", data_type="text", order=1)
 assign_survey_to_node(survey, NodeDevice.objects.get(name="e2e"))
 print(survey.uuid)
+"""
+
+
+# Publish in place on the cloud (the prototype cloud runs with the inbox off, so the normal publish path refuses).
+PUBLISH = """
+from cloudapi.writes import record_version
+from feedback.models import Survey
+s = Survey.objects.get(uuid='{uuid}')
+v = s.definition_version + 1
+Survey.objects.filter(pk=s.pk).update(definition_version=v, published_version=v, analysis_definition_version=v)
+record_version(Survey.objects.get(pk=s.pk))
+"""
+
+# Store a schema_version 1 revision as the survey's current, published version (as before the redesign).
+V1_REVISION = """
+from cloudapi.models import ChangeClock, SurveyChange, SurveyDefinitionRevision
+from cloudapi.writes import tick_clock
+from feedback.models import Question, Survey
+s = Survey.objects.get(uuid='{uuid}')
+q = Question.objects.create(survey=s, title="等候", kind="single_choice", data_type="nominal", options_text="A\\nB", order=2)
+v = s.definition_version + 1
+Survey.objects.filter(pk=s.pk).update(definition_version=v, published_version=v, analysis_definition_version=v)
+definition = {"survey_uuid": str(s.uuid), "version": v, "title": s.title, "slug": s.slug, "description": s.description,
+              "is_active": True, "analysis_enabled": True, "thank_you_email_enabled": True,
+              "improvement_tracking_enabled": True, "category": None, "archived_at": None,
+              "questions": [{"uuid": str(x.uuid), "code": x.code, "title": x.title, "help_text": "", "kind": x.kind,
+                             "data_type": x.data_type, "options_text": x.options_text, "is_required": True,
+                             "enable_keyword_tracking": x.enable_keyword_tracking, "is_active": True, "order": x.order}
+                            for x in s.questions.order_by("order", "id")]}
+SurveyDefinitionRevision.objects.create(survey=s, version=v, definition=definition)
+SurveyChange.objects.create(seq=tick_clock(), survey=s, definition_version=v)
 """
 
 
@@ -58,7 +89,7 @@ class DefinitionSyncEndToEndTests(TestCase):
         slug = self._testMethodName.replace("_", "-")[:40]
         self.survey_uuid = self.cloud.shell(SEED.replace("{slug}", slug)).strip().splitlines()[-1]
 
-    def test_round_trip_conflict_semantic_lock_and_deactivation(self):
+    def test_round_trip_conflict_deactivation_and_published_lock(self):
         self.assertEqual(run_cycle(force=True), "ok")
         survey = Survey.objects.get(uuid=self.survey_uuid)
         self.assertEqual(survey.definition_version, 1)
@@ -89,14 +120,6 @@ change_definition(s.uuid, expected_version=2, definition=d)
         survey.refresh_from_db()
         self.assertEqual((survey.title, survey.definition_version), ("雲端改名", 3))
 
-        # Semantic lock on an answered question.
-        self.cloud.shell(f"from feedback.models import Question; Question.objects.filter(survey__uuid='{self.survey_uuid}', title='滿意度').update(has_received_answer=True)")
-        locked = serialize_definition(survey)
-        rated = next(q for q in locked["questions"] if q["title"] == "滿意度")
-        update_question(locked, rated["uuid"], {"options_text": "好\n差"})
-        with self.assertRaises(SemanticLockViolation):
-            node_commit(survey, locked, 3)
-
         # Cloud deactivates the free-text question; the node keeps its answers.
         free_text = Question.objects.get(survey=survey, title="感想")
         Answer.objects.create(submission=FeedbackSubmission.objects.create(survey=survey), question=free_text, value="好")
@@ -113,6 +136,42 @@ change_definition(s.uuid, expected_version=3, definition=d)
         free_text.refresh_from_db()
         self.assertFalse(free_text.is_active)
         self.assertEqual(Answer.objects.filter(question=free_text).count(), 1)
+
+        # Once published, the node can no longer change a question (builder spec §4.2).
+        self.cloud.shell(PUBLISH.replace("{uuid}", self.survey_uuid))
+        run_cycle(force=True)
+        survey.refresh_from_db()
+        self.assertIsNotNone(survey.published_version)
+        locked = serialize_definition(survey)
+        rated = next(q for q in locked["questions"] if q["title"] == "滿意度")
+        update_question(locked, rated["uuid"], {"title": "新題目"})
+        with self.assertRaises(PublishedLocked):
+            node_commit(survey, locked, survey.definition_version)
+
+    def test_v1_revision_applied_on_node_then_whitelist_change_writes_v2(self):
+        self.cloud.shell(V1_REVISION.replace("{uuid}", self.survey_uuid))
+        self.assertEqual(run_cycle(force=True), "ok")
+        survey = Survey.objects.get(uuid=self.survey_uuid)
+        rated = survey.questions.get(title="等候")
+        self.assertEqual([c["code"] for c in rated.choices], ["c1", "c2"])
+        self.assertIsNotNone(survey.published_version)
+
+        definition = serialize_definition(survey)
+        self.assertEqual(definition["schema_version"], 2)
+        definition["is_active"] = False
+        node_commit(survey, definition, survey.definition_version)
+        self.assertIn("False", self.cloud.shell(
+            f"from feedback.models import Survey; print(Survey.objects.get(uuid='{self.survey_uuid}').is_active)"))
+
+    def test_v1_revision_question_edit_rejected(self):
+        self.cloud.shell(V1_REVISION.replace("{uuid}", self.survey_uuid))
+        run_cycle(force=True)
+        survey = Survey.objects.get(uuid=self.survey_uuid)
+        definition = serialize_definition(survey)
+        rated = next(q for q in definition["questions"] if q["title"] == "等候")
+        update_question(definition, rated["uuid"], {"title": "改題目"})
+        with self.assertRaises(PublishedLocked):
+            node_commit(survey, definition, survey.definition_version)
 
     def test_interrupted_sync_resumes_without_loss(self):
         run_cycle(force=True)

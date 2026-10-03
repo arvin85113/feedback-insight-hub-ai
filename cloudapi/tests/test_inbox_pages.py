@@ -39,10 +39,7 @@ class InboxFillPageTests(TestCase):
         self.assertContains(self.client.get(self.url), "你已填答過這份問卷。")
 
     def test_outdated_form_shows_message_and_keeps_input(self):
-        definition = serialize_definition(Survey.objects.get(pk=self.survey.pk))
-        update_survey(definition, {"title": "新版"})
-        change_definition(self.survey.uuid, expected_version=1, definition=definition)
-        response = self.submit(version=1)
+        response = self.submit(version=99)
         self.assertContains(response, "問卷已更新，請確認後重新送出")
         self.assertContains(response, 'value="好"')
         self.assertFalse(SubmissionReceipt.objects.exists())
