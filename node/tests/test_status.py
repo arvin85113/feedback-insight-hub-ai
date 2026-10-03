@@ -107,3 +107,25 @@ class InboxStatusTests(TestCase):
         PendingAck.objects.create(submission_uuid="d1d1d1d1-d1d1-d1d1-d1d1-d1d1d1d1d1d1", payload_hash="h" * 64,
                                   last_status="conflict")
         self.assertEqual(inbox_status(self.linked(pending_count=0, deadline_state="ok")).state, "warn")
+
+
+class ResultsStatusTests(TestCase):
+    def test_results_status_counts_and_failures(self):
+        from django.utils import timezone
+
+        from cloudsync.definitions import upsert_definition
+        from cloudsync.models import ResultUpload
+        from cloudsync.tests.test_inbox import definition
+        from node.status import results_status
+
+        linked = CloudLink(api_url="https://c", node_uuid="99999999-9999-9999-9999-999999999999")
+        self.assertEqual(results_status(CloudLink()).state, "off")
+        survey, _ = upsert_definition(definition(1))
+        ResultUpload.objects.create(survey=survey, publish_sequence=1, content_hash="h", content={},
+                                    published_at=timezone.now())
+        ok = results_status(linked)
+        self.assertEqual(ok.state, "ok")
+        self.assertIn("待上傳 1 份", ok.summary)
+        ResultUpload.objects.update(status="failed", last_error="conflict")
+        failing = results_status(linked)
+        self.assertEqual((failing.state, failing.summary), ("warn", "1 份結果上傳失敗"))

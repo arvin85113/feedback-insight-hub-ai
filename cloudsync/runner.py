@@ -10,6 +10,7 @@ from django.utils import timezone
 from .client import TRANSIENT, UNAUTHORIZED, CloudError, NotLinked, backoff_seconds, client_for_link
 from .definitions import sync_definitions
 from .inbox import sync_inbox
+from .results import backfill_publications, upload_results
 from .models import CloudLink, StaleLink, SurveySyncState, advance_and_schedule
 
 logger = logging.getLogger(__name__)
@@ -31,6 +32,22 @@ def _apply_abandoned(heartbeat):
             )
             state.save(update_fields=["abandoned_sequences"])
             advance_and_schedule(survey)
+
+
+def _apply_publish_sequences(heartbeat):
+    from feedback.models import Survey
+
+    for row in heartbeat.get("surveys", []):
+        sequence = row.get("publish_sequence")
+        survey = Survey.objects.filter(uuid=row.get("survey_uuid")).first()
+        if survey is None or not isinstance(sequence, int):
+            continue
+        with transaction.atomic():
+            SurveySyncState.objects.get_or_create(survey=survey)
+            state = SurveySyncState.objects.select_for_update().get(survey=survey)
+            if sequence > state.cloud_publish_sequence:
+                state.cloud_publish_sequence = sequence
+                state.save(update_fields=["cloud_publish_sequence"])
 
 
 def _record_success(link, now, heartbeat):
@@ -75,8 +92,12 @@ def run_cycle(*, force=False, now=None):
         client = client_for_link(link)
         sync_definitions(client, link)
         sync_inbox(client)
+        # Heartbeat before numbering new uploads, so a restored node continues after the cloud.
         heartbeat = client.post("heartbeat/") or {}
         _apply_abandoned(heartbeat)
+        _apply_publish_sequences(heartbeat)
+        backfill_publications()
+        upload_results(client)
     except NotLinked:
         return "not_linked"
     except StaleLink:

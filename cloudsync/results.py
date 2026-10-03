@@ -7,11 +7,13 @@ decided once and every resend reuses them.
 
 import json
 
+from django.conf import settings
 from django.db import transaction
 
-from cloudapi.envelope import sha256_hex
+from cloudapi.envelope import canonical_bytes, sha256_hex
 from feedback.models import SurveyAnalysisState
 
+from .client import TRANSIENT, UNAUTHORIZED, CloudError
 from .models import ResultUpload, SurveySyncState
 from .scope import is_cloud_synced
 
@@ -115,3 +117,49 @@ def backfill_publications():
             if record_publication(state) is not None:
                 created += 1
     return created
+
+
+RETRYABLE = (TRANSIENT, UNAUTHORIZED)
+
+
+def upload_results(client):
+    """Send pending uploads in sequence order; transient or auth errors stop the cycle and keep them pending."""
+
+    counts = {"uploaded": 0, "stale": 0, "failed": 0}
+    for upload in ResultUpload.objects.filter(status=ResultUpload.Status.PENDING).order_by("publish_sequence", "pk"):
+        data = canonical_bytes({
+            "publish_uuid": str(upload.publish_uuid),
+            "publish_sequence": upload.publish_sequence,
+            "content_hash": upload.content_hash,
+            "content": upload.content,
+        })
+        if len(data) > settings.CLOUD_RESULT_MAX_BYTES:
+            _mark(upload, ResultUpload.Status.FAILED, "too_large")
+            counts["failed"] += 1
+            continue
+        try:
+            reply = client.post_raw("results/", data)
+        except CloudError as error:
+            if error.kind in RETRYABLE:
+                ResultUpload.objects.filter(pk=upload.pk).update(attempts=upload.attempts + 1, last_error=error.kind)
+                raise
+            _mark(upload, ResultUpload.Status.FAILED, "not_found" if error.status == 404 else error.kind)
+            counts["failed"] += 1
+            continue
+        if reply.get("status") == "applied":
+            _mark(upload, ResultUpload.Status.UPLOADED, "")
+            counts["uploaded"] += 1
+        else:
+            _mark(upload, ResultUpload.Status.STALE, "")
+            counts["stale"] += 1
+    return counts
+
+
+def _mark(upload, status, error):
+    ResultUpload.objects.filter(pk=upload.pk).update(status=status, last_error=error, attempts=upload.attempts + 1)
+
+
+def retry_failed():
+    return ResultUpload.objects.filter(status=ResultUpload.Status.FAILED).update(
+        status=ResultUpload.Status.PENDING, last_error="", attempts=0
+    )

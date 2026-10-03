@@ -85,14 +85,20 @@ class CloudClient:
         self.session = session or requests.Session()
         self.timeout = timeout
 
-    def request(self, method, path, *, params=None, body=None):
+    def request(self, method, path, *, params=None, body=None, raw=None):
+        headers = {"Authorization": f"Bearer {self.token}"}
+        extra = {"json": body}
+        if raw is not None:
+            # Pre-encoded UTF-8 JSON: requests' json= would escape every non-ASCII character.
+            headers["Content-Type"] = "application/json; charset=utf-8"
+            extra = {"data": raw}
         try:
             response = self.session.request(
                 method,
                 self.base + path,
                 params=params,
-                json=body,
-                headers={"Authorization": f"Bearer {self.token}"},
+                headers=headers,
+                **extra,
                 timeout=self.timeout,
                 allow_redirects=False,  # never resend the bearer token to another location
             )
@@ -119,6 +125,9 @@ class CloudClient:
 
     def post(self, path, body=None):
         return self.request("POST", path, body=body if body is not None else {})
+
+    def post_raw(self, path, data):
+        return self.request("POST", path, raw=data)
 
     def put(self, path, body):
         return self.request("PUT", path, body=body)

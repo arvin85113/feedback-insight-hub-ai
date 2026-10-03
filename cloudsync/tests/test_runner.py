@@ -111,3 +111,36 @@ class InboxCycleTests(TestCase):
              patch("cloudsync.runner.sync_inbox"):
             run_cycle()
         self.assertEqual(SurveySyncState.objects.get(survey__uuid=SURVEY_UUID).synced_through_sequence, 3)
+
+
+class ResultCycleTests(TestCase):
+    def setUp(self):
+        self._keyring = memory_keyring()
+        self._keyring.__enter__()
+        self.addCleanup(self._keyring.__exit__, None, None, None)
+        CloudLink.relink("https://c", "88888888-8888-8888-8888-888888888888")
+        save_token("https://c", "tok")
+
+    def test_cycle_order_and_cloud_sequence_only_increases(self):
+        from cloudsync.definitions import upsert_definition
+        from cloudsync.models import SurveySyncState
+        from cloudsync.tests.test_inbox import SURVEY_UUID, definition
+
+        upsert_definition(definition(1))
+        calls = []
+
+        class OrderedClient(FakeClient):
+            def post(self, path, body=None):
+                calls.append(path)
+                return super().post(path, body)
+
+        for sequence in (7, 5):
+            heartbeat = {"surveys": [{"survey_uuid": SURVEY_UUID, "abandoned_sequences": [], "publish_sequence": sequence}]}
+            with patch("cloudsync.runner.client_for_link", return_value=OrderedClient(heartbeat=heartbeat)), \
+                 patch("cloudsync.runner.sync_definitions", side_effect=lambda *a: calls.append("definitions") or 0), \
+                 patch("cloudsync.runner.sync_inbox", side_effect=lambda *a: calls.append("inbox")), \
+                 patch("cloudsync.runner.backfill_publications", side_effect=lambda: calls.append("backfill") or 0), \
+                 patch("cloudsync.runner.upload_results", side_effect=lambda *a: calls.append("upload") or {}):
+                self.assertEqual(run_cycle(force=True), "ok")
+        self.assertEqual(calls[:5], ["definitions", "inbox", "heartbeat/", "backfill", "upload"])
+        self.assertEqual(SurveySyncState.objects.get(survey__uuid=SURVEY_UUID).cloud_publish_sequence, 7)

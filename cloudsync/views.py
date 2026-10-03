@@ -9,7 +9,8 @@ from organizations.models import OrganizationMembership
 
 from .client import CloudClient, CloudError
 from .forms import ConnectForm
-from .models import CloudLink, PendingAck
+from .models import CloudLink, PendingAck, ResultUpload
+from .results import retry_failed
 from .runner import run_cycle
 from .tokens import delete_token, save_token
 
@@ -24,6 +25,13 @@ class ConnectionView(NodeConsoleMixin, TemplateView):
         context["link"] = CloudLink.load()
         context["inbox"] = context["link"].inbox_status or {}
         context["unconfirmed_acks"] = PendingAck.objects.exclude(last_status="").count()
+        context["pending_results"] = ResultUpload.objects.filter(status=ResultUpload.Status.PENDING).count()
+        context["failed_results"] = list(
+            ResultUpload.objects.filter(status=ResultUpload.Status.FAILED)
+            .select_related("survey")
+            .order_by("publish_sequence")
+            .values("survey__title", "publish_sequence", "last_error")[:20]
+        )
         context.setdefault("form", ConnectForm())
         return context
 
@@ -36,6 +44,10 @@ class ConnectionView(NodeConsoleMixin, TemplateView):
             CloudLink.unlink()  # bumps the generation, so a running sync cannot write the old link back
             record(CLOUD_UNLINKED, request=request, target=link.api_url)
             messages.success(request, "已中斷雲端連線。")
+            return redirect("cloudsync:connection")
+        if action == "retry-results":
+            count = retry_failed()
+            messages.success(request, f"已重新排入 {count} 份結果，下一次同步會上傳。")
             return redirect("cloudsync:connection")
         if action == "sync-now":
             result = run_cycle(force=True)

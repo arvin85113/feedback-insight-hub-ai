@@ -111,12 +111,35 @@ def inbox_status(link=None):
     return StatusItem("inbox", "收件匣", "ok", f"待收 {pending} 筆")
 
 
+def results_status(link=None):
+    from cloudsync.models import CloudLink, ResultUpload, SyncedSubmissionSource
+    from feedback.models import SurveyAnalysisState
+
+    link = CloudLink.load() if link is None else link
+    if not link.is_linked:
+        return StatusItem("results", "結果上傳", "off", "未連線")
+    failed = ResultUpload.objects.filter(status=ResultUpload.Status.FAILED).count()
+    if failed:
+        return StatusItem("results", "結果上傳", "warn", f"{failed} 份結果上傳失敗")
+    pending = ResultUpload.objects.filter(status=ResultUpload.Status.PENDING).count()
+    analysed = waiting = 0
+    for state in SurveyAnalysisState.objects.filter(survey__sync_state__isnull=False).select_related("published_snapshot"):
+        snapshot = state.published_snapshot
+        watermark = ((snapshot.source_snapshot or {}).get("data_scope") or {}).get("analyzed_through_sequence", 0) if snapshot else 0
+        analysed += snapshot.response_count if snapshot else 0
+        waiting += SyncedSubmissionSource.objects.filter(
+            submission__survey_id=state.survey_id, response_sequence__gt=watermark
+        ).count()
+    return StatusItem("results", "結果上傳", "ok", f"已分析 {analysed} 筆 · 尚未分析 {waiting} 筆 · 待上傳 {pending} 份")
+
+
 PENDING_MESSAGES = {
     "worker": "分析 Worker 需要處理：請從系統匣結束並重新開啟程式，再查看日誌。",
     "disk": "磁碟剩餘空間不足 2 GB，分析產物可能無法寫入。",
     "database": "資料庫無法連線，請查看日誌。",
     "cloud": "雲端同步需要處理：請到「雲端連線」查看。",
     "inbox": "收件匣需要處理：請到「雲端連線」查看待收期限與衝突項目。",
+    "results": "結果上傳需要處理：請到「雲端連線」查看。",
 }
 
 
