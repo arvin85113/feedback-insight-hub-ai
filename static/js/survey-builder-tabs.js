@@ -3,6 +3,7 @@
     const builderTabs = document.querySelectorAll('.builder-tab');
     const panelQuestions = document.getElementById('panel-questions');
     const panelSettings = document.getElementById('panel-settings');
+    if (!panelQuestions || !panelSettings) return;
 
     function activateBuilderTab(key) {
         builderTabs.forEach(btn => btn.classList.toggle('builder-tab-active', btn.dataset.builderTab === key));
@@ -15,35 +16,6 @@
     // POST 後 ?tab=settings 自動切換
     const urlTab = new URLSearchParams(location.search).get('tab');
     if (urlTab === 'settings') activateBuilderTab('settings');
-
-    // ── 新增問題展開/收起 ──
-    const btnAddQuestion = document.getElementById('btn-add-question');
-    const addQuestionPanel = document.getElementById('add-question-panel');
-    btnAddQuestion.addEventListener('click', () => {
-        const isOpen = addQuestionPanel.style.display !== 'none';
-        addQuestionPanel.style.display = isOpen ? 'none' : 'block';
-        btnAddQuestion.textContent = isOpen ? '＋ 新增問題' : '▲ 收起';
-    });
-
-    // ── Inline edit toggle ──
-    let openPanel = null;
-    document.querySelectorAll('.edit-question-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const id = btn.dataset.questionId;
-            const panel = document.getElementById('edit-panel-' + id);
-            if (openPanel && openPanel !== panel) openPanel.style.display = 'none';
-            panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-            openPanel = panel.style.display === 'block' ? panel : null;
-        });
-    });
-
-    document.querySelectorAll('.cancel-edit-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const panel = document.getElementById('edit-panel-' + btn.dataset.questionId);
-            panel.style.display = 'none';
-            openPanel = null;
-        });
-    });
 
     // ── Copy survey URL ──
     const copyBtn = document.getElementById('copy-slug-btn');

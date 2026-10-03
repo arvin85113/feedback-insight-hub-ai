@@ -390,8 +390,17 @@ def delete_question(definition, question_uuid):
     definition["questions"].remove(item)
 
 
-def set_question_active(definition, question_uuid, active):
-    _question(definition, question_uuid)["is_active"] = bool(active)
+def duplicate_question(definition, question_uuid):
+    """A copy placed right after the original; the cloud assigns its question code, option codes are kept."""
+
+    source = _question(definition, question_uuid)
+    for item in definition["questions"]:
+        if item["order"] > source["order"]:
+            item["order"] += 1
+    copy_item = copy.deepcopy(source)
+    copy_item.update(uuid=str(uuid.uuid4()), code="", order=source["order"] + 1)
+    definition["questions"].append(copy_item)
+    return copy_item
 
 
 def move_question(definition, question_uuid, direction):

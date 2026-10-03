@@ -37,25 +37,23 @@ class CloudBuilderForNodeSurveysTests(TestCase):
         self.assertEqual(self.survey.definition_version, 2)
 
     def test_stale_form_is_rejected(self):
-        self.post(action="restore-question", question_uuid=str(self.question.uuid), question_id=self.question.pk)
+        self.post(action="duplicate-question", question_uuid=str(self.question.uuid))
         response = self.client.post(
             self.url,
             {"definition_version": 1, "action": "delete-question", "question_uuid": str(self.question.uuid)},
             follow=True,
         )
-        self.assertContains(response, "版本不一致，請重新載入")
-        self.question.refresh_from_db()
-        self.assertTrue(self.question.is_active)
+        self.assertContains(response, "此問卷已在其他視窗修改")
+        self.assertTrue(Question.objects.filter(pk=self.question.pk).exists())
 
     def test_question_edit_of_published_survey_is_refused(self):
         from feedback.test_utils import published
 
         published(self.survey)
         response = self.client.post(self.url, {
-            "definition_version": 1, "action": "edit-question", "question_uuid": str(self.question.uuid),
-            "question_id": self.question.pk, "title": "Q", "help_text": "", "kind": "long_text", "data_type": "text",
-            "options_text": "", "is_required": "on", "order": 1,
-        }, follow=True)
+            "definition_version": 1, "action": "save-question", "question_uuid": str(self.question.uuid),
+            "ui_type": "long_text", "title": "Q", "help_text": "", "is_required": "on",
+        })
         self.assertContains(response, "問卷已發布，題目不能修改；請複製為新草稿")
         self.question.refresh_from_db()
         self.assertEqual(self.question.kind, "short_text")

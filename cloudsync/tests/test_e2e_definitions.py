@@ -124,12 +124,12 @@ change_definition(s.uuid, expected_version=2, definition=d)
         free_text = Question.objects.get(survey=survey, title="感想")
         Answer.objects.create(submission=FeedbackSubmission.objects.create(survey=survey), question=free_text, value="好")
         self.cloud.shell(f"""
-from cloudapi.definition import serialize_definition, set_question_active
+from cloudapi.definition import delete_question, serialize_definition
 from cloudapi.writes import change_definition
 from feedback.models import Survey
 s = Survey.objects.get(uuid='{self.survey_uuid}')
 d = serialize_definition(s)
-set_question_active(d, next(q['uuid'] for q in d['questions'] if q['title'] == '感想'), False)
+delete_question(d, next(q['uuid'] for q in d['questions'] if q['title'] == '感想'))
 change_definition(s.uuid, expected_version=3, definition=d)
 """)
         run_cycle(force=True)

@@ -26,6 +26,18 @@
     <div class="builder-header-meta">
         <a class="builder-meta-link" href="{% url 'feedback:stats-overview' %}?survey={{ survey.slug }}">統計分析</a>
         <a class="builder-meta-link" href="{% url 'feedback:text-analysis' %}?survey={{ survey.slug }}">文字洞察</a>
+        {% if not read_only %}
+            <form method="post" class="q-card-inline">
+                {% csrf_token %}{% include "feedback/_definition_version_field.html" %}
+                <input type="hidden" name="action" value="publish">
+                <button type="submit" class="button button-primary">發布</button>
+            </form>
+        {% endif %}
+        <form method="post" class="q-card-inline">
+            {% csrf_token %}{% include "feedback/_definition_version_field.html" %}
+            <input type="hidden" name="action" value="copy">
+            <button type="submit" class="button button-secondary">複製為新草稿</button>
+        </form>
         <a class="button button-ghost" href="{% url 'feedback:survey-manager' %}">返回問卷列表</a>
     </div>
 </section>
@@ -43,7 +55,7 @@
             <input type="hidden" name="action" value="update-survey">
             <div class="field-block">
                 {{ survey_edit_form.title.label_tag }}
-                {{ survey_edit_form.title }}
+                {% if read_only %}<input type="text" value="{{ survey.title }}" disabled><input type="hidden" name="title" value="{{ survey.title }}">{% else %}{{ survey_edit_form.title }}{% endif %}
                 {{ survey_edit_form.title.errors }}
             </div>
             <div class="field-block">
@@ -53,7 +65,7 @@
             </div>
             <div class="field-block">
                 {{ survey_edit_form.description.label_tag }}
-                {{ survey_edit_form.description }}
+                {% if read_only %}<textarea rows="4" disabled>{{ survey.description }}</textarea><input type="hidden" name="description" value="{{ survey.description }}">{% else %}{{ survey_edit_form.description }}{% endif %}
                 {{ survey_edit_form.description.errors }}
             </div>
             <div class="setting-block">
@@ -64,8 +76,8 @@
                         <span class="toggle-track"><span class="toggle-thumb"></span></span>
                     </div>
                     <div class="toggle-text">
-                        <span class="toggle-title">立即啟用問卷</span>
-                        <span class="toggle-desc">未開啟則儲存為草稿，可稍後從問卷管理頁啟用</span>
+                        <span class="toggle-title">收件中</span>
+                        <span class="toggle-desc">發布後可隨時停止或恢復收件；草稿不接受填答</span>
                     </div>
                 </label>
                 <label class="toggle-label">
@@ -100,282 +112,53 @@
         </form>
     </div>
 
-    {# ── 主要題目區（垂直排列）── #}
+    {# ── 題目卡片（builder spec §3）── #}
     <div class="builder-vertical" id="panel-questions">
-        {% for question in survey.questions.all %}
-            <div class="question-card" id="question-row-{{ question.id }}">
-                <div class="question-card-header">
-                    <div class="question-card-info">
-                        <span class="question-order-badge">{{ question.order }}</span>
-                        <div class="question-card-main">
-                            <div class="question-card-title-row">
-                                <strong>{{ question.title }}</strong>
-                                <span class="pill">{{ question.get_kind_display }} / {{ question.get_data_type_display }}</span>
-                                {% if not question.is_active %}<span class="pill">已停用</span>{% endif %}
-                            </div>
-                            {% if question.help_text %}
-                                <span class="question-card-preview">{{ question.help_text }}</span>
-                            {% elif question.options_text %}
-                                <span class="question-card-preview">{{ question.options_text|truncatechars:40 }}</span>
-                            {% elif question.kind == question.Kind.INTEGER or question.kind == question.Kind.DECIMAL or question.kind == question.Kind.SCALE %}
-                                <span class="question-card-preview">{{ question.get_data_type_display }}型數值題</span>
-                            {% endif %}
-                        </div>
-                    </div>
-                    <div class="question-card-actions">
-                        <span class="pill {% if question.is_required %}pill-active{% endif %}">
-                            {% if question.is_required %}必填{% else %}選填{% endif %}
-                        </span>
-                        {% if question.enable_keyword_tracking %}
-                            <span class="pill">文字分析</span>
-                        {% endif %}
-                        <form method="post" class="question-move-group" style="display:inline-flex;gap:2px">
-                            {% csrf_token %}{% include "feedback/_definition_version_field.html" %}
-                            <input type="hidden" name="action" value="move-question">
-                            <input type="hidden" name="question_id" value="{{ question.id }}"><input type="hidden" name="question_uuid" value="{{ question.uuid }}">
-                            <button type="submit" name="direction" value="up" class="button button-ghost button-icon" title="上移">↑</button>
-                            <button type="submit" name="direction" value="down" class="button button-ghost button-icon" title="下移">↓</button>
-                        </form>
-                        <button type="button" class="button button-ghost button-small edit-question-btn"
-                                data-question-id="{{ question.id }}">編輯</button>
-                        {% if question.is_active %}
-                            <form method="post" style="display:inline">
-                                {% csrf_token %}{% include "feedback/_definition_version_field.html" %}
-                                <input type="hidden" name="action" value="delete-question">
-                                <input type="hidden" name="question_id" value="{{ question.id }}"><input type="hidden" name="question_uuid" value="{{ question.uuid }}">
-                                <button type="submit" class="button button-danger button-small">刪除／停用</button>
-                            </form>
-                        {% else %}
-                            <form method="post" style="display:inline">
-                                {% csrf_token %}{% include "feedback/_definition_version_field.html" %}
-                                <input type="hidden" name="action" value="restore-question">
-                                <input type="hidden" name="question_id" value="{{ question.id }}"><input type="hidden" name="question_uuid" value="{{ question.uuid }}">
-                                <button type="submit" class="button button-ghost button-small">恢復</button>
-                            </form>
-                        {% endif %}
-                    </div>
-                </div>
-                <div class="question-response-preview" aria-label="題目預覽">
-                    {% if question.help_text %}
-                        <p class="question-preview-help">{{ question.help_text }}</p>
-                    {% endif %}
+        {% if card_conflict %}
+            <div class="builder-alert" role="alert" data-conflict>
+                <strong>此問卷已在其他視窗修改</strong>
+                <p>你的輸入仍保留在下方卡片，可以先複製內容。</p>
+                <a class="button button-primary button-small" href="{% url 'feedback:survey-builder' survey.slug %}">重新載入（捨棄我的修改）</a>
+                <button type="button" class="button button-ghost button-small" data-dismiss-alert>繼續編輯</button>
+            </div>
+        {% elif card_error %}
+            <div class="builder-alert" role="alert"><strong>{{ card_error }}</strong></div>
+        {% endif %}
 
-                    {% if question.kind == question.Kind.SHORT_TEXT %}
-                        <div class="question-preview-input">短文字回答</div>
-                    {% elif question.kind == question.Kind.LONG_TEXT %}
-                        <div class="question-preview-textarea">長文字回答</div>
-                    {% elif question.kind == question.Kind.INTEGER or question.kind == question.Kind.DECIMAL %}
-                        <div class="question-preview-input">請輸入數字</div>
-                    {% elif question.kind == question.Kind.SCALE %}
-                        <div class="question-preview-scale">
-                            {% if question.options %}
-                                {% for option in question.options %}
-                                    <label class="question-preview-scale-item">
-                                        <span>{{ option }}</span>
-                                        <i></i>
-                                    </label>
-                                {% endfor %}
-                            {% else %}
-                                <label class="question-preview-scale-item"><span>1</span><i></i></label>
-                                <label class="question-preview-scale-item"><span>2</span><i></i></label>
-                                <label class="question-preview-scale-item"><span>3</span><i></i></label>
-                                <label class="question-preview-scale-item"><span>4</span><i></i></label>
-                                <label class="question-preview-scale-item"><span>5</span><i></i></label>
-                            {% endif %}
-                        </div>
-                    {% elif question.kind == question.Kind.SINGLE_CHOICE or question.kind == question.Kind.MULTIPLE_CHOICE %}
-                        <div class="question-preview-options">
-                            {% for option in question.options|slice:":5" %}
-                                <label class="question-preview-option">
-                                    <i class="{% if question.kind == question.Kind.MULTIPLE_CHOICE %}preview-box{% else %}preview-radio{% endif %}"></i>
-                                    <span>{{ option }}</span>
-                                </label>
-                            {% empty %}
-                                <label class="question-preview-option">
-                                    <i class="{% if question.kind == question.Kind.MULTIPLE_CHOICE %}preview-box{% else %}preview-radio{% endif %}"></i>
-                                    <span>選項 1</span>
-                                </label>
-                            {% endfor %}
-                        </div>
-                    {% endif %}
-                </div>
-                <div class="inline-edit-panel" id="edit-panel-{{ question.id }}" style="display:none">
-                    <form method="post" class="form-stack inline-edit-form">
-                        {% csrf_token %}{% include "feedback/_definition_version_field.html" %}
-                        <input type="hidden" name="action" value="edit-question">
-                        <input type="hidden" name="question_id" value="{{ question.id }}"><input type="hidden" name="question_uuid" value="{{ question.uuid }}">
-                        <div class="field-block">
-                            <label>題目名稱</label>
-                            <input type="text" name="title" value="{{ question.title }}" required>
-                        </div>
-                        <div class="field-block">
-                            <label>補充說明</label>
-                            <input type="text" name="help_text" value="{{ question.help_text }}" placeholder="例如：請依照最近一次使用經驗作答">
-                        </div>
-                        <div class="field-block">
-                            <label>作答形式</label>
-                            <select name="kind">
-                                {% for val, label in question.Kind.choices %}
-                                    <option value="{{ val }}" {% if question.kind == val %}selected{% endif %}>{{ label }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="field-block">
-                            <label>資料型態</label>
-                            <select name="data_type">
-                                {% for val, label in question.DataType.choices %}
-                                    <option value="{{ val }}" {% if question.data_type == val %}selected{% endif %}>{{ label }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="field-block">
-                            <label>選項內容</label>
-                            <textarea name="options_text" rows="4" placeholder="每行一個選項">{{ question.options_text }}</textarea>
-                        </div>
-                        <div class="field-block">
-                            <label class="checkbox-label">
-                                <input type="checkbox" name="is_required" {% if question.is_required %}checked{% endif %}>
-                                必填
-                            </label>
-                        </div>
-                        <div class="field-block">
-                            <label class="checkbox-label">
-                                <input type="checkbox" name="enable_keyword_tracking" {% if question.enable_keyword_tracking %}checked{% endif %}>
-                                納入文字關鍵字分析
-                            </label>
-                        </div>
-                        <div class="field-block">
-                            <label>排序</label>
-                            <input type="number" name="order" value="{{ question.order }}" min="1">
-                        </div>
-                        <div class="inline-edit-actions">
-                            <button type="submit" class="button button-primary button-small">儲存</button>
-                            <button type="button" class="button button-ghost button-small cancel-edit-btn"
-                                    data-question-id="{{ question.id }}">取消</button>
-                        </div>
-                    </form>
-                </div>
+        {% if read_only %}
+            <div class="builder-alert builder-alert-info">
+                已發布：題目、選項與刻度已固定。需要修改時請「複製為新草稿」。
             </div>
+        {% endif %}
+
+        {% for card in cards %}
+            {% include "feedback/_question_card.html" %}
         {% empty %}
-            <div class="empty-card">
-                <div>
-                    <h3>尚未加入題目</h3>
-                    <p>先建立第一題，之後再逐步補齊量表、選項題與文字題。</p>
-                </div>
-            </div>
+            {% if read_only %}<div class="empty-card"><h3>這份問卷沒有題目</h3></div>{% endif %}
         {% endfor %}
 
-        <div class="add-question-trigger">
-            <button type="button" class="button button-secondary" id="btn-add-question">＋ 新增問題</button>
-        </div>
+        {% if not read_only %}
+            {% with card=new_card %}{% include "feedback/_question_card.html" %}{% endwith %}
+        {% endif %}
 
-        <div id="add-question-panel" style="display:none">
-            <div class="google-form-card">
-                <form id="question-form" method="post">
-                    {% csrf_token %}{% include "feedback/_definition_version_field.html" %}
+        <details class="builder-preview-block">
+            <summary>填答預覽</summary>
+            <iframe class="builder-preview" title="填答預覽" loading="lazy"
+                    src="{% url 'feedback:survey-detail' survey.slug %}?preview=1"></iframe>
+        </details>
 
-                    <input type="hidden" name="data_type" id="id_data_type" value="text">
-                    <input type="hidden" name="order" value="{{ question_form.order.value|default:0 }}">
-
-                    <div class="form-row-header flex-between">
-                        <span class="question-order-label" id="question-order-label">第 ? 題</span>
-                        <div class="input-group title-group">
-                            <input type="text" name="title" id="id_title" class="google-input-title" placeholder="無標題的問題" required>
-                        </div>
-                        <div class="input-group type-group">
-                            <select name="kind" id="id_kind" class="google-select-type">
-                                <option value="short_text">簡答題</option>
-                                <option value="long_text">詳答題</option>
-                                <option value="single_choice">單選題</option>
-                                <option value="multiple_choice">核取方塊 (複選)</option>
-                                <option value="scale">線性刻度</option>
-                                <option value="integer">整數填空</option>
-                                <option value="decimal">小數填空</option>
-                            </select>
-                            <p id="kind-usage-hint" class="kind-usage-hint">選擇題型後，這裡會顯示常見用途與分析方式。</p>
-                        </div>
-                    </div>
-
-                    <div class="input-group help-text-group">
-                        <input type="text" name="help_text" id="id_help_text" class="google-input-help" placeholder="表單說明 (選填)">
-                    </div>
-
-                    <div id="section-options" class="dynamic-section" style="display: none;">
-                        <label class="section-label">選項內容 <span class="hint-text">(請一行輸入一個選項)</span></label>
-                        <textarea name="options_text" id="id_options_text" class="google-textarea" rows="4" placeholder="選項 1&#10;選項 2&#10;選項 3"></textarea>
-                    </div>
-
-                    <div id="section-secondary-scale" class="dynamic-section secondary-card" style="display: none;">
-                        <p class="secondary-title">📊 這個量表的刻度代表什麼？</p>
-                        <div class="data-type-choice">
-                            <button type="button" class="data-type-btn" data-type-value="continuous">
-                                <strong>數字有大小意義</strong> (如 1-10 分)<br>
-                                <small>→ 系統將自動計算平均數與變異數</small>
-                            </button>
-                            <button type="button" class="data-type-btn" data-type-value="ordinal">
-                                <strong>只是類別標籤</strong> (如星級評分)<br>
-                                <small>→ 系統將自動計算次數分佈</small>
-                            </button>
-                        </div>
-                    </div>
-
-                    <div id="section-secondary-number" class="dynamic-section secondary-card" style="display: none;">
-                        <p class="secondary-title">這題的數值代表哪一種資料？</p>
-                        <div class="data-type-choice">
-                            <button type="button" class="data-type-btn" data-type-value="continuous">
-                                <strong>每筆數值可大可小，有實際數量意義</strong>（如評分、金額）<br>
-                                <small>→ 連續資料，可作為 t-test / ANOVA 的依變數。</small>
-                            </button>
-                            <button type="button" class="data-type-btn" data-type-value="discrete">
-                                <strong>只能是整數次數或類別編號</strong>（如拜訪次數、等級）<br>
-                                <small>→ 離散資料，只做數值摘要，不自動進入 t-test / ANOVA。</small>
-                            </button>
-                        </div>
-                    </div>
-
-                    <div id="section-secondary-single" class="dynamic-section secondary-card" style="display: none;">
-                        <p class="secondary-title">📈 這題的選項之間有「順序或等級」之分嗎？</p>
-                        <div class="data-type-choice">
-                            <button type="button" class="data-type-btn" data-type-value="ordinal">
-                                <strong>有順序</strong> (如：非常滿意 → 不滿意)<br>
-                                <small>→ 轉為順序資料 (Ordinal)</small>
-                            </button>
-                            <button type="button" class="data-type-btn" data-type-value="nominal">
-                                <strong>沒有順序</strong> (如：性別、地區、職位)<br>
-                                <small>→ 轉為名目資料 (Nominal)</small>
-                            </button>
-                        </div>
-                    </div>
-
-                    <div class="dynamic-section toggle-row">
-                        <span class="toggle-text">必填</span>
-                        <label class="google-toggle">
-                            <input type="checkbox" name="is_required" id="id_is_required" checked>
-                            <span class="slider round"></span>
-                        </label>
-                    </div>
-
-                    <div id="section-keyword" class="dynamic-section toggle-row">
-                        <span class="toggle-text">納入 NLP 文字關鍵字與情緒分析</span>
-                        <label class="google-toggle">
-                            <input type="checkbox" name="enable_keyword_tracking" id="id_enable_keyword_tracking" checked>
-                            <span class="slider round"></span>
-                        </label>
-                    </div>
-
-                    <div class="card-footer divider-top">
-                        <button type="submit" class="google-btn-primary">
-                            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
-                            加入題目
-                        </button>
-                    </div>
-                </form>
+        <dialog id="card-switch-dialog" class="builder-dialog">
+            <p>這張卡片有未儲存的修改。</p>
+            <div class="builder-dialog-actions">
+                <button type="button" class="button button-primary button-small" data-dialog="save">儲存</button>
+                <button type="button" class="button button-ghost button-small" data-dialog="discard">捨棄</button>
+                <button type="button" class="button button-ghost button-small" data-dialog="cancel">繼續編輯</button>
             </div>
-        </div>
+        </dialog>
+        <div class="visually-hidden" aria-live="polite" data-builder-live></div>
     </div>
 </section>
 
-<script src="{% static 'js/survey-builder-tabs.js' %}?v=20260929-ui2"></script>
-
-<script src="{% static 'js/question-editor.js' %}?v=20260929-ui2"></script>
+<script src="{% static 'js/survey-builder-tabs.js' %}?v=20261003-cards"></script>
+<script src="{% static 'js/question-editor.js' %}?v=20261003-cards"></script>
 {% endblock %}

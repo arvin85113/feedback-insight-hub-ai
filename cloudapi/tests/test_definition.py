@@ -6,9 +6,10 @@ from cloudapi.definition import (
     add_question,
     apply_definition,
     archive_survey,
+    delete_question,
+    duplicate_question,
     move_question,
     serialize_definition,
-    set_question_active,
     update_question,
     update_survey,
     validate_definition,
@@ -121,11 +122,13 @@ class EditHelperTests(TestCase):
         add_question(self.definition, {**QUESTION, "title": "第二題", "order": 2})
         self.first, self.second = self.definition["questions"]
 
-    def test_update_and_toggle(self):
+    def test_update_duplicate_and_delete(self):
         update_question(self.definition, self.first["uuid"], {**QUESTION, "title": "新標題"})
         self.assertEqual(self.first["title"], "新標題")
-        set_question_active(self.definition, self.first["uuid"], False)
-        self.assertFalse(self.first["is_active"])
+        copy = duplicate_question(self.definition, self.first["uuid"])
+        self.assertEqual((copy["title"], copy["code"], copy["order"], self.second["order"]), ("新標題", "", 2, 3))
+        delete_question(self.definition, copy["uuid"])
+        self.assertEqual(len(self.definition["questions"]), 2)
 
     def test_move_swaps_order_with_neighbour(self):
         move_question(self.definition, self.second["uuid"], "up")
@@ -141,7 +144,7 @@ class EditHelperTests(TestCase):
 
     def test_unknown_question_is_rejected(self):
         with self.assertRaises(DefinitionError):
-            set_question_active(self.definition, "00000000-0000-0000-0000-000000000000", False)
+            delete_question(self.definition, "00000000-0000-0000-0000-000000000000")
 
     def test_validate_rejects_missing_keys(self):
         broken = dict(self.definition)
@@ -153,7 +156,7 @@ class EditHelperTests(TestCase):
 import copy  # noqa: E402
 from unittest import mock  # noqa: E402
 
-from cloudapi.definition import SCHEMA_VERSION, definition_from_fields, delete_question, upgrade_v1  # noqa: E402
+from cloudapi.definition import SCHEMA_VERSION, definition_from_fields, upgrade_v1  # noqa: E402
 from feedback.test_utils import published  # noqa: E402
 
 V1_FIXTURE = {

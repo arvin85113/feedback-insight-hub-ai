@@ -29,11 +29,11 @@ from .forms import (
     ImprovementNoticeForm,
     ImprovementStatusTransitionForm,
     ImprovementUpdateForm,
-    QuestionCreateForm,
     RespondentMetaForm,
     SurveyCreateForm,
     SurveyEditForm,
     SurveyFormBuilder,
+    UI_TYPE_LABELS,
 )
 from .improvement_workflow import (
     ImprovementTransitionError,
@@ -531,9 +531,14 @@ class SurveyBuilderView(DashboardBaseMixin, DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context.update(self.get_dashboard_base_context())
-        context["question_form"] = kwargs.get("question_form") or QuestionCreateForm(
-            initial={"order": self.object.questions.count() + 1}
-        )
+        from .builder_cards import build_cards
+
+        context["cards"], context["new_card"] = build_cards(self.object, kwargs.get("card_form"))
+        context["card_conflict"] = kwargs.get("card_conflict", False)
+        context["card_error"] = kwargs.get("card_error")
+        context["read_only"] = self.object.published_version is not None
+        context["ui_types"] = UI_TYPE_LABELS
+        context["scale_max_range"] = range(2, 11)
         context["survey_edit_form"] = kwargs.get("survey_edit_form") or SurveyEditForm(instance=self.object)
         external = external_source_totals([self.object.pk]).get(self.object.pk)
         if external:
