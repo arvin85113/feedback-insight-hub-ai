@@ -16,6 +16,8 @@ class AnalysisField:
     kind: str = "long_text"
     options: tuple[str, ...] = ()
     tracked: bool = False
+    # Labels of "不納入分析" options: counted separately, never valid (builder spec §2.2).
+    excluded: tuple[str, ...] = ()
 
 
 @runtime_checkable

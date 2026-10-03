@@ -18,7 +18,7 @@ from .ai_snapshot_service import (
     build_statistics_snapshot, _clean_text,
 )
 from .ai_stage_service import _validate_stage_finding
-from .local_service import analyze_frame
+from .local_service import analyze_frame, classify_values
 from .models import Question, recommend_analysis, _resolve_keyword_category
 from .text_pipeline import (estimate_sentiment_score, tokenize_feedback, load_positive_words,
     load_negative_words, load_synonyms, _jieba_tokenize)
@@ -59,10 +59,15 @@ def pipeline_version(profile):
 
 
 def descriptors(adapter):
-    return [Question(id=index, code=f.name, title=f.title or f.name, kind=f.kind, data_type=f.data_type,
-                     options_text="\n".join(f.options), order=index,
-                     enable_keyword_tracking=f.tracked)
-            for index, f in enumerate(adapter.fields(), 1)]
+    questions = []
+    for index, f in enumerate(adapter.fields(), 1):
+        question = Question(id=index, code=f.name, title=f.title or f.name, kind=f.kind, data_type=f.data_type,
+                            options_text="\n".join(f.options), order=index, enable_keyword_tracking=f.tracked)
+        # The temporary question has no choices or scale range: carry the lists, never recompute (spec §2.2).
+        question._analysis_options = tuple(f.options)
+        question._analysis_excluded = tuple(getattr(f, "excluded", ()))
+        questions.append(question)
+    return questions
 
 
 def calculate_statistics(adapter, questions):
@@ -84,12 +89,8 @@ def calculate_statistics(adapter, questions):
                     return str(value)
             frame[field.name] = frame[field.name].map(ordinal)
     frame.columns = [f"Q_{next(i for i, f in enumerate(fields, 1) if f.name == name)}" for name in frame.columns]
-    clean_frame = frame.copy()
-    for index, field in enumerate(fields, 1):
-        col = f"Q_{index}"
-        if col in frame and field.data_type == "ordinal":
-            clean_frame[col] = frame[col].where(frame[col].isin(field.options), pd.NA)
-    result = analyze_frame(questions, clean_frame)
+    # analyze_frame classifies each column itself: excluded and invalid values never reach a test.
+    result = analyze_frame(questions, frame)
     result["question_analysis"] = [dict(title=q.title, data_type=q.get_data_type_display(),
                                         analysis=recommend_analysis(q)) for q in questions]
     result["available_tests_count"] = sum(not r.get("skipped_reason") for r in result["inferential_analysis"])
@@ -99,16 +100,10 @@ def calculate_statistics(adapter, questions):
         col = f"Q_{index}"
         if col not in frame:
             continue
-        series = frame[col]
-        missing = series.isna() | series.astype("string").str.strip().eq("").fillna(False)
-        if field.data_type == "ordinal":
-            valid = series.isin(field.options)
-        elif field.data_type in {"continuous", "discrete"}:
-            valid = pd.to_numeric(series, errors="coerce").notna()
-        else:
-            valid = ~missing
-        coverage[field.name] = dict(total_n=len(frame), valid_n=int(valid.sum()),
-            missing_n=int(missing.sum()), invalid_n=int((~missing & ~valid).sum()))
+        counts = classify_values(frame[col], data_type=field.data_type, kind=field.kind,
+                                 levels=field.options, excluded=getattr(field, "excluded", ()))
+        coverage[field.name] = {name: counts[name]
+                                for name in ("total_n", "valid_n", "missing_n", "excluded_n", "invalid_n")}
     result["field_coverage"] = coverage
     return result, len(frame)
 

@@ -409,13 +409,16 @@ def _sanitize_distribution(rows, caveats, label):
         if total < settings.AI_REPORT_MIN_RESPONSES:
             suppressed_total += total
             continue
-        visible.append(
-            {
-                "value": _clean_text(row.get("value")),
-                "total": total,
-                "percent": row.get("percent"),
-            }
-        )
+        item = {
+            "value": _clean_text(row.get("value")),
+            "total": total,
+            "percent": row.get("percent"),
+        }
+        # Multiple choice keeps two distinct rates; their names are never mixed (builder spec §2.3).
+        for key in ("selection_rate", "check_share"):
+            if key in row:
+                item[key] = row[key]
+        visible.append(item)
     if suppressed_total:
         caveats.append(f"{label}包含小於三筆的群組，已隱藏或合併。")
         if suppressed_total >= settings.AI_REPORT_MIN_RESPONSES:
@@ -510,6 +513,18 @@ def build_statistics_snapshot(questions, payload, evidence_catalog, caveats):
                     unit="responses",
                     sample_size=item["total"],
                 )
+                for key, label in (("selection_rate", "選取率"), ("check_share", "勾選次數占比")):
+                    if item.get(key) is None:
+                        continue
+                    _append_evidence(
+                        evidence_catalog,
+                        evidence_id=f"{evidence_id}.{key}",
+                        kind="categorical_distribution",
+                        label=f"{question_title}：{item['value']} {label}",
+                        value=item[key],
+                        unit="percent",
+                        sample_size=chart.get("answered_n") or item["total"],
+                    )
 
     statistical_tests = []
     for index, result in enumerate(payload.get("inferential_analysis", []), start=1):

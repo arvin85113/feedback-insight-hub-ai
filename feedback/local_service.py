@@ -318,17 +318,75 @@ def _round_p_value(value):
 def get_survey_pandas_stats(survey):
     import pandas as pd
 
+    from .analysis_adapters import answer_cell
+
     questions = list(survey.questions.filter(is_active=True).order_by("order", "id"))
+    by_id = {question.pk: question for question in questions}
+    submission_ids = FeedbackSubmission.objects.filter(
+        survey=survey, is_complete=True, voided_at__isnull=True
+    ).order_by("pk").values_list("pk", flat=True)
+    # Every complete reply is a row, even one with no answers, like the Worker input (spec §7.3).
+    records = {pk: {f"Q_{question.pk}": None for question in questions} for pk in submission_ids}
     answer_rows = Answer.objects.filter(
-        question__survey=survey,
-        question__is_active=True,
-        submission__is_complete=True,
-        submission__voided_at__isnull=True,
-    ).values("submission_id", "question_id", "value")
-    records = {}
-    for row in answer_rows.iterator(chunk_size=2000):
-        records.setdefault(row["submission_id"], {})[f"Q_{row['question_id']}"] = row["value"]
+        submission_id__in=list(records), question_id__in=list(by_id)
+    ).values_list("submission_id", "question_id", "value", "choice_codes")
+    for submission_id, question_id, value, codes in answer_rows.iterator(chunk_size=2000):
+        records[submission_id][f"Q_{question_id}"] = answer_cell(by_id[question_id], value, codes)
     return analyze_frame(questions, pd.DataFrame(list(records.values())))
+
+
+def _is_missing(value):
+    if value is None:
+        return True
+    if isinstance(value, (list, tuple)):
+        return len(value) == 0
+    try:
+        import pandas as pd
+
+        if pd.isna(value):
+            return True
+    except (TypeError, ValueError):
+        pass
+    return str(value).strip() == ""
+
+
+def classify_values(series, *, data_type, kind, levels, excluded):
+    """Split one column into valid / missing / excluded / invalid, never overlapping (spec §2.2)."""
+
+    import pandas as pd
+
+    levels = [str(level) for level in levels]
+    excluded = [str(item) for item in excluded]
+    missing = series.map(_is_missing).astype(bool)
+    if kind == Question.Kind.MULTIPLE_CHOICE:
+        level_set = set(levels)
+
+        def multi_valid(value):
+            items = value if isinstance(value, (list, tuple)) else [value]
+            return not level_set or all(str(item) in level_set for item in items)
+
+        valid = ~missing & series.map(lambda value: False if _is_missing(value) else multi_valid(value)).astype(bool)
+        excluded_mask = pd.Series(False, index=series.index)
+    elif data_type in {Question.DataType.CONTINUOUS, Question.DataType.DISCRETE}:
+        valid = ~missing & pd.to_numeric(series.where(~missing), errors="coerce").notna()
+        excluded_mask = pd.Series(False, index=series.index)
+    elif data_type in {Question.DataType.NOMINAL, Question.DataType.ORDINAL}:
+        text = series.map(lambda value: None if _is_missing(value) else str(value).strip())
+        valid = ~missing & (text.isin(levels) if levels else ~missing)
+        excluded_mask = ~missing & text.isin(excluded)
+    else:
+        valid = ~missing
+        excluded_mask = pd.Series(False, index=series.index)
+    invalid = ~missing & ~valid & ~excluded_mask
+    return {
+        "total_n": int(len(series)),
+        "valid_n": int(valid.sum()),
+        "missing_n": int(missing.sum()),
+        "excluded_n": int(excluded_mask.sum()),
+        "invalid_n": int(invalid.sum()),
+        "valid_mask": valid,
+        "excluded_mask": excluded_mask,
+    }
 
 
 def analyze_frame(questions, df):
@@ -348,6 +406,7 @@ def analyze_frame(questions, df):
 
     if not questions or df.empty:
         return {"charts": [], "inferential_analysis": []}
+    df = df.copy()
     question_by_col = {f"Q_{question.id}": question for question in questions}
 
     charts = []
@@ -367,9 +426,9 @@ def analyze_frame(questions, df):
         return df[col].astype("string").str.strip().replace("", pd.NA)
 
     def encode_ordinal(question, col):
-        ordered_options = question.options
+        ordered_options = question.analysis_options
         if not ordered_options:
-            return None, "順序題缺少 options_text，無法安全轉成排序分數"
+            return None, "順序題缺少選項清單，無法安全轉成排序分數"
         rank_map = {option: idx + 1 for idx, option in enumerate(ordered_options)}
         encoded = clean_category_series(col).map(rank_map)
         return encoded, None
@@ -441,6 +500,14 @@ def analyze_frame(questions, df):
         if col not in df.columns:
             continue
 
+        coverage = classify_values(
+            df[col], data_type=question.data_type, kind=question.kind,
+            levels=question.analysis_options, excluded=question.analysis_excluded_options,
+        )
+        counts_fields = {name: coverage[name] for name in ("valid_n", "missing_n", "excluded_n", "invalid_n")}
+        raw = df[col]
+        # Excluded and invalid values never reach a test (spec §2.2).
+        df[col] = raw.where(coverage["valid_mask"], None)
         series = df[col].dropna()
         if series.empty:
             continue
@@ -477,42 +544,66 @@ def analyze_frame(questions, df):
                         }
                         for value, total in value_counts.items()
                     ],
+                    **counts_fields,
+                }
+            )
+        elif question.kind == Question.Kind.MULTIPLE_CHOICE:
+            # Multiple response: who selected each option vs. its share of all checks (spec §2.3).
+            answered_n = int(series.count())
+            exploded = series.map(lambda value: list(value) if isinstance(value, (list, tuple)) else [value]).explode()
+            exploded = exploded.astype(str).str.strip()
+            counts = exploded.value_counts()
+            checks = int(counts.sum())
+            charts.append(
+                {
+                    "question": question,
+                    "type": "category",
+                    "multi": True,
+                    "answered_n": answered_n,
+                    "counts": [
+                        {
+                            "value": str(value),
+                            "total": int(total),
+                            "selection_rate": _round_or_none(int(total) / answered_n * 100) if answered_n else 0,
+                            "check_share": _round_or_none(int(total) / checks * 100) if checks else 0,
+                        }
+                        for value, total in counts.items()
+                    ],
+                    **counts_fields,
                 }
             )
         elif question.data_type in {Question.DataType.NOMINAL, Question.DataType.ORDINAL}:
-            text_series = series.astype(str).str.strip()
-            if question.kind == Question.Kind.MULTIPLE_CHOICE or text_series.str.contains(",").any():
-                frequency_series = text_series.str.split(",").explode().str.strip()
-                frequency_series = frequency_series[frequency_series != ""]
-            else:
-                frequency_series = text_series[text_series != ""]
-
+            frequency_series = series.astype(str).str.strip()
+            frequency_series = frequency_series[frequency_series != ""]
             if frequency_series.empty:
                 continue
 
-            if question.data_type == Question.DataType.NOMINAL and question.kind != Question.Kind.MULTIPLE_CHOICE:
+            if question.data_type == Question.DataType.NOMINAL:
                 nominal_columns[col] = clean_category_series(col)
-            elif question.data_type == Question.DataType.ORDINAL:
+            else:
                 encoded, _ = encode_ordinal(question, col)
                 if encoded is not None:
                     ordinal_columns[col] = encoded
 
             counts = frequency_series.value_counts()
-            count_rows = []
             total_count = int(counts.sum())
-            for value, total in counts.items():
-                count_rows.append(
-                    {
-                        "value": str(value),
-                        "total": int(total),
-                        "percent": _round_or_none((int(total) / total_count) * 100) if total_count else 0,
-                    }
-                )
+            excluded_values = raw[coverage["excluded_mask"]].astype(str).str.strip().value_counts()
             charts.append(
                 {
                     "question": question,
                     "type": "category",
-                    "counts": count_rows,
+                    "counts": [
+                        {
+                            "value": str(value),
+                            "total": int(total),
+                            "percent": _round_or_none((int(total) / total_count) * 100) if total_count else 0,
+                        }
+                        for value, total in counts.items()
+                    ],
+                    "excluded_counts": [
+                        {"value": str(value), "total": int(total)} for value, total in excluded_values.items()
+                    ],
+                    **counts_fields,
                 }
             )
 

@@ -144,6 +144,19 @@
                                     {% endfor %}
                                 </div>
                             {% endif %}
+                        {% elif chart.multi %}
+                            <p class="analytics-panel-note">複選題：選取率以該題填答人數（{{ chart.answered_n }} 人）為分母；勾選次數占比以全部勾選次數為分母。</p>
+                            <div class="bar-chart">
+                                {% for row in chart.counts %}
+                                    <div class="bar-row">
+                                        <span class="bar-label">{{ row.value }}</span>
+                                        <div class="bar-track">
+                                            <div class="bar-fill" style="width: {{ row.selection_rate|default:0 }}%"></div>
+                                        </div>
+                                        <strong class="bar-value">{{ row.total }} 人（選取率 {{ row.selection_rate }}%，勾選次數占比 {{ row.check_share }}%）</strong>
+                                    </div>
+                                {% endfor %}
+                            </div>
                         {% else %}
                             <div class="bar-chart">
                                 {% for row in chart.counts %}
@@ -156,6 +169,12 @@
                                     </div>
                                 {% endfor %}
                             </div>
+                            {% for row in chart.excluded_counts %}
+                                <p class="analytics-panel-note">不納入分析：{{ row.value }} {{ row.total }} 人</p>
+                            {% endfor %}
+                        {% endif %}
+                        {% if chart.missing_n or chart.invalid_n %}
+                            <p class="analytics-panel-note">有效 {{ chart.valid_n }}｜未作答 {{ chart.missing_n }}{% if chart.excluded_n %}｜不納入分析 {{ chart.excluded_n }}{% endif %}{% if chart.invalid_n %}｜無效 {{ chart.invalid_n }}{% endif %}</p>
                         {% endif %}
                     </article>
                 {% empty %}
