@@ -2,19 +2,21 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 依規格 v4.1 把問卷建立工具改成 Google 表單式卡片編輯、草稿／發布生命週期、由題型推得資料型態，並讓選項代碼、分數與「不納入分析」一路貫穿填答、同步與統計。
+**Goal:** 依規格 v4.2 把問卷建立工具改成 Google 表單式卡片編輯、草稿／發布生命週期、由題型推得資料型態，並讓選項代碼、分數與「不納入分析」一路貫穿填答、同步與統計。
 
 **Architecture:** 題型規則集中在新模組 `feedback/question_schema.py`（推型態、選項正規化、分析清單），模型與定義 dict 都經由它。
 **所有問卷**（不只節點問卷）改走同一條寫入路徑：編輯 dict → `cloudapi.writes.change_definition`（雲端）或 `cloudsync.survey_write.node_commit`（本機），
-每個版本都存 revision，`published_version` 固定發布時的版本。統計端以題目物件上的 `analysis_options`／`analysis_excluded_options` 取得清單，ORM 與 Worker 兩條路徑相同。
+每個版本都存 revision，`published_version` 固定發布時的版本；狀態轉換、重算、回答合約與刪除關聯以規格 **§7「流程與合約」**為準。統計端以題目物件上的 `analysis_options`／`analysis_excluded_options` 取得清單，ORM 與 Worker 兩條路徑相同。
 
 **Tech Stack:** Django 6.0.8、pandas／SciPy（既有）、原生 JS（無框架）、SQLite（測試）、PostgreSQL 17（併發測試）。
 
-**Spec:** [問卷建立工具改版 v4.1](../specs/2026-10-03-survey-builder-redesign-design.md)；相關：[雲端同步](../specs/2026-10-01-cloud-sync-design.md)（開頭的取代說明）、[purge_survey 計畫](2026-10-03-purge-survey.md)（**前置，須先合併**）。
+**Spec:** [問卷建立工具改版 v4.2](../specs/2026-10-03-survey-builder-redesign-design.md)（**§7 流程與合約優先**）；相關：[雲端同步](../specs/2026-10-01-cloud-sync-design.md)（開頭的取代說明）、[purge_survey 計畫](2026-10-03-purge-survey.md)（**前置，須先合併**）。
 
 ## Global Constraints
 
-- 前置：`feedback/survey_purge.py` 的 `purge_survey(survey)` 已存在（purge 計畫）。
+- 前置：`feedback/survey_purge.py` 的 `purge_survey(survey, *, dry_run=False)` 已存在（purge 計畫）。
+- **移除或改名任何介面時，同一個 task 內一併修改所有呼叫端與相關測試**（包括行為已改變的斷言，不只補 fixture）；每個 task 結束時，雲端與本機兩種模式的完整測試都必須通過。
+- 分析重算只依規格 §7.2：定義寫入只儲存實際變動的欄位與題目；草稿不排程分析；不把任何 `PROTECT` 改成 `CASCADE`。
 - 測試指令：雲端 `.venv/Scripts/python.exe manage.py test <labels> --settings=config.settings_test`；
   本機模式另以 `DEPLOYMENT_MODE=node` 執行相同指令（CI 兩個 job 都跑）。雲端專用測試加 `feedback.test_utils.cloud_only`。
 - 每個 task 結束前 `makemigrations --check --dry-run --settings=config.settings_test` 必須為 `No changes detected`（Task 1、2 自己產生的 migration 除外）。
@@ -32,11 +34,11 @@
 
 ## Review Focus
 
-1. **舊 schema v1 revision 讀入後再次寫回**（節點從雲端拿到舊版本後編輯）：轉換結果與雲端一致，不產生第二組代碼——Task 2 `test_v1_upgrade_is_deterministic_and_matches_cloud`。
+1. **舊 schema v1 revision 讀入後再次寫回**（節點從雲端拿到舊版本後編輯）：轉換結果與雲端一致，不產生第二組代碼——Task 4 `test_v1_revision_applied_on_node_then_edited_writes_v2`。
 2. **選項文字含逗號、或與排除選項同名的空白差異**（「不適用 」）：選擇題一律以代碼對應，不靠文字切分或比對——Task 8 `test_comma_label_multi_choice_round_trips`、Task 7 `test_choice_value_is_code_not_label`。
 3. **停止收件再恢復時已開啟的表單**：仍以 `published_version` 核對成功送出——Task 10 `test_whitelist_change_does_not_reject_open_form`。
 4. **刪除最後一個選項後新增**：不重用代碼——Task 1 `test_choice_code_counter_never_reuses`。
-5. **TripAdvisor 轉換前後**：指紋與已發布結果判定不變——Task 3 `test_tripadvisor_definition_conversion_keeps_fingerprint_and_currency`、Task 9。
+5. **TripAdvisor 轉換前後**：已發布統計、文字、AI 判定仍為最新——Task 3 `test_tripadvisor_published_results_stay_current_after_migration`、Task 9。
 
 ---
 
@@ -64,7 +66,7 @@
   `Question.display: str = ""`、`ordered: bool = False`、`score_start: int = 1`、`scale_min: int|None`、`scale_max: int|None`、`scale_min_label: str = ""`、`scale_max_label: str = ""`、
   `choices: list = []`（JSONField）、`next_choice_number: int = 1`；`Question.analysis_options`、`Question.analysis_excluded_options` property
   （有 `_analysis_options`／`_analysis_excluded` 時回傳它，否則由 `analysis_levels`／`analysis_excluded` 計算）；`Question.options` 改回傳 `analysis_options`；
-  `Question.save()`：無代碼時以 `allocate_question_code(survey)` 取 `q<n>`（鎖 `Survey` 列遞增 `next_question_number`），`choices` 為空且題型需要時，先以 `fields_from_legacy` 由 `options_text` 補齊（相容路徑，讓 Task 12 前的既有呼叫端與測試照常運作），再以 `normalize_question` 同步 `data_type`、`options_text`；
+  `Question.save()`：無代碼時以 `allocate_question_code(survey)` 取 `q<n>`（鎖 `Survey` 列遞增 `next_question_number`；若該代碼已存在則繼續遞增），`choices` 為空且題型需要時，先以 `fields_from_legacy` 由 `options_text` 補齊（相容路徑，讓 Task 12 前的既有呼叫端與測試照常運作），再以 `normalize_question` 同步 `data_type`、`options_text`；
   `FeedbackSubmission.definition_version: int|None`；`Answer.choice_codes: list|None`。
 
 - [ ] **Step 1: 寫失敗測試** `feedback/test_question_schema.py`：
@@ -125,8 +127,7 @@ def test_draft_does_not_accept_responses(self):
 - [ ] **Step 3: 實作 `feedback/question_schema.py`**（純函式，不碰 ORM，除了 `allocate_question_code`）。
 - [ ] **Step 4: 修改 `feedback/models.py`**：新增欄位與 property；`Question.clean()` 改為呼叫 `question_errors`（錯誤鍵沿用欄位名）；
   移除 `save()` 內的 slugify 代碼產生。`makemigrations feedback --name survey_builder_fields --settings=config.settings_test` 產生 0023（只有 AddField）。
-- [ ] **Step 5: 執行測試** → PASS；再跑 `feedback cloudapi --settings=config.settings_test`，記下因 `accepts_responses` 改變而失敗的既有測試，
-  把它們的 fixture 改為建立後 `published_version=1`（只改 fixture，不改斷言），直到全綠。
+- [ ] **Step 5: 執行測試** → PASS；再跑雲端與本機兩種模式的完整測試。`accepts_responses` 改變會讓既有填答相關測試失敗：新增測試 helper `feedback.test_utils.published(survey)`（設 `published_version=definition_version or 1` 並以 `update()` 寫入），在這些測試的 fixture 呼叫它，直到全綠。
 - [ ] **Step 6: Commit** `feat: question schema module and survey builder fields`
 
 ---
@@ -142,13 +143,14 @@ def test_draft_does_not_accept_responses(self):
 - Produces:
   - `SCHEMA_VERSION = 2`；`serialize_definition(survey) -> dict`：加入 `schema_version`、`published`（bool）、`published_version`、`published_at`、`next_question_number`；
     題目加入 `display`、`ordered`、`score_start`、`scale_min`、`scale_max`、`scale_min_label`、`scale_max_label`、`choices`、`next_choice_number`，移除 `options_text`
+  - `definition_from_fields(survey, questions, category_name) -> dict`：只讀欄位、不用 property 的序列化（歷史模型可用），`serialize_definition` 改為呼叫它
   - `upgrade_v1(definition: dict) -> dict`（spec §4.3 的固定規則；無 `schema_version` 視為 1；`published=True`）
-  - `validate_definition(definition)`：先 `upgrade_v1`，再驗 v2；`data_type` 必須等於 `derive_data_type`；題目錯誤取 `question_errors` 第一則轉 `DefinitionError`
+  - `validate_definition(definition) -> dict`：**回傳**升級後的新 dict（不修改輸入）；呼叫端一律使用回傳值（`apply_definition`、`cloudsync.definitions.upsert_definition`、`change_definition`、`create_node_survey`）；`data_type` 必須等於 `derive_data_type`；題目錯誤取 `question_errors` 第一則轉 `DefinitionError`
   - `apply_definition(survey, definition, *, version)`：寫新欄位；`published_version`／`published_at` 只從 dict 複製（雲端在 Task 4 自行設定後再呼叫）；
-    dict 中缺少的題目：未發布的問卷直接刪除，已發布者停用
+    dict 中缺少的題目：未發布的問卷直接刪除，已發布者停用；**只儲存實際變動的欄位**：問卷以 `save(update_fields=<變動欄位>)`，題目內容完全相同者不儲存（規格 §7.2）
   - 編輯 helper（供 Task 6）：`add_question(definition, item) -> dict`、`update_question(definition, uuid, item)`、`delete_question(definition, uuid)`、
     `move_question(definition, uuid, direction)`（保留）、`update_survey(definition, data)`、`archive_survey(definition, when)`（保留）
-  - 移除 `SEMANTIC_FIELDS`、`set_question_active`
+  - 本 task **不移除** `SEMANTIC_FIELDS`、`set_question_active`（分別在 Task 4、Task 6 與其呼叫端一起移除）；`SEMANTIC_FIELDS` 暫時改為 `("kind", "data_type", "choices")`
 
 - [ ] **Step 1: 寫失敗測試**：
 
@@ -172,6 +174,18 @@ def test_rejects_data_type_not_matching_kind(self):
         validate_definition(d)
 
 def test_missing_question_deleted_on_draft_but_deactivated_when_published(self): ...
+
+def test_validate_returns_upgraded_copy(self):
+    v1 = copy.deepcopy(V1_FIXTURE)
+    upgraded = validate_definition(v1)
+    self.assertEqual((v1.get("schema_version"), upgraded["schema_version"]), (None, 2))
+
+def test_apply_saves_only_changed_rows(self):
+    survey = published_survey_with_two_questions()
+    d = serialize_definition(survey); d["is_active"] = False
+    with mock.patch("feedback.signals.schedule_survey_analysis") as schedule:
+        apply_definition(survey, d, version=survey.definition_version + 1)
+    schedule.assert_not_called()          # 題目沒變不儲存；is_active 不在重算欄位內
 ```
 
 - [ ] **Step 2–4: 確認失敗 → 實作 → 執行** `cloudapi.tests.test_definition`、`cloudsync.tests.test_definitions` → PASS（更新既有測試 fixture 為 v2 或依賴 `upgrade_v1`）。
@@ -184,13 +198,15 @@ def test_missing_question_deleted_on_draft_but_deactivated_when_published(self):
 **Files:**
 - Create: `feedback/schema_conversion.py`
 - Create: `feedback/migrations/0024_convert_survey_definitions.py`（`RunPython(convert, noop)`；dependencies 加 `("cloudapi", "0003_publishedresultrecord")`）
+- Create: `feedback/management/commands/survey_conversion_report.py`（唯讀）
+- Modify: `feedback/importing/service.py`（抽出 `mapping_compatibility_errors(mapping, survey) -> list[str]`，`_ensure_survey_and_questions` 改呼叫它；比對規則不變，Task 11 再更新）
 - Test: `feedback/test_schema_conversion.py`
 
 **Interfaces:**
-- Consumes: Task 1 欄位與 `normalize_question`；Task 2 的 `serialize_definition`（以屬性存取，歷史模型實例可用）。
-- Produces: `convert_definitions(apps) -> None`（可接受 `django.apps.apps` 或 migration 的 `apps`）；`ConversionAborted(Exception)`（訊息列出問卷 slug 與原因）。
+- Consumes: Task 1 的 `fields_from_legacy`、`normalize_question`；Task 2 的 `definition_from_fields(survey, questions, category_name) -> dict`（Task 2 從 `serialize_definition` 抽出的純欄位序列化，**只讀欄位、不用任何 property**，`serialize_definition` 改為呼叫它）。
+- Produces: `convert_definitions(apps, *, using="default") -> dict`（回傳轉換摘要；所有查詢使用 `apps.get_model(...)` 與 `using`）；`ConversionAborted(Exception)`（訊息列出問卷 slug 與原因）；管理指令 `survey_conversion_report`（唯讀：每份問卷的狀態、版本、revision 是否齊全、題目轉換結果、已發布結果是否仍為最新）。
 
-- [ ] **Step 1: 寫失敗測試**（以目前模型建立「舊格式」資料：只填 `options_text`、`data_type`，`choices=[]`、`published_version=None`，再呼叫 `convert_definitions(django.apps.apps)`）：
+- [ ] **Step 1: 寫失敗測試**。**以 `MigrationExecutor` 將測試資料庫退回 `feedback 0022`（含 `cloudapi 0003`），用該狀態的歷史模型建立舊格式資料，再前進到 0024**；不得用目前模型建立 fixture（Task 1 的 `Question.save()` 會先自動轉換而掩蓋問題）。下列 `old_*` helper 都以歷史模型建立：
 
 ```python
 def test_choice_questions_get_codes_and_scores(self):
@@ -205,6 +221,11 @@ def test_integer_scale_becomes_range(self):
     convert_definitions(apps)
     q.refresh_from_db()
     self.assertEqual((q.scale_min, q.scale_max, q.choices), (1, 5, []))
+
+def test_question_counter_skips_existing_codes(self):
+    survey = old_survey_with_codes(["q2", "overall-scale"])
+    migrate_to_0024()
+    self.assertEqual(new_survey_model().objects.get(pk=survey.pk).next_question_number, 3)
 
 def test_existing_surveys_become_published_with_revision(self):
     survey = old_survey(definition_version=0)
@@ -222,7 +243,7 @@ def test_aborts_on_multiple_choice_answers(self):
         convert_definitions(apps)
 
 def test_aborts_on_unmatched_single_choice_answer(self): ...   # value "其他" 不在選項 → ConversionAborted
-def test_aborts_on_text_scale_with_answers(self): ...          # 刻度選項「非常滿意…」且有答案 → ConversionAborted
+def test_aborts_on_text_scale_with_answers(self): ...          # 刻度選項「非常滿意…」且有答案 → ConversionAborted，且資料庫完全未變（無部分轉換）
 def test_text_scale_without_answers_becomes_ordered_choice(self): ...  # → single_choice、ordered、display=radio
 
 def test_updated_at_untouched(self):
@@ -231,21 +252,29 @@ def test_updated_at_untouched(self):
     convert_definitions(apps)
     self.assertEqual(Survey.objects.values_list("updated_at", flat=True).get(pk=survey.pk), before)
 
-def test_tripadvisor_definition_conversion_keeps_fingerprint_and_currency(self):
-    survey = import_tripadvisor_questions_old_format()      # 依 tripadvisor_hotel_reviews.json 的九題建立舊格式題目
-    before = survey_fingerprint(survey)                     # Task 9 的指紋函式
-    convert_definitions(apps)
-    self.assertEqual(survey_fingerprint(Survey.objects.get(pk=survey.pk)), before)
+def test_tripadvisor_published_results_stay_current_after_migration(self):
+    survey = old_tripadvisor_survey()                       # 依 tripadvisor_hotel_reviews.json 九題、外部資料來源與已發布狀態
+    publish_fixture_results(survey)                         # 建立已發布的統計、文字與 AI Stage（manifest 與版本一致）
+    migrate_to_0024()
+    survey = Survey.objects.get(pk=survey.pk)
+    state = survey.analysis_state
+    for key in ("statistics", "text"):
+        self.assertTrue(_stage_is_current(state, key), key)
+    self.assertTrue(is_published_ai_stage_current(state.published_ai_stage))
+    self.assertEqual(mapping_compatibility_errors(survey), [])
+
+def test_conversion_report_is_read_only(self): ...          # 執行前後所有模型筆數與 updated_at 不變
 ```
 
 - [ ] **Step 2: 執行確認失敗** → ImportError。
 - [ ] **Step 3: 實作 `convert_definitions`**：先全面掃描防呆（spec §5 第 4 步，三種情況任一即 `ConversionAborted`，**不做部分轉換**），再以 `bulk_update`／`update()` 轉換：
-  題目欄位一律用 Task 1 的 `fields_from_legacy`＋`normalize_question`；`next_choice_number`、`Survey.next_question_number`（＝現有題數＋1）；
+  題目欄位一律用 Task 1 的 `fields_from_legacy`＋`normalize_question`（文字選項的刻度 → 有序單選，規格 §5 第 3 步）；`Survey.next_question_number`＝max(既有 `q<n>` 的 n, 0)＋1；`next_choice_number`、`Survey.next_question_number`（＝現有題數＋1）；
   `published_version`（`definition_version` 為 0 者兩者設 1）、`published_at=created_at`；以 `serialize_definition` 建立缺少的 revision；單選答案寫 `choice_codes`。
   題目 `code` 不改（既有與 mapping 代碼保留）。
 - [ ] **Step 4: 建立 migration 0024** 呼叫 `convert_definitions(apps)`。
-- [ ] **Step 5: 執行測試** → PASS（指紋測試在 Task 9 完成前以 `skipUnless` 依賴 `feedback.ai_snapshot_service.survey_fingerprint` 是否存在；Task 9 移除 skip）。
-- [ ] **Step 6: Commit** `feat: convert existing survey definitions to the builder schema`
+- [ ] **Step 5: 實作 `survey_conversion_report`**（只查詢，不寫入）。
+- [ ] **Step 6: 執行測試** → PASS（TripAdvisor 測試中的 AI Stage 判定在 Task 9 完成前若失敗，以 `expectedFailure` 標記並在 Task 9 移除）。
+- [ ] **Step 7: Commit** `feat: convert existing survey definitions to the builder schema`
 
 ---
 
@@ -253,7 +282,7 @@ def test_tripadvisor_definition_conversion_keeps_fingerprint_and_currency(self):
 
 **Files:**
 - Modify: `cloudapi/writes.py`、`cloudapi/errors.py`、`cloudapi/views.py:100-115`（錯誤對應）、`cloudsync/survey_write.py:_translate`、`cloudsync/client.py`（`SEMANTIC` 分類沿用給 422）
-- Modify: `cloudapi/management/commands/assign_survey_node.py`、`enable_survey_inbox.py`
+- Modify: `cloudapi/management/commands/assign_survey_node.py`、`enable_survey_inbox.py`、`feedback/analysis_jobs.py`（`schedule_survey_analysis`）
 - Test: `cloudapi/tests/test_writes.py`、`cloudapi/tests/test_api.py`
 
 **Interfaces:**
@@ -268,7 +297,10 @@ def test_tripadvisor_definition_conversion_keeps_fingerprint_and_currency(self):
     版本＋1、`published_version`＝新版本、`published_at=now`、有節點時 `inbox_since=now` → `apply_definition` → `record_version`
   - `create_node_survey`：草稿、`random_slug()`
   - `assign_survey_to_node(survey, node)`：已發布 `PublishedLocked`；不再回填 `has_received_answer`
-  - 移除 `check_semantic_lock`、`SemanticLockViolation`
+  - 移除 `check_semantic_lock`、`SemanticLockViolation`、`SEMANTIC_FIELDS`，並在本 task 一併修改其所有呼叫端（`cloudapi/views.py`、`cloudsync/survey_write.py`、`cloudsync/client.py`）與測試
+  - 雲端 API `POST surveys/`、`PUT surveys/<uuid>/` 只接受 `schema_version == 2`（否則 400 `{"error": "schema_version"}`）
+  - `enable_survey_inbox`：一律 `CommandError("已改為發布時設定收件匣，請改用發布")`
+  - `schedule_survey_analysis`：問卷未發布時回傳 `None`（規格 §7.2）
 
 - [ ] **Step 1: 寫失敗測試**：
 
@@ -305,9 +337,20 @@ def test_node_survey_publish_sets_inbox_since(self): ...
 def test_assign_published_survey_refused(self): ...               # PublishedLocked；指令 assign_survey_node 與 enable_survey_inbox 亦 CommandError
 def test_node_created_survey_is_draft_with_random_slug(self): ... # re.fullmatch(r"[a-z0-9]{8}", slug)
 def test_api_returns_published_locked_422(self): ...
+def test_api_rejects_v1_writes(self): ...
+
+# 規格 §7.2 重算對照：每一列一個測試
+def test_whitelist_status_category_email_tracking_do_not_bump_versions(self): ...  # state.input_version／config_version 不變
+def test_analysis_enabled_and_archive_bump_config(self): ...
+def test_draft_edits_and_publish_schedule_nothing(self): ...
+
+# cloudsync（本機模式）：完整路徑
+def test_v1_revision_applied_on_node_then_edited_writes_v2(self):
+    # 雲端存有 schema 1 的 revision → 本機 upsert 套用 → 本機編輯一題 → node_commit 以 v2 送出 → 雲端接受，代碼與雲端 upgrade_v1 結果相同
+    ...
 ```
 
-- [ ] **Step 2–4: 確認失敗 → 實作 → 執行** `cloudapi cloudsync --settings=config.settings_test`（雲端與 `DEPLOYMENT_MODE=node` 各一次）→ PASS；刪除既有語意鎖測試（spec 取代說明）。
+- [ ] **Step 2–4: 確認失敗 → 實作 → 執行** 雲端與 `DEPLOYMENT_MODE=node` 的完整測試 → PASS。行為已改變的既有測試改寫斷言，例如 `cloudapi/tests/test_writes.py` 的 `test_assign_backfills_answered_questions_and_records_version_1`（改為：草稿可指派、不回填、已發布被拒）與所有語意鎖測試（依雲端同步規格取代說明刪除）。
 - [ ] **Step 5:** 更新 `cloudapi/test_postgres.py`：移除「語意修改與第一筆回答同時發生」，改為「發布與草稿儲存同時發生時依序列化，後到者 409」。
 - [ ] **Step 6: Commit** `feat: draft/publish versioning, whitelist and inbox-gated publish`
 
@@ -317,6 +360,7 @@ def test_api_returns_published_locked_422(self): ...
 
 **Files:**
 - Create: `feedback/survey_lifecycle.py`
+- Modify: `cloudapi/writes.py`（新增 `create_survey(definition) -> SurveyDefinitionRevision`：雲端網站建立草稿，無節點）
 - Modify: `feedback/views.py`（`SurveyCreateView`、`SurveyBuilderView.post`、`SurveyDeleteView.form_valid`、`SurveyCategoryDeleteView`）、`cloudapi/builder.py`
 - Test: `feedback/test_survey_lifecycle.py`
 
@@ -324,14 +368,15 @@ def test_api_returns_published_locked_422(self): ...
 - Consumes: Task 4。
 - Produces（`feedback/survey_lifecycle.py`）：
   - `commit(survey, definition, expected_version) -> None`：`settings.IS_NODE` 時 `node_commit`，否則 `cloud_commit`（所有雲端問卷，不再限 `owner_node`）
-  - `create_draft(data: dict) -> Survey`（網站：`random_slug()`、草稿、經 `change_definition` 路徑建立版本 1；本機：`create_survey`）
-  - `copy_as_draft(survey) -> Survey`：新 uuid、新網址、版本 0→1 草稿、不帶 `owner_node`／`inbox_since`，題目 uuid 重新產生但 `code`、`choices`（含代碼）、計數器保留
-  - `delete_or_archive(survey, expected_version)`：草稿 → `purge_survey`；已發布 → `archive_survey` 經 `commit`
+  - `create_draft(definition: dict) -> Survey`：雲端以 `cloudapi.writes.create_survey(definition)`（新函式：`random_slug()`、版本 1、revision、無節點）；本機以 `cloudsync.survey_write.create_survey`（雲端 `create_node_survey` 指派該節點）
+  - `copy_as_draft(survey) -> Survey`：由 `definition_from_fields` 產生 dict，換新 survey／題目 uuid、`published=False`、清空發布欄位，保留題目 `code`、`choices`（含代碼）與兩種計數器，再交給 `create_draft`。結果：版本 1、未發布；雲端複製無節點，本機複製歸該節點（規格 §4.4）
+  - `delete_or_archive(survey, expected_version)`：在交易內鎖問卷，**鎖內重新確認**版本相符且為「未指派節點的草稿」才呼叫 `purge_survey`；已發布或已指派節點的草稿 → `archive_survey` 經 `commit`
 - `cloudapi/builder.py` 的 `builder_post` 改為呼叫 `survey_lifecycle.commit`，並新增 action `publish`、`copy`（Task 6 接上 UI）。
 
 - [ ] **Step 1: 寫失敗測試**：`test_plain_cloud_survey_edit_goes_through_change_definition`（編輯後有新 revision）、`test_create_draft_has_random_slug_and_is_unpublished`、
-  `test_copy_keeps_codes_and_counters_resets_version`（`[q.code for q in copy] == [q.code for q in original]`、`copy.published_version is None`、`copy.owner_node is None`）、
-  `test_delete_draft_purges_published_archives`、`test_category_delete_clears_published_survey_category`。
+  `test_copy_keeps_codes_and_counters`（`[q.code for q in copy] == [q.code for q in original]`、兩種計數器相同、`copy.definition_version == 1`、`copy.published_version is None`、`copy.owner_node is None`）、
+  `test_node_copy_belongs_to_node_and_is_draft`（本機模式）、`test_delete_unassigned_draft_purges`、`test_delete_assigned_draft_archives`、`test_delete_published_archives`、
+  `test_delete_rechecks_under_lock`（取得版本後另一請求先發布 → 刪除改為 409，不硬刪）、`test_category_delete_clears_published_survey_category`。
 - [ ] **Step 2–4: 確認失敗 → 實作 → 執行** `feedback.test_survey_lifecycle cloudapi.tests.test_builder` → PASS。
 - [ ] **Step 5: Commit** `feat: single write path and lifecycle actions for all surveys`
 
@@ -340,15 +385,17 @@ def test_api_returns_published_locked_422(self): ...
 ### Task 6: 卡片式編輯介面
 
 **Files:**
-- Modify: `feedback/forms.py`（移除 `QuestionCreateForm`，新增 `QuestionCardForm`）、`cloudapi/builder.py`、`templates/feedback/survey_builder.html`（重寫題目分頁）、
+- Modify: `feedback/forms.py`（移除 `QuestionCreateForm`，新增 `QuestionCardForm`）、`feedback/views.py`（import 與 `SurveyBuilderView.get_context_data`）、`cloudapi/definition.py`（移除 `set_question_active`，新增 `duplicate_question`）、`cloudapi/builder.py`、`templates/feedback/survey_builder.html`（重寫題目分頁）、
   `static/js/question-editor.js`（重寫）、`static/css/` 中 builder 樣式（只限管理頁 class）
-- Test: `feedback/test_builder_cards.py`
+- Test: `feedback/test_builder_cards.py`；改寫 `cloudapi/tests/test_builder.py`（例如「草稿刪除只停用」改為依規格 §7.1）
 
 **Interfaces:**
-- Consumes: Task 1 `kind_display_for`、`question_errors`；Task 2 編輯 helper；Task 5 `commit`。
+- Consumes: Task 1 `kind_display_for`、`question_errors`；Task 2 編輯 helper；Task 5 `commit`、`delete_or_archive`、`copy_as_draft`。
 - Produces: `QuestionCardForm`（欄位：`question_uuid`（hidden，可空）、`ui_type`（`UI_TYPES`）、`title`、`help_text`、`is_required`、`enable_keyword_tracking`、
-  `ordered`、`score_start`、`allow_decimal`、`scale_min`、`scale_max`、`scale_min_label`、`scale_max_label`；選項以平行陣列 `choice_code`、`choice_label`、`choice_excluded` 送出）；
-  `QuestionCardForm.to_item() -> dict`（給 `add_question`／`update_question`）。POST action：`save-question`、`delete-question`、`move-question`、`update-survey`、`publish`、`copy`。
+  `ordered`、`score_start`、`allow_decimal`、`scale_min`、`scale_max`、`scale_min_label`、`scale_max_label`）；選項為**每列完整的一組欄位** `choices-<i>-code`、`choices-<i>-label`、`choices-<i>-excluded`（hidden `0` 加 checkbox `1`，取最後值）、`choices-<i>-position`，依 `position` 排序、空白文字列略過；
+  `QuestionCardForm.to_item() -> dict`。段落題新增時「納入文字分析」預設勾選、簡答預設不勾。
+  `duplicate_question(definition, uuid) -> dict`（新 uuid、`code` 留空由雲端配發、選項代碼保留、放在原題之後）。
+  POST action：`save-question`、`duplicate-question`、`delete-question`、`move-question`、`update-survey`、`publish`、`copy`、`delete-survey`。
 
 - [ ] **Step 1: 寫失敗測試**（Django test client）：
 
@@ -381,14 +428,22 @@ def test_published_survey_renders_read_only_with_copy(self):
 
 def test_decimal_hint_present(self):
     self.assertContains(self.client.get(builder_url(self.survey)), "允許小數的數字題可做平均數比較與相關分析")
+
+def test_choice_rows_keep_excluded_on_the_right_row(self):
+    self.post_card(ui_type="radio", title="等候", rows=[("很快", False), ("不適用 ", True), ("很久", False)], ordered=True)
+    q = self.survey.questions.get()
+    self.assertEqual([(c["label"], c["excluded"]) for c in q.choices], [("很快", False), ("不適用", True), ("很久", False)])
+
+def test_choice_reorder_and_blank_rows(self): ...       # position 決定順序、空白列不存
+def test_duplicate_question_places_copy_after_original(self): ...
+def test_long_text_tracking_default_on_short_text_off(self): ...
 ```
 
 - [ ] **Step 2–4: 確認失敗 → 實作 → 執行** `feedback.test_builder_cards` → PASS。
-  預覽：建立工具頁以 iframe 載入 `survey/<slug>/?preview=1`（Task 7 提供）。
+  預覽：建立工具頁以 iframe 載入 `survey/<slug>/?preview=1`（Task 7 提供，本 task 只放 iframe 元素）。
   JS 行為（不另寫 JS 測試，於 Step 5 以瀏覽器驗證）：同一時間只展開一張卡片；切換時有未儲存修改跳出「儲存／捨棄／繼續編輯」；`beforeunload` 提醒；
   選項列 Enter 新增下一列；依 `ui_type` 顯示對應設定；上移／下移後 `aria-live` 宣告「已移到第 N 題」。
-- [ ] **Step 5: 瀏覽器驗證**：以 `.claude/launch.json` 的本機伺服器（測試資料庫或使用者授權的開發 DB）開啟建立工具，七種題型各新增一次、觸發一次錯誤、一次 409，截圖存證。
-- [ ] **Step 6: Commit** `feat: Google Forms style question cards`
+- [ ] **Step 5: Commit** `feat: Google Forms style question cards`（瀏覽器驗證移到 Task 7，預覽完成後一起做）
 
 ---
 
@@ -401,13 +456,16 @@ def test_decimal_hint_present(self):
 
 **Interfaces:**
 - Consumes: Task 1。
-- Produces: `SurveyFormBuilder` 的選擇題 `choices` 為 `(code, label)`；`submit_survey_payload` 寫入 `Answer.choice_codes`（單選 `[code]`、複選依選項順序）、`Answer.value`（標籤，複選以「, 」串接）、
-  `FeedbackSubmission.definition_version = survey.published_version`；`SurveyDetailView`：未發布 → 「問卷尚未開放」；管理者加 `?preview=1` 可預覽草稿（不顯示送出鈕、POST 拒絕）。
+- Produces: `SurveyFormBuilder` 的選擇題 `choices` 為 `(code, label)`；`submit_survey_payload` 在交易內 `select_for_update` 重新取得問卷，未發布或未收件時 `raise SurveyNotAccepting`（`feedback/local_service.py` 新例外，View 顯示「這份問卷目前未開放填答。」），再寫入 `Answer.choice_codes`（單選 `[code]`、複選依選項順序）、`Answer.value`（標籤，複選以「, 」串接）、`FeedbackSubmission.definition_version = survey.published_version`；
+  `SurveyDetailView`：未發布 → 「問卷尚未開放」；管理者加 `?preview=1` 可預覽草稿（不顯示送出鈕、POST 拒絕），**只有這個預覽回應**以 `xframe_options_sameorigin` 允許同源嵌入，其他頁面維持 `DENY`。
 
 - [ ] **Step 1: 寫失敗測試**：`test_choice_value_is_code_not_label`、`test_dropdown_uses_select_widget`、`test_scale_renders_range_with_end_labels`（0–10 產生 11 個選項、兩端標籤出現、無預選）、
-  `test_integer_and_decimal_fields`、`test_submission_records_codes_and_published_version`、`test_draft_shows_not_open_notice`、`test_manager_preview_of_draft_has_no_submit`。
+  `test_integer_and_decimal_fields`、`test_submission_records_codes_and_published_version`、`test_draft_shows_not_open_notice`、`test_manager_preview_of_draft_has_no_submit`、
+  `test_service_rejects_draft_and_closed_survey`（直接呼叫 `submit_survey_payload`）、`test_view_checked_then_closed_before_write_is_rejected`、
+  `test_preview_header_sameorigin_only_for_manager_preview`（顧客帶 `?preview=1` 不能預覽；一般填答頁仍是 `DENY`）、`test_preview_post_rejected`。
 - [ ] **Step 2–4: 確認失敗 → 實作 → 執行** `feedback.test_fill_form feedback.tests` → PASS。
-- [ ] **Step 5: Commit** `feat: fill form uses choice codes, scale ranges and published version`
+- [ ] **Step 5: 瀏覽器驗證**：以 `.claude/launch.json` 的伺服器搭配測試資料（或使用者授權的開發 DB）開啟建立工具，七種題型各新增一次、觸發一次驗證錯誤、一次 409、預覽 iframe 正常載入、發布後唯讀，截圖存證。
+- [ ] **Step 6: Commit** `feat: fill form uses choice codes, scale ranges and published version`
 
 ---
 
@@ -436,13 +494,19 @@ def test_counts_partition_total(self):
     c = classify_values(df, data_type="ordinal", kind="single_choice", levels=["低", "高"], excluded=["不適用"])
     self.assertEqual((c["valid_n"], c["excluded_n"], c["missing_n"], c["invalid_n"], c["total_n"]), (2, 1, 1, 1, 5))
 
-def test_orm_and_worker_paths_agree_on_ordinal_tests(self):
-    survey = survey_with_1_to_10_scale_and_ordered_choice_and_store()   # 每店 ≥ 3 筆
-    orm = get_survey_pandas_stats(survey)["inferential_analysis"]
-    worker = calculate_statistics(AnswerInput.from_survey(survey, version="t"), descriptors(AnswerInput.from_survey(survey, version="t")))["inferential_analysis"]
-    keys = lambda rows: sorted((r["method_key"], r["iv_title"], r["dv_title"]) for r in rows if not r.get("skipped_reason"))
-    self.assertEqual(keys(orm), keys(worker))
-    self.assertIn("kruskal_wallis", {r["method_key"] for r in orm})
+def test_orm_and_worker_paths_agree(self):
+    # 1–10 刻度、有序單選（含排除選項）、門市；另有一筆完全未作答的回覆、一筆排除、一筆無效值
+    survey = survey_for_path_parity()
+    orm = get_survey_pandas_stats(survey)
+    adapter = AnswerInput.from_survey(survey, version="t")
+    worker, row_count = calculate_statistics(adapter, descriptors(adapter))
+    self.assertEqual(row_count, survey.submissions.count())
+    pick = lambda rows: sorted((r["method_key"], r["iv_title"], r["dv_title"], r.get("statistic"), r.get("p_value"), r.get("valid_n"))
+                               for r in rows if not r.get("skipped_reason"))
+    self.assertEqual(pick(orm["inferential_analysis"]), pick(worker["inferential_analysis"]))
+    counts = lambda charts: {c["question"].title: (c["valid_n"], c["missing_n"], c["excluded_n"], c["invalid_n"]) for c in charts}
+    self.assertEqual(counts(orm["charts"]), counts(worker["charts"]))
+    self.assertIn("kruskal_wallis", {r["method_key"] for r in orm["inferential_analysis"]})
 
 def test_multi_choice_selection_rate_vs_check_share(self):
     chart = multi_chart(answers=[["A"]] * 5 + [["A", "B"]] * 5)
@@ -460,6 +524,7 @@ def test_snapshot_and_grounding_name_both_rates(self): ...  # 證據標籤分別
 
 - [ ] **Step 2–4: 確認失敗 → 實作 → 執行** `feedback.test_analysis_choices feedback.test_background_analysis feedback.test_analysis_e2e feedback.test_ai_grounding feedback.test_ai_stages` → PASS。
   排除與無效值在檢定前一律轉 NA；`encode_ordinal` 讀 `question.analysis_options`；`descriptors` 設定 `_analysis_options`／`_analysis_excluded`。
+  `get_survey_pandas_stats` 改以該問卷完成且未作廢的 `FeedbackSubmission` 為列（規格 §7.3，無答案的回覆也算一列），與 Worker 相同；`calculate_statistics` 維持回傳 `(result, row_count)`。
 - [ ] **Step 5: Commit** `feat: excluded options, shared levels and multi-choice rates in analysis`
 
 ---
@@ -471,12 +536,12 @@ def test_snapshot_and_grounding_name_both_rates(self): ...  # 證據標籤分別
 - Test: `feedback/test_ai_stages.py`（新增）、移除 Task 3 指紋測試的 skip
 
 **Interfaces:**
-- Produces: `survey_fingerprint(survey) -> str`（抽出現有指紋計算成公開函式，供測試與既有呼叫端共用）。題目串流維持原欄位順序（`options_text` 由 Task 1 的正規化產生，對 TripAdvisor 與轉換前相同），
+- Produces: 題目串流在原本 `options_text` 的位置改放 `"\n".join(analysis_levels(q))`（對沒有排除選項的題目，與轉換前的 `options_text` 位元組相同），其餘欄位順序不變，
   僅在不同於預設時附加：有排除選項、`score_start == 0`、有刻度標籤、`display == "dropdown"`；答案串流在 `choice_codes` 非空時附加代碼。
 
-- [ ] **Step 1: 失敗測試**：`test_fingerprint_unchanged_for_default_fields`（新欄位全為預設時指紋與加欄位前的固定值相同，固定值由 Step 2 前先以舊程式算出寫入測試）、
-  `test_fingerprint_changes_when_excluded_option_added`。
-- [ ] **Step 2–4: 確認失敗 → 實作 → 執行** `feedback.test_ai_stages feedback.test_schema_conversion feedback.test_published_analysis` → PASS。
+- [ ] **Step 1: 失敗測試**：`test_fingerprint_bytes_unchanged_for_default_fields`（以舊程式先算出 TripAdvisor 九題 fixture 的 `calculate_data_fingerprint(...).value` 寫成常數，改版後相同）、
+  `test_fingerprint_changes_when_excluded_option_added`；移除 Task 3 TripAdvisor 測試的 `expectedFailure`。
+- [ ] **Step 2–4: 確認失敗 → 實作 → 執行** `feedback.test_ai_stages feedback.test_schema_conversion feedback.test_published_analysis` → PASS（Task 3 的 TripAdvisor 測試此時必須真正通過）。
 - [ ] **Step 5: Commit** `feat: snapshot fingerprint stable across builder schema`
 
 ---
@@ -502,7 +567,7 @@ def test_snapshot_and_grounding_name_both_rates(self): ...  # 證據標籤分別
 
 - [ ] **Step 1: 失敗測試**：`test_whitelist_change_does_not_reject_open_form`（取得表單版本 → 停止再恢復收件 → 送出成功）、`test_closed_survey_rejected_under_lock`、
   `test_envelope_carries_answers_format_and_codes`、`test_node_quarantines_missing_answers_format`、`test_node_writes_choice_codes_and_labels`、
-  `test_freshness_ignores_whitelist_changes`、`test_capture_uses_published_version`。
+  `test_freshness_ignores_whitelist_changes`、`test_capture_uses_published_version`、`test_node_quarantines_answers_format_other_than_2`、`test_payload_hash_covers_answers_format`、`test_resend_same_payload_reuses_receipt_after_whitelist_change`、`test_ack_after_codes_written`（本機 ACK 的 payload_hash 與雲端一致）、`test_unknown_choice_code_quarantined`（規格 §7.3）。
 - [ ] **Step 2–4: 確認失敗 → 實作 → 執行** `cloudapi cloudsync --settings=config.settings_test`（雲端與 node 模式）→ PASS，含 `cloudsync.tests.test_e2e_inbox`、`test_e2e_results`。
 - [ ] **Step 5: Commit** `feat: inbox envelope answers_format and published_version checks`
 
@@ -515,12 +580,12 @@ def test_snapshot_and_grounding_name_both_rates(self): ...  # 證據標籤分別
 - Test: `feedback/test_dataset_import.py`、`feedback/test_tripadvisor_import.py`
 
 **Interfaces:**
-- Consumes: Task 1。
+- Consumes: Task 1；Task 4 的 `record_version`。
 - Produces: mapping 題目轉成新結構（`code` 沿用 `_question_codes`；整數連續選項的刻度 → 範圍；選擇題 → `choices`）；相容比對改比 `code`、`title`、`kind`、`data_type`、`analysis_options`、
-  `is_required`、`enable_keyword_tracking`、`is_active`、`order`；新建問卷 `published_version=1` 並 `record_version`；答案寫 `choice_codes`（以標籤比對，比對不到計入匯入報告 `invalid_choice`）。
+  `is_required`、`enable_keyword_tracking`、`is_active`、`order`；新建問卷在單一交易內設 `definition_version=1`、`published_version=1`、`published_at=now`，再 `record_version`（revision 版本 1）；小型匯入的 `FeedbackSubmission.definition_version=survey.published_version`；答案寫 `choice_codes`（以標籤比對，比對不到計入匯入報告 `invalid_choice`）。
 
 - [ ] **Step 1: 失敗測試**：`test_both_mappings_pass_derive_data_type`、`test_tripadvisor_scales_become_ranges_and_published`、`test_title_question_not_text_tracked`（評論標題 `enable_keyword_tracking=False`）、
-  `test_amazon_small_import_writes_choice_codes`、`test_existing_converted_questions_are_compatible`（Task 3 轉換後的題目再次匯入不報不相容）。
+  `test_amazon_small_import_writes_choice_codes`、`test_new_import_versions_and_revision_consistent`（定義版本＝發布版本＝revision 版本＝回覆版本＝1）、`test_existing_converted_questions_are_compatible`（Task 3 轉換後的題目再次匯入不報不相容）。
 - [ ] **Step 2–4: 確認失敗 → 實作 → 執行** `feedback.test_dataset_import feedback.test_tripadvisor_import feedback.test_local_dataset` → PASS。
 - [ ] **Step 5: Commit** `feat: dataset import uses choice codes and published surveys`
 
@@ -540,8 +605,9 @@ def test_snapshot_and_grounding_name_both_rates(self): ...  # 證據標籤分別
   等候分鐘數（允許小數）、消費金額（允許小數）、來店次數（整數）、改善建議（段落，納入文字分析）；建立後發布；填答者名稱維持「飲料店模擬填答」前綴；
   模擬分布讓等候分鐘數與滿意度負相關、消費金額與滿意度正相關，內用與外帶的滿意度有差異。其他種子改用新欄位並寫 `choice_codes`、建立後發布。
 
-- [ ] **Step 1: 失敗測試**：`test_beverage_seed_produces_all_seven_methods`（seed 後 `build_stats_payload` 的 `method_key` 集合包含 `welch_t_test`、`one_way_anova`、`chi_square`、`mann_whitney_u`、`kruskal_wallis`、`pearson`、`spearman`）、`test_beverage_seed_marks_simulated_respondents`、`test_beverage_reset_twice`、`test_other_seeds_create_published_surveys_with_codes`。
+- [ ] **Step 1: 失敗測試**：`test_beverage_seed_produces_all_seven_methods`（seed 後 `build_stats_payload` 的 `method_key` 集合包含 `welch_t_test`、`one_way_anova`、`chi_square`、`mann_whitney_u`、`kruskal_wallis`、`pearson`、`spearman`）、`test_beverage_seed_marks_simulated_respondents`、`test_beverage_reset_twice`、`test_other_seeds_create_published_surveys_with_codes`、
+  `test_beverage_seed_text_analysis_and_publish`（文字分析有關鍵字與情緒結果；以 mock AI 跑完分析並發布，網站讀到最新的已發布結果）。
 - [ ] **Step 2–4: 確認失敗 → 實作 → 執行** `feedback.test_seed_commands` → PASS。
-- [ ] **Step 5: 文件**：`next-actions.md` 移除已完成的建立工具待辦、加入「部署前：備份、`purge_survey` 三份舊問卷、migrate、重新模擬（皆需授權）」；`architecture.md` 更新題型表。`git diff --check`。
+- [ ] **Step 5: 文件**：`next-actions.md` 移除已完成的建立工具待辦，加入規格 §7.5 的部署流程（每一步標示需授權；含隔離資料庫還原、`survey_conversion_report` 檢查與失敗復原）；`architecture.md` 更新題型表與單一寫入路徑。`git diff --check`。
 - [ ] **Step 6: 全套測試**：雲端與 `DEPLOYMENT_MODE=node` 各跑 CI 的完整指令；`makemigrations --check`；`manage.py check`。
 - [ ] **Step 7: Commit** `feat: seeds use the new builder schema; docs`
