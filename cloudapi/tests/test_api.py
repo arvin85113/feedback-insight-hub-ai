@@ -6,6 +6,7 @@ from cloudapi.definition import add_question, serialize_definition
 from cloudapi.models import NodeDevice
 from cloudapi.writes import create_node_survey
 from feedback.models import Question, Survey
+from feedback.test_utils import cloud_only
 
 BASE = "/api/node/v1/"
 QUESTION = {"title": "Q", "help_text": "", "kind": "short_text", "data_type": "text", "options_text": "",
@@ -18,6 +19,7 @@ def blank(uuid_text, title="S"):
             "category": None, "archived_at": None, "questions": []}
 
 
+@cloud_only
 @override_settings(CLOUD_SYNC_PROTOTYPE_ENABLED=True)
 class NodeApiTests(TestCase):
     def setUp(self):

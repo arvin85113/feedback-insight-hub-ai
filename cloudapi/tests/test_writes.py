@@ -5,6 +5,7 @@ from cloudapi.errors import SemanticLockViolation, VersionConflict
 from cloudapi.models import ChangeClock, NodeDevice, SurveyChange, SurveyDefinitionRevision
 from cloudapi.writes import assign_survey_to_node, change_definition, create_node_survey
 from feedback.models import AnalysisJob, Answer, FeedbackSubmission, Question, Survey
+from feedback.test_utils import cloud_only
 
 QUESTION = {"title": "Q", "help_text": "", "kind": "single_choice", "data_type": "nominal", "options_text": "A\nB",
             "is_required": True, "enable_keyword_tracking": False, "order": 1}
@@ -79,6 +80,7 @@ class ChangeDefinitionTests(TestCase):
         update_question(definition, definition["questions"][0]["uuid"], {"options_text": "A\nB\nC"})
         change_definition(self.survey.uuid, expected_version=2, definition=definition)
 
+    @cloud_only
     def test_cloud_does_not_schedule_analysis_for_node_surveys(self):
         definition = serialize_definition(self.survey)
         add_question(definition, QUESTION)

@@ -5,10 +5,12 @@ from django.urls import reverse
 from cloudapi.models import NodeDevice
 from cloudapi.writes import assign_survey_to_node
 from feedback.models import Answer, FeedbackSubmission, Question, Survey, SurveyCategory
+from feedback.test_utils import cloud_only
 
 User = get_user_model()
 
 
+@cloud_only
 class CloudBuilderForNodeSurveysTests(TestCase):
     def setUp(self):
         self.manager = User.objects.create_user(username="m", password="x", role=User.Role.MANAGER)
