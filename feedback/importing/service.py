@@ -248,6 +248,37 @@ def _question_codes(mapping):
     return codes
 
 
+def _expected_question(spec, code, order):
+    return {
+        "code": code,
+        "title": spec.title,
+        "kind": spec.kind,
+        "data_type": spec.data_type,
+        "options_text": "\n".join(spec.options),
+        "is_required": spec.required,
+        "enable_keyword_tracking": spec.enable_keyword_tracking,
+        "is_active": True,
+        "order": order,
+    }
+
+
+def mapping_compatibility_errors(mapping, survey):
+    """Fields where the survey's questions differ from the mapping, as `"<title>: <field>"` strings."""
+
+    errors = []
+    for order, (spec, code) in enumerate(zip(mapping.questions, _question_codes(mapping)), start=1):
+        question = survey.questions.filter(code=code).first()
+        if question is None:
+            errors.append(f"{spec.title}: missing")
+            continue
+        errors.extend(
+            f"{spec.title}: {name}"
+            for name, value in _expected_question(spec, code, order).items()
+            if getattr(question, name) != value
+        )
+    return errors
+
+
 def _ensure_survey_and_questions(mapping):
     slug = _survey_slug(mapping)
     survey = Survey.objects.filter(slug=slug).first()
@@ -272,18 +303,7 @@ def _ensure_survey_and_questions(mapping):
                 raise ValueError(f"問卷中有重複題目名稱：{spec.title}")
             question = title_matches.first()
             matched_by_title = question is not None
-        expected_options = "\n".join(spec.options)
-        expected = {
-            "code": code,
-            "title": spec.title,
-            "kind": spec.kind,
-            "data_type": spec.data_type,
-            "options_text": expected_options,
-            "is_required": spec.required,
-            "enable_keyword_tracking": spec.enable_keyword_tracking,
-            "is_active": True,
-            "order": order,
-        }
+        expected = _expected_question(spec, code, order)
         if question is None:
             question = Question.objects.create(survey=survey, **expected)
         else:
