@@ -30,10 +30,9 @@ class CloudBuilderForNodeSurveysTests(TestCase):
         self.assertContains(page, 'name="definition_version" value="1"')
         self.assertContains(page, f'name="question_uuid" value="{self.question.uuid}"')
 
-    def test_delete_without_answers_only_deactivates_and_bumps_version(self):
+    def test_delete_on_draft_removes_question_and_bumps_version(self):
         self.post(action="delete-question", question_uuid=str(self.question.uuid), question_id=self.question.pk)
-        self.question.refresh_from_db()
-        self.assertFalse(self.question.is_active)
+        self.assertFalse(Question.objects.filter(pk=self.question.pk).exists())
         self.survey.refresh_from_db()
         self.assertEqual(self.survey.definition_version, 2)
 
@@ -74,10 +73,12 @@ class CloudBuilderForNodeSurveysTests(TestCase):
         self.assertEqual(self.survey.definition_version, 2)
         self.assertTrue(Survey.objects.filter(pk=self.survey.pk).exists())
 
-    def test_unassigned_surveys_keep_the_old_behaviour(self):
+    def test_unassigned_draft_goes_through_the_versioned_path(self):
         plain = Survey.objects.create(title="P", slug="p")
         question = Question.objects.create(survey=plain, title="Q", kind="short_text", data_type="text", order=1)
-        self.client.post(reverse("feedback:survey-builder", args=["p"]), {"action": "delete-question", "question_id": question.pk})
-        self.assertFalse(Question.objects.filter(pk=question.pk).exists())  # hard delete as before
+        self.client.post(reverse("feedback:survey-builder", args=["p"]), {
+            "action": "delete-question", "question_uuid": str(question.uuid), "definition_version": 0,
+        })
+        self.assertFalse(Question.objects.filter(pk=question.pk).exists())
         plain.refresh_from_db()
-        self.assertEqual(plain.definition_version, 0)
+        self.assertEqual(plain.definition_version, 1)

@@ -86,7 +86,8 @@ class FeedbackSchemaV2Tests(TestCase):
         Answer.objects.create(submission=submission, question=self.question, value="4")
         self.client.force_login(manager)
 
-        response = self.client.post(reverse("feedback:survey-delete", args=[self.survey.slug]))
+        response = self.client.post(reverse("feedback:survey-delete", args=[self.survey.slug]),
+                                    {"definition_version": self.survey.definition_version})
 
         self.assertRedirects(response, reverse("feedback:survey-manager"))
         self.survey.refresh_from_db()

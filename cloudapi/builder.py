@@ -8,14 +8,13 @@ Questions are deactivated, never deleted (spec §2).
 from django.contrib import messages
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
-from django.utils import timezone
 
 from feedback.forms import QuestionCreateForm, SurveyEditForm
 from feedback.models import Question
 
 from .definition import (
     add_question,
-    archive_survey,
+        delete_question,
     move_question,
     serialize_definition,
     set_question_active,
@@ -50,11 +49,24 @@ def builder_post(view, request, commit):
     question_uuid = request.POST.get("question_uuid", "")
     success = "問卷已更新。"
 
-    if action == "move-question":
+    if action == "copy":
+        from feedback.survey_lifecycle import copy_as_draft
+
+        try:
+            copy = copy_as_draft(survey)
+        except DefinitionCommitError as exc:
+            messages.error(request, exc.user_message)
+            return back
+        messages.success(request, "已複製為新草稿。")
+        return redirect("feedback:survey-builder", slug=copy.slug)
+    if action == "publish":
+        definition["published"] = True
+        success = "問卷已發布；題目從此固定，需要修改時請複製為新草稿。"
+    elif action == "move-question":
         move_question(definition, question_uuid, request.POST.get("direction"))
     elif action == "delete-question":
-        set_question_active(definition, question_uuid, False)
-        success = "題目已停用；同步問卷不刪除題目，歷史資料保留。"
+        delete_question(definition, question_uuid)
+        success = "題目已刪除。"
     elif action == "restore-question":
         set_question_active(definition, question_uuid, True)
         success = "題目已恢復，會重新納入填答與分析。"
@@ -87,16 +99,22 @@ def builder_post(view, request, commit):
     return back
 
 
-def archive_post(request, survey, commit):
+def delete_post(request, survey):
+    """Delete an unassigned draft, otherwise archive (builder spec §5.1, §7.1)."""
+
+    from feedback.survey_lifecycle import delete_or_archive
+
     expected = expected_version_from(request)
-    definition = serialize_definition(survey)
-    archive_survey(definition, timezone.now())
-    try:
-        if expected is None:
-            raise DefinitionCommitError()
-        commit(survey, definition, expected)
-    except DefinitionCommitError as exc:
-        messages.error(request, exc.user_message if expected is not None else "版本不一致，請重新載入")
+    if expected is None:
+        messages.error(request, "版本不一致，請重新載入")
         return False
-    messages.success(request, f"問卷「{survey.title}」已封存，歷史資料與分析版本均已保留。")
+    try:
+        outcome = delete_or_archive(survey, expected)
+    except DefinitionCommitError as exc:
+        messages.error(request, exc.user_message)
+        return False
+    if outcome == "deleted":
+        messages.success(request, f"草稿「{survey.title}」已刪除。")
+    else:
+        messages.success(request, f"問卷「{survey.title}」已封存，歷史資料與分析版本均已保留。")
     return True

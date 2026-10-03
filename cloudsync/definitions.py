@@ -15,7 +15,7 @@ from cloudapi.models import SurveyDefinitionRevision
 from feedback.models import Survey
 
 from .client import GONE, CloudError
-from .models import CloudLink, StaleLink
+from .models import CloudLink, StaleLink, SurveySyncState
 
 logger = logging.getLogger(__name__)
 PAGE_SIZE = 50
@@ -35,9 +35,13 @@ def _upsert_locked(definition, version):
         return survey, False
     if survey is None or survey.slug != definition["slug"]:
         _free_slug(definition["slug"], definition["survey_uuid"])
-    if survey is None:
+    created = survey is None
+    if created:
         survey = Survey(uuid=definition["survey_uuid"])
     apply_definition(survey, definition, version=version)
+    if created:
+        # Marks the survey as a cloud copy before the first sync cycle (builder spec §7.4).
+        SurveySyncState.objects.get_or_create(survey=survey)
     SurveyDefinitionRevision.objects.get_or_create(survey=survey, version=version, defaults={"definition": definition})
     return survey, True
 
