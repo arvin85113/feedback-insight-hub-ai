@@ -320,11 +320,14 @@ class PurgeInboxLockOrderPostgreSQLTests(TransactionTestCase):
 
         from unittest.mock import patch
 
-        from django.db.utils import OperationalError
+        from django.core.exceptions import ObjectDoesNotExist
 
         import feedback.survey_purge as purge_module
 
-        holding, release, errors = threading.Event(), threading.Event(), []
+        from feedback.models import Survey
+
+        holding, release = threading.Event(), threading.Event()
+        purge_errors, competitor_errors = [], []
         original = purge_module._lock_receipts
 
         def lock_then_hold(survey):
@@ -332,21 +335,22 @@ class PurgeInboxLockOrderPostgreSQLTests(TransactionTestCase):
             holding.set()
             release.wait(10)
 
-        def run(target):
+        def run(target, errors, *, allowed=()):
             try:
                 target()
-            except OperationalError as exc:  # a deadlock abort would land here
+            except allowed:
+                pass  # losing the race to purge (the row is already gone) is an allowed outcome
+            except Exception as exc:  # a deadlock abort (OperationalError) or any purge failure lands here
                 errors.append(exc)
-            except Exception:  # noqa: BLE001 - losing the race to purge is an allowed outcome
-                pass
             finally:
                 close_old_connections()
 
         with patch.object(purge_module, "_lock_receipts", side_effect=lock_then_hold):
-            purger = threading.Thread(target=run, args=(lambda: purge_module.purge_survey(self.survey),))
+            purger = threading.Thread(target=run, args=(lambda: purge_module.purge_survey(self.survey), purge_errors))
             purger.start()
             self.assertTrue(holding.wait(10))
-            competitor = threading.Thread(target=run, args=(other,))
+            competitor = threading.Thread(target=run, args=(other, competitor_errors),
+                                          kwargs={"allowed": (ObjectDoesNotExist,)})
             competitor.start()
             time.sleep(0.5)
             self.assertTrue(competitor.is_alive())  # queued on the receipt lock
@@ -354,7 +358,8 @@ class PurgeInboxLockOrderPostgreSQLTests(TransactionTestCase):
             purger.join(30)
             competitor.join(30)
         self.assertFalse(purger.is_alive() or competitor.is_alive())
-        self.assertEqual(errors, [])
+        self.assertEqual((purge_errors, competitor_errors), ([], []))
+        self.assertFalse(Survey.objects.filter(pk=self.survey.pk).exists())
 
     def assert_capacity_matches_bodies(self):
         from django.db.models import Sum
@@ -383,4 +388,15 @@ class PurgeAbandonLockOrderPostgreSQLTests(PurgeInboxLockOrderPostgreSQLTests):
         from cloudapi.inbox import abandon
 
         self.race(lambda: abandon(self.receipt, None))
+        self.assert_capacity_matches_bodies()
+
+
+class PurgeQuarantineLockOrderPostgreSQLTests(PurgeInboxLockOrderPostgreSQLTests):
+    def test_purge_and_ack_do_not_double_release_capacity(self):
+        self.skipTest("covered by the parent class")
+
+    def test_purge_and_quarantine_do_not_deadlock(self):
+        from cloudapi.inbox import quarantine_items
+
+        self.race(lambda: quarantine_items(self.node, [{"submission_uuid": str(self.uid), "reason": "content_conflict"}]))
         self.assert_capacity_matches_bodies()
