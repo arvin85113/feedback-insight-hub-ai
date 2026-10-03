@@ -44,6 +44,15 @@ class Survey(models.Model):
     archived_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    definition_version = models.PositiveIntegerField(default=0)
+    owner_node = models.ForeignKey(
+        "cloudapi.NodeDevice",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="surveys",
+    )
 
     class Meta:
         ordering = ["title"]
@@ -87,6 +96,8 @@ class Question(models.Model):
     enable_keyword_tracking = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
     order = models.PositiveIntegerField(default=1)
+    uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    has_received_answer = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["order", "id"]
