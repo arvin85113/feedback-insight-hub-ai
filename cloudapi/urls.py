@@ -14,4 +14,5 @@ urlpatterns = [
     path("inbox/", views.inbox_list, name="inbox"),
     path("inbox/ack/", views.inbox_ack, name="inbox-ack"),
     path("inbox/quarantine/", views.inbox_quarantine, name="inbox-quarantine"),
+    path("results/", views.results_upload, name="results"),
 ]

@@ -68,4 +68,4 @@ class InboxApiTests(TestCase):
         body = self.call("post", "heartbeat/", {}).json()
         self.assertEqual((body["inbox"]["pending_count"], body["inbox"]["deadline_state"]), (1, "ok"))
         self.assertEqual(body["surveys"], [{"survey_uuid": str(self.survey.uuid), "response_sequence": 1,
-                                            "abandoned_sequences": []}])
+                                            "abandoned_sequences": [], "publish_sequence": 0}])

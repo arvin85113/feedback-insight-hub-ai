@@ -1,12 +1,13 @@
 from django.conf import settings
 from django.contrib import messages
+from django.db.models import Sum
 from django.shortcuts import redirect
 from django.views.generic import TemplateView
 
 from feedback.views import DashboardBaseMixin
 
 from .inbox import abandon, database_bytes, inbox_summary, requeue
-from .models import NodeDevice, SubmissionReceipt
+from .models import NodeDevice, PublishedResultRecord, SubmissionReceipt
 
 
 class InboxManageView(DashboardBaseMixin, TemplateView):
@@ -26,6 +27,9 @@ class InboxManageView(DashboardBaseMixin, TemplateView):
                 "summary": inbox_summary(node),
                 "synced_count": receipts.filter(status=SubmissionReceipt.Status.SYNCED).count(),
                 "abandoned_count": receipts.filter(status=SubmissionReceipt.Status.ABANDONED).count(),
+                "result_conflicts": PublishedResultRecord.objects.filter(node=node).aggregate(
+                    total=Sum("conflict_count")
+                )["total"] or 0,
                 "quarantined": receipts.filter(status=SubmissionReceipt.Status.QUARANTINED)
                 .select_related("survey")
                 .order_by("submitted_at"),

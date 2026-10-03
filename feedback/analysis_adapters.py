@@ -35,10 +35,13 @@ class AnswerInput(TableInput):
         name,
         survey_id=None,
         database_alias="default",
+        extra_filter=None,
     ):
         super().__init__(rows, fields, version=version, name=name)
         self.survey_id = survey_id
         self.database_alias = database_alias
+        # Optional Q applied to every FeedbackSubmission read (node: the frozen reply watermark).
+        self.extra_filter = extra_filter
 
     @classmethod
     def from_answers(cls, answers, question_fields, *, version, name, submission_ids=()):
@@ -50,7 +53,7 @@ class AnswerInput(TableInput):
         return cls(list(rows.values()), question_fields.values(), version=version, name=name)
 
     @classmethod
-    def from_survey(cls, survey, *, version):
+    def from_survey(cls, survey, *, version, extra_filter=None):
         alias = survey._state.db or "default"
         fields = {
             q.pk: AnalysisField(
@@ -71,6 +74,7 @@ class AnswerInput(TableInput):
             name=survey.title,
             survey_id=survey.pk,
             database_alias=alias,
+            extra_filter=extra_filter,
         )
         adapter.question_fields = fields
         adapter.keyword_rules = list(
@@ -90,14 +94,16 @@ class AnswerInput(TableInput):
         known = {field.name for field in self.fields()}
         if not set(columns) <= known:
             raise ValueError("column not in analysis mapping")
+        submissions = FeedbackSubmission.objects.using(self.database_alias).filter(
+            survey_id=self.survey_id,
+            is_complete=True,
+            voided_at__isnull=True,
+        )
+        if self.extra_filter is not None:
+            submissions = submissions.filter(self.extra_filter)
         if not columns:
             submission_ids = (
-                FeedbackSubmission.objects.using(self.database_alias)
-                .filter(
-                    survey_id=self.survey_id,
-                    is_complete=True,
-                    voided_at__isnull=True,
-                )
+                submissions
                 .order_by("pk")
                 .values_list("pk", flat=True)
             )
@@ -115,12 +121,7 @@ class AnswerInput(TableInput):
             )
         value_names = tuple(annotations)
         queryset = (
-            FeedbackSubmission.objects.using(self.database_alias)
-            .filter(
-                survey_id=self.survey_id,
-                is_complete=True,
-                voided_at__isnull=True,
-            )
+            submissions
             .order_by("pk")
             .annotate(**annotations)
             .values_list(*value_names)

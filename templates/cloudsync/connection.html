@@ -10,6 +10,17 @@
         <p>收件匣：待收 {{ inbox.pending_count }} 筆 · 衝突 {{ inbox.quarantined_count|default:0 }} 筆 · 占用 {{ inbox.occupied_count }} / {{ inbox.max_count }} 筆{% if inbox.oldest_pending_at %} · 最舊待收 {{ inbox.oldest_pending_at }}{% endif %}</p>
         {% if inbox.deadline_state == "critical" %}<p class="flash-message flash-error">最舊待收已超過 30 天，請立即同步。</p>{% elif inbox.deadline_state == "warn" %}<p class="flash-message flash-error">最舊待收已超過 25 天。</p>{% endif %}
         {% endif %}
+        <p>結果上傳：待上傳 {{ pending_results }} 份{% if failed_results %} · 失敗 {{ failed_results|length }} 份{% endif %}</p>
+        {% if failed_results %}
+        <ul>
+            {% for row in failed_results %}
+            <li>{{ row.survey__title }} 發布 #{{ row.publish_sequence }}：{% if row.last_error == "not_found" %}雲端找不到這份問卷，可能已改連其他雲端或取消指派{% elif row.last_error == "too_large" %}結果內容超過上傳上限{% elif row.last_error == "conflict" %}雲端已有同編號但內容不同的結果{% elif row.last_error == "invalid" %}雲端認為結果內容格式不正確{% elif row.last_error == "bad_reply" %}雲端回應無法辨識{% else %}{{ row.last_error }}{% endif %}</li>
+            {% endfor %}
+        </ul>
+        <form method="post" class="form-inline">{% csrf_token %}
+            <button type="submit" name="action" value="retry-results" class="button">重新上傳</button>
+        </form>
+        {% endif %}
         {% if unconfirmed_acks %}<p class="flash-message flash-error">{{ unconfirmed_acks }} 筆回覆已寫入本機，但雲端未確認同步，需人工處理。</p>{% endif %}
         {% if link.last_error_kind %}<p class="flash-message flash-error">最近錯誤：{{ link.last_error_kind }}　{{ link.last_error_message }}</p>{% endif %}
         <form method="post" class="form-inline">{% csrf_token %}

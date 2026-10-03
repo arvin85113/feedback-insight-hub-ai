@@ -1,3 +1,6 @@
+import json
+
+from django.conf import settings
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
@@ -6,6 +9,7 @@ from feedback.models import Survey
 
 from .auth import BadRequest, CursorInvalid, make_cursor, node_api, parse_cursor, read_json
 from .inbox import ack_items, database_bytes, inbox_summary, quarantine_items, survey_sequences
+from .results import ResultConflict, ResultInvalid, apply_upload
 from .errors import DefinitionError, SemanticLockViolation, VersionConflict
 from .models import ChangeClock, InboxSubmission, SurveyChange, SurveyDefinitionRevision
 from .writes import change_definition, create_node_survey
@@ -167,3 +171,38 @@ def inbox_quarantine(request):
     except ValueError as exc:
         return JsonResponse({"error": "bad_request", "message": str(exc)}, status=400)
     return JsonResponse({"results": results})
+
+
+@node_api
+@require_POST
+def results_upload(request):
+    """Read the UTF-8 body directly so large result JSON bypasses DATA_UPLOAD_MAX_MEMORY_SIZE."""
+
+    limit = settings.CLOUD_RESULT_MAX_BYTES
+    try:
+        declared = int(request.META.get("CONTENT_LENGTH") or 0)
+    except ValueError:
+        declared = 0
+    if declared > limit:
+        return JsonResponse({"error": "too_large"}, status=413)
+    raw = request.read(limit + 1)
+    if len(raw) > limit:
+        return JsonResponse({"error": "too_large"}, status=413)
+    try:
+        body = json.loads(raw.decode("utf-8"))
+        if not isinstance(body, dict):
+            raise ValueError("body must be an object")
+        status, created = apply_upload(
+            request.node_device,
+            publish_uuid=body.get("publish_uuid"),
+            publish_sequence=body.get("publish_sequence"),
+            content_hash=body.get("content_hash"),
+            content=body.get("content"),
+        )
+    except ResultConflict:
+        return JsonResponse({"error": "content_conflict"}, status=409)
+    except PermissionError:
+        return JsonResponse({"error": "not_found"}, status=404)
+    except (ResultInvalid, ValueError, UnicodeDecodeError) as exc:
+        return JsonResponse({"error": "bad_request", "message": str(exc)[:200]}, status=400)
+    return JsonResponse({"status": status}, status=201 if created else 200)

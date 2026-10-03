@@ -80,7 +80,22 @@ def _build_adapter(job, external_inputs):
             f"survey:{job.survey_id}:input:{job.input_version}:"
             f"config:{job.config_version}:pipeline:{job.pipeline_version}"
         )
-        return AnswerInput.from_survey(job.survey, version=version)
+        scope = None
+        if settings.IS_NODE:
+            from cloudsync.capture import capture_scope
+            from cloudsync.scope import is_cloud_synced
+
+            if is_cloud_synced(job.survey):
+                scope = capture_scope(job.survey)
+                version += f":watermark:{scope.watermark}"
+        adapter = AnswerInput.from_survey(
+            job.survey,
+            version=version,
+            extra_filter=scope.submission_filter if scope else None,
+        )
+        adapter.capture_scope = scope
+        job.capture_scope = scope  # read again when the Snapshot is saved
+        return adapter
     spec = (external_inputs or {}).get(job.source_ref)
     if spec is None:
         raise WorkerExecutionError("external_source_not_configured")
@@ -189,10 +204,11 @@ def _persist_snapshot(job, result):
     fingerprint = result["input_fingerprint"]
     latest_at = None
     if job.source_kind == AnalysisJob.SourceKind.ANSWERS:
-        latest_at = job.survey.submissions.filter(
-            is_complete=True,
-            voided_at__isnull=True,
-        ).aggregate(value=Max("submitted_at"))["value"]
+        submissions = job.survey.submissions.filter(is_complete=True, voided_at__isnull=True)
+        scope = getattr(job, "capture_scope", None)
+        if scope is not None:
+            submissions = submissions.filter(scope.submission_filter)
+        latest_at = submissions.aggregate(value=Max("submitted_at"))["value"]
     lookup = {
         "survey": job.survey,
         "data_fingerprint": fingerprint,
@@ -281,6 +297,15 @@ def execute_deterministic_job(
                 "pipeline_implementation_version": implementation_version,
             }
         )
+        scope = getattr(adapter, "capture_scope", None)
+        if scope is not None:
+            source_snapshot["data_scope"].update(
+                {
+                    "analyzed_through_sequence": scope.watermark,
+                    "definition_version": scope.definition_version,
+                    "excluded": scope.excluded,
+                }
+            )
         source_snapshot["display_payload"] = {
             "schema_version": DISPLAY_SCHEMA_VERSION,
             "statistics": _serialise_statistics(statistics),

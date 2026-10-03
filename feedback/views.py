@@ -8,7 +8,8 @@ from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
 from django.db.models import Count, IntegerField, Max, OuterRef, Q, Subquery
-from django.db.models.functions import Coalesce, TruncDate
+from django.db.models.fields.json import KT
+from django.db.models.functions import Cast, Coalesce, TruncDate
 import segno
 
 from django.http import Http404, HttpResponse, HttpResponseRedirect, JsonResponse
@@ -82,12 +83,18 @@ def analysis_report_surveys():
         survey_id=OuterRef("pk"),
         published_snapshot__isnull=False,
     ).values("published_snapshot__response_count")[:1]
+    uploaded_response_count = (
+        SurveyAnalysisState.objects.filter(survey_id=OuterRef("pk"), published_upload_uuid__isnull=False)
+        .annotate(analyzed=Cast(KT("publication_manifest__coverage__analyzed_unique"), IntegerField()))
+        .values("analyzed")[:1]
+    )
     return (
         analysis_visible_surveys()
         .annotate(
             response_count=Count("submissions"),
             valid_response_count=Coalesce(
                 Subquery(published_response_count, output_field=IntegerField()),
+                Subquery(uploaded_response_count, output_field=IntegerField()),
                 Count(
                     "submissions",
                     filter=Q(
@@ -161,6 +168,16 @@ def _survey_catalog_rows(queryset):
             published_snapshot__isnull=False,
         ).values("survey_id", "published_snapshot__response_count")
     }
+    # Node uploads have no local Snapshot on the cloud; their coverage carries the analysed count.
+    for row in SurveyAnalysisState.objects.filter(
+        survey_id__in=survey_ids,
+        published_snapshot__isnull=True,
+        published_upload_uuid__isnull=False,
+    ).values("survey_id", "publication_manifest"):
+        coverage = (row["publication_manifest"] or {}).get("coverage") or {}
+        value = coverage.get("analyzed_unique")
+        if isinstance(value, int) and not isinstance(value, bool):
+            published_counts[row["survey_id"]] = value
     for survey in surveys:
         question_row = question_counts.get(survey.pk, {})
         submission_row = submission_counts.get(survey.pk, {})

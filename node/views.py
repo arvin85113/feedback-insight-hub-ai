@@ -15,6 +15,7 @@ from .status import (
     database_status,
     disk_status,
     inbox_status,
+    results_status,
     lan_status,
     pending_items,
     worker_status,
@@ -51,6 +52,7 @@ class OverviewView(NodeConsoleMixin, TemplateView):
             lan_status(),
             cloud_status(),
             inbox_status(),
+            results_status(),
         ]
         events = list(NodeAuditEvent.objects.all()[:10])
         for event in events:

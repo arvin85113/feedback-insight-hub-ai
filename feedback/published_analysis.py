@@ -118,7 +118,7 @@ def get_published_analysis_payload(survey):
         .first()
     )
     if state is None:
-        return {
+        payload = {
             "available": False,
             "versions": {"input": 0, "config": 0, "pipeline": ""},
             "freshness": {"statistics": False, "text": False, "ai": False},
@@ -127,6 +127,11 @@ def get_published_analysis_payload(survey):
             "ai": None,
             "latest_job": latest_job,
         }
+        if survey.owner_node_id:
+            from cloudapi.freshness import node_freshness
+
+            payload["node_result"] = node_freshness(survey, None)
+        return payload
     try:
         binding = resolve_analysis_source(state.survey)
     except AnalysisSourceConfigurationError:
@@ -135,6 +140,8 @@ def get_published_analysis_payload(survey):
     statistics = display.get("statistics") if isinstance(display.get("statistics"), dict) else {}
     text_analysis = display.get("text_analysis") if isinstance(display.get("text_analysis"), dict) else {}
     ai_snapshot = state.published_ai_stage.snapshot if state.published_ai_stage_id else None
+    if survey.owner_node_id:
+        return _node_payload(survey, state, display, statistics, text_analysis, latest_job)
     return {
         "available": bool(state.published_snapshot_id and display),
         "snapshot_id": state.published_snapshot_id,
@@ -168,6 +175,41 @@ def get_published_analysis_payload(survey):
             else {}
         ),
         "latest_job": latest_job,
+    }
+
+
+def _node_payload(survey, state, display, statistics, text_analysis, latest_job):
+    """Node-owned surveys: show the uploaded result and judge freshness by definition and reply watermark."""
+
+    from cloudapi.freshness import node_freshness
+
+    node = node_freshness(survey, state)
+    manifest = state.publication_manifest or {}
+    stages = manifest.get("stages") if node["has_result"] else {}
+    stages = stages if isinstance(stages, dict) else {}
+
+    def fresh(key):
+        stage = stages.get(key)
+        return bool(node["is_latest"] and isinstance(stage, dict) and stage.get("current"))
+
+    return {
+        "available": bool(display) and (node["has_result"] or bool(state.published_snapshot_id)),
+        "snapshot_id": None if node["has_result"] else state.published_snapshot_id,
+        "published_at": state.published_at.isoformat() if state.published_at else None,
+        "versions": {
+            "input": state.input_version,
+            "config": state.config_version,
+            "pipeline": state.pipeline_version,
+            "published": manifest,
+        },
+        "freshness": {"statistics": fresh("statistics"), "text": fresh("text"), "ai": fresh("ai")},
+        "statistics": statistics,
+        "text_analysis": text_analysis,
+        "snapshot": display.get("snapshot") if isinstance(display.get("snapshot"), dict) else {},
+        "ai": state.published_ai_payload or None,
+        "ai_source": (manifest.get("ai_source") or {}) if node["has_result"] else {},
+        "latest_job": latest_job,
+        "node_result": node,
     }
 
 
@@ -210,7 +252,8 @@ def get_published_ai_pipeline_status(survey):
     }
     report = None
     if ai:
-        draft_states = _published_draft_states(survey, ai, current_ai=current_ai)
+        # Node results carry node-side stage ids; draft import stays on the node for now.
+        draft_states = {} if survey.owner_node_id else _published_draft_states(survey, ai, current_ai=current_ai)
         report = {
             "snapshot_id": ai_meta.get("snapshot_id"),
             "survey_slug": survey.slug,

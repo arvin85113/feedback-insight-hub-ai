@@ -130,3 +130,14 @@ class LinkAndTokenTests(TestCase):
                 client_for_link()
             save_token("https://c", "tok")
             self.assertEqual(client_for_link().token, "tok")
+
+
+class RawPostTests(SimpleTestCase):
+    def test_post_raw_sends_utf8_bytes(self):
+        session = FakeSession(FakeResponse(200, {"status": "applied"}))
+        body = '{"title":"中文"}'.encode("utf-8")
+        reply = CloudClient("https://c", "t", session=session).post_raw("results/", body)
+        method, url, kwargs = session.calls[0]
+        self.assertEqual((method, url, kwargs["data"], reply), ("POST", "https://c/api/node/v1/results/", body, {"status": "applied"}))
+        self.assertEqual(kwargs["headers"]["Content-Type"], "application/json; charset=utf-8")
+        self.assertFalse(kwargs["allow_redirects"])

@@ -158,3 +158,18 @@ class InboxCounter(models.Model):
     @classmethod
     def for_node(cls, node):
         return cls.objects.get_or_create(node=node)[0]
+
+
+class PublishedResultRecord(models.Model):
+    """History of every identity-valid node upload; metadata only, the shown content lives on SurveyAnalysisState."""
+
+    publish_uuid = models.UUIDField(unique=True)
+    node = models.ForeignKey(NodeDevice, on_delete=models.PROTECT, related_name="result_records")
+    survey = models.ForeignKey("feedback.Survey", on_delete=models.PROTECT, related_name="+")
+    publish_sequence = models.PositiveBigIntegerField()
+    content_hash = models.CharField(max_length=64)
+    definition_version = models.PositiveBigIntegerField()
+    analyzed_through_sequence = models.PositiveBigIntegerField()
+    applied = models.BooleanField(default=False)
+    conflict_count = models.PositiveIntegerField(default=0)
+    received_at = models.DateTimeField(auto_now_add=True)
