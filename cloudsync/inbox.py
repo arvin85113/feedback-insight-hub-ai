@@ -13,12 +13,12 @@ from datetime import datetime
 from django.db import transaction
 
 from cloudapi.envelope import HASH_VERSION, answer_text, answers_hash, envelope_payload_hash
-from feedback.analysis_jobs import schedule_survey_analysis, suppress_analysis_scheduling
+from feedback.analysis_jobs import suppress_analysis_scheduling
 from feedback.models import Answer, FeedbackSubmission, Question, Survey
 
 from .client import CloudError
 from .definitions import upsert_definition
-from .models import PendingAck, SurveySyncState, SyncedSubmissionSource
+from .models import PendingAck, SyncedSubmissionSource, advance_and_schedule
 
 logger = logging.getLogger(__name__)
 PAGE_SIZE = 100
@@ -78,7 +78,15 @@ def intake(envelope, client):
         return DEFINITION_UNAVAILABLE
 
     respondent = envelope.get("respondent") or {}
-    with transaction.atomic(), suppress_analysis_scheduling():
+    with transaction.atomic():
+        survey = _write_reply(envelope, uid, incoming, respondent)
+        # Outside the suppression, same transaction: a moved watermark queues analysis atomically.
+        advance_and_schedule(survey)
+    return WRITTEN
+
+
+def _write_reply(envelope, uid, incoming, respondent):
+    with suppress_analysis_scheduling():
         survey = Survey.objects.select_for_update().get(uuid=envelope["survey_uuid"])
         submission = FeedbackSubmission.objects.create(
             survey=survey,
@@ -108,8 +116,7 @@ def intake(envelope, client):
             original_answers=envelope["answers"],
         )
         PendingAck.objects.create(submission_uuid=uid, payload_hash=incoming)
-        SurveySyncState.advance(survey)
-    return WRITTEN
+    return survey
 
 
 def _send_acks(client, pending, result):
@@ -139,7 +146,6 @@ def _send_acks(client, pending, result):
 def sync_inbox(client):
     result = InboxResult()
     _send_acks(client, PendingAck.objects.order_by("created_at"), result)
-    touched = set()
     while True:
         page = client.get("inbox/", params={"limit": PAGE_SIZE})
         items = page.get("items", [])
@@ -148,7 +154,6 @@ def sync_inbox(client):
             outcome = intake(envelope, client)
             if outcome == WRITTEN:
                 result.written += 1
-                touched.add(envelope["survey_uuid"])
             elif outcome == DUPLICATE:
                 result.duplicates += 1
             else:
@@ -162,8 +167,4 @@ def sync_inbox(client):
         # pending in the cloud), so an unconfirmable item cannot make this loop spin.
         if not page.get("has_more") or not items or (confirmed == 0 and not quarantine):
             break
-    for survey_uuid in touched:
-        survey = Survey.objects.filter(uuid=survey_uuid).only("pk").first()
-        if survey is not None:
-            schedule_survey_analysis(survey.pk, change="input")
     return result

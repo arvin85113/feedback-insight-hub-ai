@@ -110,3 +110,18 @@ class PendingAck(models.Model):
     payload_hash = models.CharField(max_length=64)
     created_at = models.DateTimeField(auto_now_add=True)
     last_status = models.CharField(max_length=16, blank=True)
+
+
+def advance_and_schedule(survey):
+    """Advance the reply watermark inside the caller's transaction and queue local analysis when it moves.
+
+    Must run outside suppress_analysis_scheduling(), otherwise the schedule call is a no-op.
+    """
+
+    from feedback.analysis_jobs import schedule_survey_analysis
+
+    before = SurveySyncState.objects.filter(survey=survey).values_list("synced_through_sequence", flat=True).first() or 0
+    after = SurveySyncState.advance(survey)
+    if after > before:
+        schedule_survey_analysis(survey.pk, change="input")
+    return after

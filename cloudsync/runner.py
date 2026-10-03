@@ -10,7 +10,7 @@ from django.utils import timezone
 from .client import TRANSIENT, UNAUTHORIZED, CloudError, NotLinked, backoff_seconds, client_for_link
 from .definitions import sync_definitions
 from .inbox import sync_inbox
-from .models import CloudLink, StaleLink, SurveySyncState
+from .models import CloudLink, StaleLink, SurveySyncState, advance_and_schedule
 
 logger = logging.getLogger(__name__)
 _cycle_lock = threading.Lock()
@@ -30,7 +30,7 @@ def _apply_abandoned(heartbeat):
                 set(state.abandoned_sequences) | {s for s in abandoned if s > state.synced_through_sequence}
             )
             state.save(update_fields=["abandoned_sequences"])
-            SurveySyncState.advance(survey)
+            advance_and_schedule(survey)
 
 
 def _record_success(link, now, heartbeat):
