@@ -8,7 +8,7 @@ from cloudapi.models import InboxSubmission, NodeDevice, SubmissionReceipt
 from cloudapi.receipts import received_counts
 from cloudapi.writes import assign_survey_to_node, change_definition
 from feedback.models import FeedbackSubmission, Question, Survey
-from feedback.test_utils import cloud_only
+from feedback.test_utils import cloud_only, published
 
 User = get_user_model()
 
@@ -20,7 +20,7 @@ class InboxFillPageTests(TestCase):
         node, _ = NodeDevice.issue("office")
         survey = Survey.objects.create(title="S", slug="s")
         self.question = Question.objects.create(survey=survey, title="Q", kind="short_text", data_type="text", order=1)
-        self.survey = assign_survey_to_node(survey, node).survey
+        self.survey = published(assign_survey_to_node(survey, node).survey)
         Survey.objects.filter(pk=self.survey.pk).update(inbox_since=timezone.now())
         self.customer = User.objects.create_user(username="c", password="x")
         self.client.force_login(self.customer)

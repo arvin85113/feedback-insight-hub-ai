@@ -25,3 +25,16 @@ def page_with_scripts(response):
         with open(found, encoding="utf-8") as handle:
             sources.append(handle.read())
     return "\n".join(sources)
+
+
+def published(survey):
+    """Mark a test survey as published (spec §4) without going through the builder; returns it refreshed."""
+
+    from feedback.models import Survey
+
+    version = survey.definition_version or 1
+    Survey.objects.filter(pk=survey.pk).update(
+        definition_version=version, published_version=version, analysis_definition_version=version,
+    )
+    survey.refresh_from_db()
+    return survey
