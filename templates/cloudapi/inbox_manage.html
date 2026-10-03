@@ -1,0 +1,53 @@
+{% extends "feedback/dashboard_base.html" %}
+{% block title %}收件匣 | FeedBack IQ{% endblock %}
+{% block dashboard_content %}
+{% if database_bytes is not None %}
+<section class="manager-panel">
+    <h2>資料庫用量</h2>
+    <p>{{ database_bytes|filesizeformat }}</p>
+    {% if database_warning %}<p class="flash-message flash-error">資料庫用量已超過 400 MB，接近 Supabase 免費上限 500 MB。</p>{% endif %}
+</section>
+{% endif %}
+{% for row in nodes %}
+<section class="manager-panel">
+    <h2>{{ row.node.name }}</h2>
+    <p>待收 {{ row.summary.pending_count }} 筆 · 衝突 {{ row.summary.quarantined_count }} 筆 · 已同步 {{ row.synced_count }} 筆 · 已放棄 {{ row.abandoned_count }} 筆</p>
+    <p>占用 {{ row.summary.occupied_count }} / {{ row.summary.max_count }} 筆，{{ row.summary.occupied_bytes|filesizeformat }} / {{ row.summary.max_bytes|filesizeformat }}</p>
+    {% if row.summary.oldest_pending_at %}<p>最舊待收：{{ row.summary.oldest_pending_at }}</p>{% endif %}
+    {% if row.summary.deadline_state == "critical" %}
+        <p class="flash-message flash-error">最舊待收已超過 30 天，請盡快讓本機節點同步。</p>
+    {% elif row.summary.deadline_state == "warn" %}
+        <p class="flash-message flash-error">最舊待收已超過 25 天。</p>
+    {% endif %}
+    {% if row.quarantined %}
+    <table class="manager-table">
+        <thead><tr><th>回覆 ID</th><th>問卷</th><th>原因</th><th>時間</th><th></th></tr></thead>
+        <tbody>
+        {% for receipt in row.quarantined %}
+            <tr>
+                <td><code>{{ receipt.submission_uuid }}</code></td>
+                <td>{{ receipt.survey.title }}</td>
+                <td>{{ receipt.quarantine_reason }}</td>
+                <td>{{ receipt.submitted_at|date:"Y/m/d H:i" }}</td>
+                <td>
+                    <form method="post" class="form-inline">{% csrf_token %}
+                        <input type="hidden" name="submission_uuid" value="{{ receipt.submission_uuid }}">
+                        <button type="submit" name="action" value="requeue" class="button">重新放回待收</button>
+                    </form>
+                    <form method="post" class="form-inline" onsubmit="return confirm('放棄後這筆回覆會永久遺失，確定放棄？')">{% csrf_token %}
+                        <input type="hidden" name="submission_uuid" value="{{ receipt.submission_uuid }}">
+                        <button type="submit" name="action" value="abandon" class="button button-danger">放棄</button>
+                    </form>
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>沒有隔離項目。</p>
+    {% endif %}
+</section>
+{% empty %}
+<section class="manager-panel"><p>尚未建立任何本機節點。</p></section>
+{% endfor %}
+{% endblock %}

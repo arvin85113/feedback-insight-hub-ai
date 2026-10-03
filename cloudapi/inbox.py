@@ -230,6 +230,41 @@ def inbox_summary(node, now=None):
     }
 
 
+@transaction.atomic
+def requeue(receipt, by):
+    receipt = SubmissionReceipt.objects.select_for_update().get(pk=receipt.pk)
+    if receipt.status != SubmissionReceipt.Status.QUARANTINED:
+        raise ValueError("只有隔離項目可以放回")
+    InboxSubmission.objects.filter(submission_uuid=receipt.submission_uuid).update(
+        state=InboxSubmission.State.PENDING, quarantine_reason=""
+    )
+    receipt.status = SubmissionReceipt.Status.RECEIVED
+    receipt.resolution = SubmissionReceipt.Resolution.REQUEUED
+    receipt.resolved_at = timezone.now()
+    receipt.resolved_by = by
+    receipt.save(update_fields=["status", "resolution", "resolved_at", "resolved_by"])
+
+
+@transaction.atomic
+def abandon(receipt, by):
+    """Delete the body and release its capacity exactly once; the reply is lost (spec §9)."""
+
+    receipt = SubmissionReceipt.objects.select_for_update().get(pk=receipt.pk)
+    if receipt.status != SubmissionReceipt.Status.QUARANTINED:
+        raise ValueError("只有隔離項目可以放棄")
+    item = InboxSubmission.objects.select_for_update().filter(submission_uuid=receipt.submission_uuid).first()
+    if item is not None:
+        InboxCounter.objects.filter(node=item.node).update(
+            occupied_count=F("occupied_count") - 1, occupied_bytes=F("occupied_bytes") - item.size_bytes
+        )
+        item.delete()
+    receipt.status = SubmissionReceipt.Status.ABANDONED
+    receipt.resolution = SubmissionReceipt.Resolution.ABANDONED
+    receipt.resolved_at = timezone.now()
+    receipt.resolved_by = by
+    receipt.save(update_fields=["status", "resolution", "resolved_at", "resolved_by"])
+
+
 def survey_sequences(node):
     abandoned = {}
     for survey_id, sequence in SubmissionReceipt.objects.filter(

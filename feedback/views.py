@@ -204,6 +204,8 @@ class DashboardBaseMixin(ManagerRequiredMixin):
     def get_dashboard_nav(self):
         if settings.IS_NODE:
             return NODE_CONSOLE_NAV + self.dashboard_nav + NODE_CONSOLE_NAV_TAIL
+        if settings.CLOUD_INBOX_ENABLED:
+            return self.dashboard_nav + [("cloudapi-manage:inbox", "收件匣", "server")]
         return self.dashboard_nav
 
     def get_dashboard_base_context(self):
