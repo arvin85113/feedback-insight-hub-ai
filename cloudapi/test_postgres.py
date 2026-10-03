@@ -194,3 +194,37 @@ class SemanticLockRacePostgreSQLTests(_InboxPostgreSQLCase):
             self.assertEqual(outcomes, {"answer": "outdated", "edit": "ok"})
             self.assertFalse(SubmissionReceipt.objects.exists())
             self.assertFalse(question.has_received_answer)
+
+
+@override_settings(CLOUD_INBOX_ENABLED=True)
+class ConcurrentAckPostgreSQLTests(_InboxPostgreSQLCase):
+    def test_two_acks_for_one_item_ack_once(self):
+        import uuid
+
+        from django.contrib.auth import get_user_model
+
+        from cloudapi.inbox import accept_submission, ack_items
+        from cloudapi.models import InboxCounter
+
+        survey, question = self.make_inbox_survey()
+        user = get_user_model().objects.create_user(username="acker", password="x")
+        receipt = accept_submission(survey, user=user, submission_uuid=uuid.uuid4(), form_version=1,
+                                    consent_follow_up=False, answers={str(question.uuid): "x"}).receipt
+        item = {"submission_uuid": str(receipt.submission_uuid), "payload_hash": receipt.payload_hash}
+        barrier, statuses = threading.Barrier(2), []
+
+        def ack():
+            try:
+                barrier.wait(10)
+                statuses.append(ack_items(survey.owner_node, [item])[0]["status"])
+            finally:
+                close_old_connections()
+
+        threads = [threading.Thread(target=ack) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(30)
+        self.assertEqual(sorted(statuses), ["acked", "already_acked"])
+        counter = InboxCounter.objects.get()
+        self.assertEqual((counter.occupied_count, counter.occupied_bytes), (0, 0))

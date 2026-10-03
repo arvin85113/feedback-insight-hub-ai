@@ -4,9 +4,10 @@ from django.views.decorators.http import require_GET, require_http_methods, requ
 
 from feedback.models import Survey
 
-from .auth import CursorInvalid, make_cursor, node_api, parse_cursor, read_json
+from .auth import BadRequest, CursorInvalid, make_cursor, node_api, parse_cursor, read_json
+from .inbox import ack_items, database_bytes, inbox_summary, quarantine_items, survey_sequences
 from .errors import DefinitionError, SemanticLockViolation, VersionConflict
-from .models import ChangeClock, SurveyChange, SurveyDefinitionRevision
+from .models import ChangeClock, InboxSubmission, SurveyChange, SurveyDefinitionRevision
 from .writes import change_definition, create_node_survey
 
 MAX_PAGE = 200
@@ -110,4 +111,59 @@ def survey_update(request, survey_uuid):
 @node_api
 @require_POST
 def heartbeat(request):
-    return JsonResponse({"node_uuid": str(request.node_device.uuid), "server_time": timezone.now().isoformat()})
+    device = request.node_device
+    return JsonResponse({
+        "node_uuid": str(device.uuid),
+        "server_time": timezone.now().isoformat(),
+        "inbox": inbox_summary(device),
+        "database_bytes": database_bytes(),
+        "surveys": survey_sequences(device),
+    })
+
+
+INBOX_PAGE = 100
+ACK_BATCH = 200
+
+
+@node_api
+@require_GET
+def inbox_list(request):
+    try:
+        limit = max(1, min(int(request.GET.get("limit", INBOX_PAGE)), INBOX_PAGE))
+    except ValueError:
+        return JsonResponse({"error": "bad_request", "message": "limit must be an integer"}, status=400)
+    rows = list(
+        InboxSubmission.objects.filter(node=request.node_device, state=InboxSubmission.State.PENDING)
+        .order_by("received_at", "submission_uuid")
+        .values_list("envelope", flat=True)[: limit + 1]
+    )
+    return JsonResponse({"items": rows[:limit], "has_more": len(rows) > limit})
+
+
+def _items(request, required):
+    body = read_json(request)
+    items = body.get("items") if isinstance(body, dict) else None
+    if not isinstance(items, list) or len(items) > ACK_BATCH:
+        raise BadRequest("items must be a list of at most 200 entries")
+    for item in items:
+        if not isinstance(item, dict) or any(key not in item for key in required):
+            raise BadRequest("each item needs " + ", ".join(required))
+    return items
+
+
+@node_api
+@require_POST
+def inbox_ack(request):
+    items = _items(request, ("submission_uuid", "payload_hash"))
+    return JsonResponse({"results": ack_items(request.node_device, items)})
+
+
+@node_api
+@require_POST
+def inbox_quarantine(request):
+    items = _items(request, ("submission_uuid", "reason"))
+    try:
+        results = quarantine_items(request.node_device, items)
+    except ValueError as exc:
+        return JsonResponse({"error": "bad_request", "message": str(exc)}, status=400)
+    return JsonResponse({"results": results})
