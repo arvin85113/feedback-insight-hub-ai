@@ -39,6 +39,7 @@ dry-run 以「實際刪除後回滾」計數。本計畫不含任何 schema 變�
 - Create: `feedback/survey_purge.py`
 - Create: `feedback/management/commands/purge_survey.py`
 - Modify: `feedback/management/commands/seed_demo_beverage.py`（`_reset`）
+- Modify: `cloudapi/inbox.py`（`ack_items`：改為先 `select_for_update` 鎖該回覆的 `SubmissionReceipt`，再鎖正文、刪除、退容量；回應內容與狀態判定不變）
 - Test: `feedback/test_survey_purge.py`
 
 **Interfaces:**
@@ -114,11 +115,11 @@ def test_failure_rolls_back_everything(self):
 
 - [ ] **Step 2: 執行確認失敗** → ImportError（`feedback.survey_purge` 不存在）。
 - [ ] **Step 3: 實作 `feedback/survey_purge.py`**：`suppress_analysis_scheduling()` 與 `transaction.atomic()` 內 `select_for_update` 鎖問卷 → 拒絕條件 → 依規格 §7.4 表格順序：
-  通知 → 改善紀錄 → 匯入來源 → 清空 `active_external_version` → 該問卷的 `InboxSubmission`（沿用 ACK／abandon 的鎖序：先 `select_for_update().order_by("pk")` 鎖定正文列，刪除這些已鎖定的列，再依節點以**實際刪除列**的筆數與 `size_bytes` 一次 `F()` 退回 `InboxCounter`） → `SubmissionReceipt` → `PublishedResultRecord`
+  通知 → 改善紀錄 → 匯入來源 → 清空 `active_external_version` → 依規格 §7.4 的全域鎖序（收據 → 正文 → counter）：先 `select_for_update().order_by("pk")` 鎖定該問卷的 `SubmissionReceipt`，再鎖定該問卷的 `InboxSubmission`，刪除這些已鎖定的正文，再依節點以**實際刪除列**的筆數與 `size_bytes` 一次 `F()` 退回 `InboxCounter`） → 刪除已鎖定的 `SubmissionReceipt` → `PublishedResultRecord`
   → `SurveyChange` → `SurveyDefinitionRevision` → （本機）`PendingAck` → `_delete_survey_row(survey)`。每一步把 `QuerySet.delete()` 回傳的明細累加進結果。
   `dry_run=True` 時最後 `transaction.set_rollback(True)`。
 - [ ] **Step 4: 實作指令** `purge_survey --survey <slug> [--confirm]`（無 `--confirm` 即 `dry_run=True`），印出各模型筆數。
 - [ ] **Step 5: `seed_demo_beverage._reset` 改呼叫 `purge_survey(existing)`**，保留確認提示與 `--yes`。
-- [ ] **Step 6: PostgreSQL 併發測試**：在 `cloudapi/test_postgres.py` 新增 `test_purge_and_ack_do_not_double_release_capacity`——同一正文由 ACK 與 purge 兩個連線同時處理，結束後 `InboxCounter` 與剩餘正文的實際總和相符；另測 purge 與 abandon 同時處理。指令：`.venv/Scripts/python.exe manage.py test cloudapi.test_postgres --settings=config.settings_postgres_test`（需獨立 `TEST_DATABASE_URL`，無法確認隔離就停止並回報）。
+- [ ] **Step 6: PostgreSQL 併發測試**：在 `cloudapi/test_postgres.py` 新增 `test_purge_and_ack_do_not_double_release_capacity`——同一正文由 ACK 與 purge 兩個連線同時處理；另測 purge 與 abandon（quarantined 正文）同時處理。兩種情況都要求：兩個交易都在逾時內完成、**沒有任何一方因死鎖被資料庫中止**，且結束後 `InboxCounter` 與剩餘正文的實際總和相符。另補 `cloudapi/tests/test_inbox_api.py`：ACK 改鎖序後既有 ACK 回應與狀態判定不變。指令：`.venv/Scripts/python.exe manage.py test cloudapi.test_postgres --settings=config.settings_postgres_test`（需獨立 `TEST_DATABASE_URL`，無法確認隔離就停止並回報）。
 - [ ] **Step 7: 執行測試**（雲端與 `DEPLOYMENT_MODE=node`）→ PASS；`makemigrations --check --dry-run --settings=config.settings_test` → `No changes detected`。
 - [ ] **Step 8: Commit** `feat: purge_survey command for test and simulated surveys`
