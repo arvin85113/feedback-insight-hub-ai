@@ -4,6 +4,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import connection, transaction
 
 from feedback.local_service import submit_survey_payload
+from feedback.survey_purge import PurgeRefused, purge_survey
 from feedback.models import (
     FeedbackSubmission,
     KeywordCategory,
@@ -314,7 +315,10 @@ class Command(BaseCommand):
             confirm = input("輸入 yes 以繼續：").strip().lower()
             if confirm not in {"y", "yes"}:
                 raise CommandError("已取消。")
-        existing.delete()
+        try:
+            purge_survey(existing)
+        except PurgeRefused as exc:
+            raise CommandError(str(exc)) from exc
         self.stdout.write(self.style.WARNING("已刪除既有示範問卷，準備重建。"))
 
     def _print_db_hint(self):
