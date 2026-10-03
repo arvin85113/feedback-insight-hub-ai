@@ -1,3 +1,5 @@
+import uuid
+
 from django.db import models
 
 
@@ -85,6 +87,9 @@ class SurveySyncState(models.Model):
     survey = models.OneToOneField("feedback.Survey", on_delete=models.CASCADE, related_name="sync_state")
     synced_through_sequence = models.PositiveBigIntegerField(default=0)
     abandoned_sequences = models.JSONField(default=list, blank=True)
+    # Highest publish_sequence the cloud reported (heartbeat) and the highest this node handed out.
+    cloud_publish_sequence = models.PositiveBigIntegerField(default=0)
+    local_publish_sequence = models.PositiveBigIntegerField(default=0)
 
     @classmethod
     def advance(cls, survey):
@@ -110,6 +115,27 @@ class PendingAck(models.Model):
     payload_hash = models.CharField(max_length=64)
     created_at = models.DateTimeField(auto_now_add=True)
     last_status = models.CharField(max_length=16, blank=True)
+
+
+class ResultUpload(models.Model):
+    """One node publication with its identity and content frozen at creation; resends reuse both."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "待上傳"
+        UPLOADED = "uploaded", "已上傳"
+        STALE = "stale", "過期"
+        FAILED = "failed", "失敗"
+
+    publish_uuid = models.UUIDField(unique=True, default=uuid.uuid4, editable=False)
+    survey = models.ForeignKey("feedback.Survey", on_delete=models.CASCADE, related_name="result_uploads")
+    publish_sequence = models.PositiveBigIntegerField()
+    content_hash = models.CharField(max_length=64)
+    content = models.JSONField()
+    published_at = models.DateTimeField()
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    attempts = models.PositiveIntegerField(default=0)
+    last_error = models.CharField(max_length=32, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
 
 
 def advance_and_schedule(survey):

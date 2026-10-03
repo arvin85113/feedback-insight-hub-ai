@@ -740,6 +740,10 @@ def publish_analysis_snapshot(
                 "updated_at",
             )
         )
+        if settings.IS_NODE:
+            from cloudsync.results import record_publication
+
+            record_publication(state)  # same transaction and row lock as the publication
         if queue_ai:
             _ensure_pending_job_locked(
                 job.survey,
@@ -820,6 +824,10 @@ def publish_analysis_stages(
                 "updated_at",
             )
         )
+        if settings.IS_NODE:
+            from cloudsync.results import record_publication
+
+            record_publication(state)  # same transaction and row lock as the publication
         _finish_published_job_locked(
             job,
             snapshot,
