@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch
 from django.db import IntegrityError, transaction
 from django.db.models import F
 from django.core.exceptions import ValidationError
-from django.test import Client, override_settings
+from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 
 from . import ai_synthesis_service
@@ -1018,3 +1018,42 @@ class AIStageResilienceTests(AIReportTestCase):
         for marker in ("PRIVATE_PROMPT_MARKER", "PRIVATE_ANSWER_MARKER", "PRIVATE_KEY_MARKER"):
             self.assertNotIn(marker, output)
         self.assertIn("output_truncated", output)
+
+
+class FingerprintSchemaTests(TestCase):
+    """The question stream stays byte-compatible for questions that use only default builder fields."""
+
+    def legacy_row(self, question):
+        return (question.id, question.code, question.title, question.help_text, question.kind, question.data_type,
+                question.options_text, question.is_required, question.enable_keyword_tracking, question.order)
+
+    def test_fingerprint_rows_match_legacy_for_default_fields(self):
+        from feedback.ai_snapshot_service import question_fingerprint_row
+        from feedback.models import Question, Survey
+
+        survey = Survey.objects.create(title="TripAdvisor", slug="trip")
+        questions = [
+            Question.objects.create(survey=survey, code="overall-scale", title="整體評分", kind="scale",
+                                    data_type="ordinal", options_text="1\n2\n3\n4\n5", order=1),
+            Question.objects.create(survey=survey, code="title-short_text", title="評論標題", kind="short_text", order=2),
+            Question.objects.create(survey=survey, code="text-long_text", title="評論原文", kind="long_text",
+                                    enable_keyword_tracking=True, order=3),
+            Question.objects.create(survey=survey, code="length-integer", title="評論長度", kind="integer", order=4),
+            Question.objects.create(survey=survey, title="門市", kind="single_choice",
+                                    choices=[{"code": "", "label": "信義"}, {"code": "", "label": "公館"}], order=5),
+        ]
+        for question in questions:
+            question.refresh_from_db()
+            self.assertEqual(question_fingerprint_row(question), self.legacy_row(question), question.title)
+
+    def test_fingerprint_changes_when_excluded_option_added(self):
+        from feedback.ai_snapshot_service import calculate_data_fingerprint
+        from feedback.models import Question, Survey
+
+        survey = Survey.objects.create(title="排除", slug="excl")
+        question = Question.objects.create(survey=survey, title="等候", kind="single_choice", ordered=True,
+                                           choices=[{"code": "", "label": "快"}, {"code": "", "label": "慢"}], order=1)
+        before = calculate_data_fingerprint(survey).value
+        choices = question.choices + [{"code": "c3", "label": "不適用", "excluded": True, "score": None}]
+        Question.objects.filter(pk=question.pk).update(choices=choices, options_text="快\n慢\n不適用")
+        self.assertNotEqual(calculate_data_fingerprint(survey).value, before)
