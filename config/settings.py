@@ -50,6 +50,7 @@ CLOUD_INBOX_MAX_ITEM_BYTES = int(os.getenv("CLOUD_INBOX_MAX_ITEM_BYTES", str(64 
 CLOUD_INBOX_WARN_DAYS = 25
 CLOUD_INBOX_CRITICAL_DAYS = 30
 CLOUD_DB_WARN_BYTES = 400 * 1024 * 1024
+CLOUD_RESULT_MAX_BYTES = int(os.getenv("CLOUD_RESULT_MAX_BYTES", str(4 * 1024 * 1024)))
 
 # Local development defaults to DEBUG; a deployed runtime must opt in explicitly.
 DEBUG = os.getenv("DEBUG", "False" if (_IS_RENDER_RUNTIME or IS_NODE) else "True").lower() == "true"

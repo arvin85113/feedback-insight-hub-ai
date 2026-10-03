@@ -555,6 +555,11 @@ class SurveyAnalysisState(models.Model):
     published_ai_payload = models.JSONField(default=dict, blank=True)
     publication_manifest = models.JSONField(default=dict, blank=True)
     published_at = models.DateTimeField(null=True, blank=True)
+    # Cloud only: identity of the node upload currently shown (spec §7 展示指標).
+    publish_sequence = models.PositiveBigIntegerField(default=0)
+    analyzed_through_sequence = models.PositiveBigIntegerField(default=0)
+    definition_version = models.PositiveBigIntegerField(default=0)
+    published_upload_uuid = models.UUIDField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

@@ -228,3 +228,55 @@ class ConcurrentAckPostgreSQLTests(_InboxPostgreSQLCase):
         self.assertEqual(sorted(statuses), ["acked", "already_acked"])
         counter = InboxCounter.objects.get()
         self.assertEqual((counter.occupied_count, counter.occupied_bytes), (0, 0))
+
+
+class ConcurrentResultPostgreSQLTests(_InboxPostgreSQLCase):
+    def test_concurrent_uploads_are_serialized(self):
+        import uuid
+        from unittest.mock import patch
+
+        from cloudapi.envelope import sha256_hex
+        from cloudapi.models import PublishedResultRecord
+        from cloudapi.results import apply_upload
+        from cloudapi.tests.test_results import content
+        from feedback.models import Survey, SurveyAnalysisState
+
+        survey, _question = self.make_inbox_survey()
+        Survey.objects.filter(pk=survey.pk).update(response_sequence=5)
+        uuid12, uuid11 = uuid.uuid4(), uuid.uuid4()
+        holding, release, errors = threading.Event(), threading.Event(), []
+        original_create = PublishedResultRecord.objects.create
+
+        def create_then_hold(**kwargs):
+            record = original_create(**kwargs)
+            if kwargs["publish_uuid"] == uuid12:
+                holding.set()
+                release.wait(10)  # thread A keeps the SurveyAnalysisState row lock here
+            return record
+
+        def upload(sequence, publish_uuid, title):
+            try:
+                body = content(survey, title=title)
+                apply_upload(survey.owner_node, publish_uuid=str(publish_uuid), publish_sequence=sequence,
+                             content_hash=sha256_hex(body), content=body)
+            except Exception as exc:  # pragma: no cover - reported by the test
+                errors.append(exc)
+            finally:
+                close_old_connections()
+
+        with patch.object(PublishedResultRecord.objects, "create", side_effect=create_then_hold):
+            first = threading.Thread(target=upload, args=(12, uuid12, "twelve"))
+            first.start()
+            self.assertTrue(holding.wait(10))
+            second = threading.Thread(target=upload, args=(11, uuid11, "eleven"))
+            second.start()
+            time.sleep(0.5)
+            self.assertTrue(second.is_alive())  # blocked on the state row lock
+            release.set()
+            first.join(30)
+            second.join(30)
+        self.assertEqual(errors, [])
+        state = SurveyAnalysisState.objects.get(survey=survey)
+        self.assertEqual((state.publish_sequence, state.published_upload_uuid), (12, uuid12))
+        self.assertEqual(state.published_display_payload["statistics"]["title"], "twelve")
+        self.assertFalse(PublishedResultRecord.objects.get(publish_uuid=uuid11).applied)

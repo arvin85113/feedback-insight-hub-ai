@@ -271,9 +271,14 @@ def survey_sequences(node):
         node=node, status=SubmissionReceipt.Status.ABANDONED
     ).values_list("survey_id", "response_sequence"):
         abandoned.setdefault(survey_id, []).append(sequence)
+    from feedback.models import SurveyAnalysisState
+
+    published = dict(
+        SurveyAnalysisState.objects.filter(survey__owner_node=node).values_list("survey_id", "publish_sequence")
+    )
     return [
         {"survey_uuid": str(survey_uuid), "response_sequence": sequence,
-         "abandoned_sequences": sorted(abandoned.get(pk, []))}
+         "abandoned_sequences": sorted(abandoned.get(pk, [])), "publish_sequence": published.get(pk, 0)}
         for pk, survey_uuid, sequence in Survey.objects.filter(owner_node=node)
         .order_by("pk")
         .values_list("pk", "uuid", "response_sequence")
