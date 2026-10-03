@@ -131,7 +131,7 @@ Worker 的分析經由 `background_analysis.descriptors` 以 `AnalysisField` 臨
 - **填答**：只接受已發布且收件中的問卷；回覆記錄 `FeedbackSubmission.definition_version`（新增欄位，可空）。
 - **複製為新草稿**：建立新問卷（新網址、`published_at` 為空、版本 0），題目與選項**保留原代碼**，以利日後跨問卷對應（例如前後測）；
   新舊問卷的分析各自獨立。
-- **節點問卷（C1）**：只有已發布的問卷能指派給節點。定義 dict 加入 `published`；`change_definition` 只在草稿時接受題目變更，
+- **節點問卷（C1）**：收件節點在發布時決定——草稿可設定節點，發布時同時設定 `inbox_since`；**發布後不可變更**（`assign_survey_to_node` 與 `enable_survey_inbox` 對已發布問卷一律拒絕），因此不需要搬移既有回覆。定義 dict 加入 `published`；`change_definition` 只在草稿時接受題目變更，
   已發布時只接受收件狀態與封存的變更（拒絕原因 `published_locked`）。
 - **C1 定義 dict 改為 `schema_version: 2`**：題目加入 `choices`（含 `excluded`、`score`）、`ordered`、`display`、`score_start`、
   `scale_min`、`scale_max`、`scale_min_label`、`scale_max_label`，保留 `enable_keyword_tracking`，移除 `options_text`。
@@ -155,6 +155,7 @@ TripAdvisor（真實外部資料，答案只在本機 Parquet，Supabase 只有�
    整體滿意度（刻度 1–10，兩端標籤）、推薦意願（刻度 0–10）、等候時間感受（有序單選，含「不適用」排除選項）、
    等候分鐘數與消費金額（允許小數 → Pearson）、來店次數（整數）、改善建議（段落）。
    填答者名稱維持「飲料店模擬填答」標示；在本機或隔離環境驗證後，經授權寫入正式資料庫並重新發布分析（AI 段落使用 Gemini 需另行授權）。
+   收件匣在正式網站開啟後，此模擬問卷以 `purge_survey` 清除，改建為指派節點的問卷再重新模擬（不搬移）。
 
 ### 5.1 問卷刪除政策與 `purge_survey`
 
@@ -177,7 +178,7 @@ TripAdvisor（真實外部資料，答案只在本機 Parquet，Supabase 只有�
 範本與標準量表內容、題組（矩陣）、反向計分與構面總分、分頁與說明區塊、依答案跳題、排序題、日期與時間、檔案上傳、滑條、
 前後測與同人配對（後測為獨立區域或後測專用問卷）、新增統計方法（信度、NPS／前兩高分、離散與複選題檢定、事後比較、多重比較校正、配對檢定）、
 多人即時協作與拖曳排序、關鍵字建議與自動分類。需求來源見[真實問卷反推的題目與統計需求](../../survey-instrument-requirements.md)。
-雲端同步 C4（搬移）在本改版完成後依新格式修訂。
+雲端同步 C4（搬移）擱置：收件節點在發布時決定，不搬移既有回覆（見雲端同步規格第 10 節）。
 
 ## 測試
 
@@ -192,7 +193,7 @@ TripAdvisor（真實外部資料，答案只在本機 Parquet，Supabase 只有�
 - 刪除：草稿可刪除、已發布只能封存；`purge_survey` dry-run 不寫入；`--confirm` 依序刪除且不留下孤兒改善紀錄；拒絕指派給節點的問卷；
   `seed_demo_beverage --reset` 在已有回覆與 revision 時仍可重建。
 - 錯誤顯示：不合法輸入時卡片內顯示錯誤、輸入保留。
-- C1：`schema_version` 1 的舊 revision 可讀入並轉換，雲端與本機結果相同；只接受 v2 寫入；已發布問卷的題目變更以 `published_locked` 拒絕；只能指派已發布的問卷。
+- C1：`schema_version` 1 的舊 revision 可讀入並轉換，雲端與本機結果相同；只接受 v2 寫入；已發布問卷的題目變更以 `published_locked` 拒絕；草稿指派節點後發布時設定 `inbox_since`；已發布問卷改指派節點或啟用收件匣被拒。
 - C2：選擇題以代碼傳送，雜湊依新封套；`payload_version=1` 被隔離；本機寫入 `choice_codes` 與 `value`。
 - 文字分析：選擇題、數字題、刻度題不進入關鍵字與情緒分析；簡答預設不納入。
 - 外部資料：兩份 mapping 通過 `derive_data_type`；TripAdvisor 評分題遷移為 1–5 範圍且為已發布；題目與 mapping 相容比對通過；Amazon 小型匯入寫入 `choice_codes`。

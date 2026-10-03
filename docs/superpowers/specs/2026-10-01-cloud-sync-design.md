@@ -29,7 +29,7 @@
 
 端對端加密（下一子專案，且為接入真實資料的前提）；改善進度與顧客通知的雲端代寄；多節點、多組織；
 依歷史版本讀取定義的分析輸入（本階段以限制語意變更處理，見第 2 節）；
-TripAdvisor 完整分析（子專案 2）；機器學習窗口（子專案 3）；正式網站切換與真實資料搬移的執行。
+TripAdvisor 完整分析（子專案 2）；機器學習窗口（子專案 3）；正式網站切換的執行；既有回覆搬移（不提供，見第 10 節）。
 
 ## 1. 資料歸屬
 
@@ -57,7 +57,6 @@ TripAdvisor 完整分析（子專案 2）；機器學習窗口（子專案 3）�
 | 已收件 | 收據與既有 `FeedbackSubmission` 依 `submission_uuid` 取聯集後的筆數（不含 `abandoned`） |
 | 待收 | 收件匣 `state=pending` 筆數（查詢計算） |
 | 已同步 | 收據 `status=synced` 筆數 |
-| 雲端既有（未搬移） | 仍只存在雲端 `FeedbackSubmission`、尚未搬移的回覆數；單獨列出，不併入已同步，也不在結果的輸入水位內 |
 | 衝突 | 收據 `status=quarantined` 筆數（查詢計算） |
 | 已放棄 | 收據 `status=abandoned` 筆數 |
 | 已分析 | 雲端目前套用的發布版本所涵蓋的**唯一回覆數**（發布指標 `analyzed_unique`）；不是分析執行次數，也不代表 Gemini 已完成 |
@@ -74,11 +73,12 @@ TripAdvisor 完整分析（子專案 2）；機器學習窗口（子專案 3）�
   （`survey`、`version`、`definition`：完整定義 JSON，含問卷封存狀態與每題啟用狀態），兩端都保存。
 - 雲端網站的問卷編排表單也帶 `definition_version`，與 API 用同樣的條件式寫入；不一致時拒絕並提示「版本不一致，請重新載入」。
 - **不硬刪**：刪除問卷改為封存（既有 `archived_at`），刪除題目改為停用（`is_active=False`），兩者都是一次定義變更。
-  因此雲端尚未搬移的舊答案不會被 CASCADE 刪除，同步也不需要另外的刪除墓碑。
+  因此答案不會被 CASCADE 刪除，同步也不需要另外的刪除墓碑。
 - **題目語意鎖**：`Question.has_received_answer`（預設 `False`）。雲端接受一筆收件時，在同一交易內將封套 `answers` 中出現的每一題設為 `True`；
-  指派節點時與搬移前，從既有 `Answer` 回填。已為 `True` 的題目不得改變語意欄位（`kind`、`data_type`、`options_text`），
+  指派節點時從既有 `Answer` 回填（依第 10 節，指派時不應已有答案）。已為 `True` 的題目不得改變語意欄位（`kind`、`data_type`、`options_text`），
   雲端網站與 API 一律拒絕並提示「此題已有回覆，請新增題目取代並停用舊題」；標題、說明、順序、啟用狀態可改，新增題目不受限。
   現有分析 adapter 依目前題目定義讀取答案，此限制確保舊答案不被套用新語意。
+  [問卷建立工具改版](2026-10-03-survey-builder-redesign-design.md)實作後，改由「發布後定義固定」取代此語意鎖。
 - **問卷列鎖**：收件（寫入收件匣、收據、設定 `has_received_answer`、遞增 `response_sequence`）與任何問卷定義變更
   都先以 `select_for_update` 鎖定該問卷的 `Survey` 列，再做檢查與寫入。因此「修改題目語意」與「該題第一筆回答」必有明確先後；
   先回答者成功後，語意修改被拒絕。
@@ -88,7 +88,7 @@ TripAdvisor 完整分析（子專案 2）；機器學習窗口（子專案 3）�
      即使問卷之後已更新版本）；這裡比對的是原封套內的版本，不會把答案改標成新版本。
   2. **只有新提交**才與目前版本比對；不一致即拒絕寫入、不占額度，重新顯示表單並提示「問卷已更新，請確認後重新送出」
   （保留顧客已填內容供其確認），**不得把依舊版填寫的答案標成新版本**。封套的 `definition_version` 一律取自表單帶回且已核對的值。
-- `Survey.response_sequence`（雲端）：在問卷列鎖內，每接受一筆收件（含搬移轉入）遞增一次，並寫入該筆封套與收據，作為**回覆水位**。
+- `Survey.response_sequence`（雲端）：在問卷列鎖內，每接受一筆收件遞增一次，並寫入該筆封套與收據，作為**回覆水位**。
 - 回覆：`submission_uuid` 為穩定 ID，沿用 `FeedbackSubmission.idempotency_key`；現有填答表單已帶此欄位送出，收件匣路徑直接沿用。
 - **雜湊**（`hash_version = 1`，兩者都對標準 JSON 序列化取 SHA-256：物件鍵排序、`separators=(",", ":")`、`ensure_ascii=False`、UTF-8，
   **不做任何字串正規化**；「緊湊格式」只指 JSON 分隔符號，不刪除字串內空白）：
@@ -108,7 +108,7 @@ TripAdvisor 完整分析（子專案 2）；機器學習窗口（子專案 3）�
 - `ChangeClock`（單列）與 `SurveyChange`（`seq`、`survey`、`definition_version`）：見第 4 節「提交安全的變更序列」。
 - `InboxSubmission`：`submission_uuid`（唯一）、`survey`、`envelope`（見下）、`answers_hash`、`payload_hash`、`hash_version`、
   `payload_version`（本階段 1，保留給加密版本）、`size_bytes`、`received_at`、`state`（`pending`／`quarantined`）。
-- **收件封套** `envelope`：`submission_uuid`、`survey_uuid`、`definition_version`、`definition_history`（`recorded`／`migration_baseline`）、
+- **收件封套** `envelope`：`submission_uuid`、`survey_uuid`、`definition_version`、`definition_history`（`recorded`；`migration_baseline` 保留於格式中，因不搬移而不會產生）、
   `response_sequence`、`submitted_at`（原始提交時間）、`consent_follow_up`、`is_complete`、`voided_at`、
   `respondent`（`cloud_user_ref` 不透明字串、`name`、`email` 快照）、`answers`（以題目 uuid 為鍵、保留原始 JSON 型態，例如複選題為陣列）。
 - `SubmissionReceipt`：`submission_uuid`（唯一）、`survey`、`user`、`submitted_at`、`consent_follow_up`、`response_sequence`、
@@ -247,7 +247,6 @@ TripAdvisor 完整分析（子專案 2）；機器學習窗口（子專案 3）�
     不成立時顯示「有 N 筆新回覆尚未分析」。
   - **管線**：分析設定與管線版本由本機申報，雲端只能呈現、無法獨立驗證；規格明確標示這一項為本機申報值。
   不成立者保存為**最後成功結果**並標示原因（問卷已變更／有新回覆待分析），不標為最新；各段完成狀態原樣呈現（例如統計已完成、AI 未執行）。
-  尚未搬移的雲端既有回覆不在水位內，網站另外顯示「雲端既有 N 筆未納入分析」。
 - **序號接續**：只有**新的本機發布**才取號。取號時以最近一次心跳得知的雲端最大序號與本機已用最大值取 `max(...) + 1`；
   本機從備份還原後，新的分析因此接在雲端序號之後。還原前已發布、還原後重送的舊結果沿用原身分，若已過期就只進歷史，不推進展示指標。
   離線期間只用本機值取號；若之後發現與雲端序號重疊，該次上傳依上述規則成為過期歷史，由下一次新發布（重新取號）取代，不改動既有發布的身分。
@@ -280,34 +279,24 @@ TripAdvisor 完整分析（子專案 2）；機器學習窗口（子專案 3）�
 - **整體資料庫監控**：雲端管理頁與心跳回應提供資料庫實際用量（含收據、索引、結果），達 400 MB 警示
   （Supabase 免費上限 500 MB；刪除資料不保證立即縮小占用）。
 
-## 10. 雲端既有回覆的歷史版本
+## 10. 不搬移既有回覆
 
-雲端現有回覆從未記錄題目版本。搬移時以問卷當下定義建立版本 1 作為**搬移基準版本**，封套標記 `definition_history = migration_baseline`，
-表示「填答當時版本未知，依搬移時定義對應，**歷史語意一致性未確認**」，不宣稱是填答當時的版本。
-指派節點時從既有 `Answer` 回填 `has_received_answer`，只能防止**之後**改變這些題目的語意，不能證明指派前題目從未被改過。
-因此 `migration_baseline` 的回覆在本機與網站保留「歷史版本未知」標示，分析結果的發布指標另外列出這類回覆的筆數。
+問卷的收件節點在**發布時**決定（`owner_node` 與 `inbox_since` 同時設定），發布後不可變更；已有回覆的問卷不能改指派節點。
+因此每份節點問卷從第一筆回覆起就走收件匣，雲端不會留下需要搬移的既有回覆，不提供搬移、對帳與清理程序（原 C4 計畫擱置）。
 
-## 11. 切換與搬移（程式在本階段完成，執行需另行批准）
+前提是正式網站開啟收件匣之前不收真實顧客回覆（第 12 節）。開啟前存在的問卷只有測試與模擬資料：舊問卷依
+[問卷建立工具改版](2026-10-03-survey-builder-redesign-design.md) 第 5 節刪除；飲料店模擬問卷在收件匣開啟後以 `purge_survey` 清除，
+再建立為指派節點的問卷並重新模擬。需要改由其他節點收件時，複製成新問卷。
 
-以問卷為單位切換，避免兩套計數混用：
+## 11. 切換
 
 1. 備份 Supabase，並實際還原到隔離資料庫驗證可用。
-2. 對一份問卷設定 `owner_node` 與 `inbox_since`（需 `CLOUD_INBOX_ENABLED`），同時從既有 `Answer` 回填 `has_received_answer`：
-   此後該問卷新回覆只走收件匣、取得回覆序號，雲端不再為它排程分析；之前的回覆留在 `FeedbackSubmission`，顯示為「雲端既有（未搬移）」。
-3. 搬移指令將該問卷 `inbox_since` 之前的回覆**分批**轉入收件匣（每批受第 9 節容量限制，滿額即暫停等待本機收回；轉入時依原提交時間順序取得回覆序號），
-   保留來源 ID、原始提交資訊、`answers_hash`、`payload_hash`、答案數、題目 uuid 與 `definition_history = migration_baseline`；
-   同時建立收據並保存既有改善關聯的最後已知狀態。可重複執行，已轉者略過。
-4. 本機收回後產生對帳報告：逐筆比對 ID、雜湊、答案數與題目關聯。
-5. 經你確認後執行清理，在 `suppress_analysis_scheduling()` 內進行（該問卷已不在雲端排程，雙重保護）。清理當下**重新核對**雲端資料的雜湊與報告一致，只處理逐筆確認者：
-   - **刪除**：該回覆的 `Answer` 列（答案正文與 `analysis_text`、`sentiment_score`、`analysis_version` 等衍生文字快取）；
-     清空 `FeedbackSubmission` 的 `respondent_name`、`respondent_email`。
-   - **保留**：`FeedbackSubmission` 列本身（`ImprovementDispatch.submission` 等關聯為 `SET_NULL`，刪除會失去關聯）、收據、改善項目與通知紀錄、
-     雲端已套用的發布結果、題目的 `has_received_answer`。
-   - 不清空整張表；未通過核對者列入報告並保留。
+2. 開啟 `CLOUD_INBOX_ENABLED`（需另行批准，見第 12 節）。
+3. 之後發布的問卷在發布時指派節點，第一筆回覆起只走收件匣、取得回覆序號，雲端不為它排程分析。
 
 ## 12. 上線門檻
 
-- 本階段不在正式網站開啟 `CLOUD_INBOX_ENABLED`、不設定任何問卷的 `owner_node`／`inbox_since`、不執行搬移。
+- 本階段不在正式網站開啟 `CLOUD_INBOX_ENABLED`、不設定任何問卷的 `owner_node`／`inbox_since`；開啟前不收真實顧客回覆。
 - 真實顧客回覆接入收件匣之前，須完成加密子專案（瀏覽器以節點公鑰加密、雲端只存密文，含金鑰綁定、備份、輪替、復原與舊資料相容），
   或由你另行明確批准附風險說明的明文過渡方案。本規格不構成該批准。
 - 明文收件匣**不符合**架構總覽「雲端只存密文」的設計，只作為隔離環境的原型。
@@ -329,12 +318,11 @@ TripAdvisor 完整分析（子專案 2）；機器學習窗口（子專案 3）�
 - 本機同步單元測試（假客戶端）：錯誤分類與 `Retry-After`、`PendingAck` 只刪逐筆成功者、游標只在提交後推進、重新連結走 `snapshot`、
   缺少定義版本時不寫入不 ACK、原始 `submitted_at` 與提交資訊保留、`respondent_ref` 不對應本機 User、
   `SyncedSubmissionSource` 保存原始答案與雜湊並用於重複判定（複選題原始陣列可還原）、`synced_through_sequence` 被隔離項目卡住、放回並寫入後越過、放棄後經心跳越過、
-  雲端刪除或停用題目時本機答案保留、定義變更觸發本機重算、`ResultUpload` 同交易建立與補排、還原後新發布接續雲端序號、還原前的舊結果重送時沿用原身分並成為過期歷史、`migration_baseline` 回覆保留「歷史版本未知」標示。
+  雲端刪除或停用題目時本機答案保留、定義變更觸發本機重算、`ResultUpload` 同交易建立與補排、還原後新發布接續雲端序號、還原前的舊結果重送時沿用原身分並成為過期歷史。
 - 雜湊：鍵順序不同的相同內容雜湊相同；字串內空白或 Unicode 形式不同則雜湊不同；`answers_hash` 相同而同意追蹤不同時 `payload_hash` 不同。
 - **端對端（驗收）**：雲端以 cloud 模式在子程序啟動（獨立 SQLite），本機以 node 模式（另一個獨立 SQLite）經 API 交換；
   涵蓋問卷雙向修改與版本不一致、填答 → 收件匣 → 本機 → 分析 → 上傳 → 雲端顯示、定義變更與新回覆後舊結果的標示，
   以及本機寫入後崩潰、ACK 遺失、部分成功、結果上傳回應遺失與重送。
 - 併發（隔離 PostgreSQL，沿用現有 CI job）：原子占用、併發 ACK、變更序列、條件式問卷更新、**兩份結果同時上傳時經 `SurveyAnalysisState` 列鎖依序比較、不被較舊序號覆蓋，網站讀到的永遠是 `SurveyAnalysisState` 指向的結果**，以及**語意修改與該題第一筆回答同時發生**
   （兩者經問卷列鎖序列化，不變量「有答案的題目語意不變」成立）。
-- 搬移：以隔離資料庫驗證分批、可重複執行、基準版本標記、依原提交順序取號、對帳報告、清理前重新核對、清理不觸發分析排程、
-  只清除已確認資料且保留關聯。
+- 切換：已有回覆或已發布的問卷改指派節點被拒。
