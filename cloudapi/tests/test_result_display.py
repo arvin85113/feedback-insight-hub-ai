@@ -64,8 +64,9 @@ class ResultDisplayTests(TestCase):
         make_receipt(self.survey, 2)
         FeedbackSubmission.objects.create(survey=self.survey)
         page = self.client.get(reverse("feedback:stats-overview") + "?survey=s")
-        for text in ("本機發布 #1", "有 1 筆新回覆尚未分析", "雲端既有 1 筆未納入分析", "管線版本由本機申報"):
+        for text in ("本機發布 #1", "有 1 筆新回覆尚未分析", "管線版本由本機申報"):
             self.assertContains(page, text)
+        self.assertNotContains(page, "雲端既有")  # no migration of existing replies (cloud sync spec §10)
 
     def test_catalog_counts_use_uploaded_coverage(self):
         from feedback.views import _survey_catalog_rows

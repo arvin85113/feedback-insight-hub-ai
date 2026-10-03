@@ -22,7 +22,7 @@ from feedback.models import Question, Survey
 survey = Survey.objects.create(title="門市問卷", slug="{slug}")
 Question.objects.create(survey=survey, title="感想", kind="long_text", data_type="text", order=1)
 survey = assign_survey_to_node(survey, NodeDevice.objects.get(name="e2e")).survey
-Survey.objects.filter(pk=survey.pk).update(inbox_since=timezone.now())
+Survey.objects.filter(pk=survey.pk).update(inbox_since=timezone.now(), published_version=1, analysis_definition_version=1)
 get_user_model().objects.get_or_create(username="{slug}-customer")
 print(survey.uuid)
 """

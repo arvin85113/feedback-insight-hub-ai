@@ -22,7 +22,7 @@ class InboxManageTests(TestCase):
         survey = Survey.objects.create(title="S", slug="s")
         question = Question.objects.create(survey=survey, title="Q", kind="short_text", data_type="text", order=1)
         self.survey = assign_survey_to_node(survey, self.node).survey
-        Survey.objects.filter(pk=self.survey.pk).update(inbox_since=timezone.now())
+        Survey.objects.filter(pk=self.survey.pk).update(inbox_since=timezone.now(), published_version=1, analysis_definition_version=1)
         self.customer = User.objects.create_user(username="c", password="x")
         self.answers = {str(question.uuid): "好吃的珍珠"}
         self.receipt = accept_submission(Survey.objects.get(pk=self.survey.pk), user=self.customer,

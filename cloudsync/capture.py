@@ -32,4 +32,9 @@ def capture_scope(survey):
         "voided": in_scope.filter(voided_at__isnull=False).count(),
         "incomplete": in_scope.filter(voided_at__isnull=True, is_complete=False).count(),
     }
-    return CaptureScope(watermark, survey.definition_version, submission_filter, excluded)
+    # Results are declared against the last definition version that changed analysis (builder spec §7.2).
+    definition_version = (
+        survey.analysis_definition_version if survey.analysis_definition_version is not None
+        else survey.definition_version
+    )
+    return CaptureScope(watermark, definition_version, submission_filter, excluded)

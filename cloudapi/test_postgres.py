@@ -100,7 +100,7 @@ class _InboxPostgreSQLCase(TransactionTestCase):
         question = Question.objects.create(survey=survey, title="Q", kind=kind, data_type=data_type,
                                            options_text=options_text, order=1)
         survey = assign_survey_to_node(survey, node).survey
-        Survey.objects.filter(pk=survey.pk).update(inbox_since=timezone.now())
+        Survey.objects.filter(pk=survey.pk).update(inbox_since=timezone.now(), published_version=1, analysis_definition_version=1)
         survey.refresh_from_db()
         return survey, question
 

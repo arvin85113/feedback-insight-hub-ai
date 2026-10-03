@@ -21,7 +21,7 @@ class InboxFillPageTests(TestCase):
         survey = Survey.objects.create(title="S", slug="s")
         self.question = Question.objects.create(survey=survey, title="Q", kind="short_text", data_type="text", order=1)
         self.survey = published(assign_survey_to_node(survey, node).survey)
-        Survey.objects.filter(pk=self.survey.pk).update(inbox_since=timezone.now())
+        Survey.objects.filter(pk=self.survey.pk).update(inbox_since=timezone.now(), published_version=1, analysis_definition_version=1)
         self.customer = User.objects.create_user(username="c", password="x")
         self.client.force_login(self.customer)
         self.url = reverse("feedback:survey-detail", args=["s"])
