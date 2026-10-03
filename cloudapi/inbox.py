@@ -142,6 +142,8 @@ def ack_items(node, items):
     for item in items:
         uid, hash_ = str(item["submission_uuid"]), str(item["payload_hash"])
         with transaction.atomic():
+            # Global inbox lock order (spec §7.4): receipt, then body, then counter.
+            list(SubmissionReceipt.objects.select_for_update().filter(submission_uuid=uid, node=node).values_list("pk", flat=True))
             pending = InboxSubmission.objects.filter(
                 submission_uuid=uid, node=node, state=InboxSubmission.State.PENDING, payload_hash=hash_
             )
@@ -178,6 +180,8 @@ def quarantine_items(node, items):
     for item in items:
         uid, reason = str(item["submission_uuid"]), item["reason"]
         with transaction.atomic():
+            # Global inbox lock order (spec §7.4): receipt, then body, then counter.
+            list(SubmissionReceipt.objects.select_for_update().filter(submission_uuid=uid, node=node).values_list("pk", flat=True))
             moved = InboxSubmission.objects.filter(
                 submission_uuid=uid, node=node, state=InboxSubmission.State.PENDING
             ).update(state=InboxSubmission.State.QUARANTINED, quarantine_reason=reason)

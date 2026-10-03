@@ -69,3 +69,34 @@ class InboxApiTests(TestCase):
         self.assertEqual((body["inbox"]["pending_count"], body["inbox"]["deadline_state"]), (1, "ok"))
         self.assertEqual(body["surveys"], [{"survey_uuid": str(self.survey.uuid), "response_sequence": 1,
                                             "abandoned_sequences": [], "publish_sequence": 0}])
+
+
+@cloud_only
+@override_settings(CLOUD_SYNC_PROTOTYPE_ENABLED=True, CLOUD_INBOX_ENABLED=True)
+class InboxLockOrderTests(InboxApiTests):
+    """Spec §7.4: every inbox writer touches the receipt before the body (receipt, body, counter)."""
+
+    def first_table(self, action):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        receipts, bodies = SubmissionReceipt._meta.db_table, InboxSubmission._meta.db_table
+        with CaptureQueriesContext(connection) as queries:
+            action()
+        for query in queries.captured_queries:
+            sql = query["sql"]
+            if receipts in sql or bodies in sql:
+                return receipts if receipts in sql else bodies
+        return None
+
+    def test_ack_touches_receipt_before_body(self):
+        from cloudapi.inbox import ack_items
+
+        item = {"submission_uuid": str(self.receipt.submission_uuid), "payload_hash": self.receipt.payload_hash}
+        self.assertEqual(self.first_table(lambda: ack_items(self.node, [item])), SubmissionReceipt._meta.db_table)
+
+    def test_quarantine_touches_receipt_before_body(self):
+        from cloudapi.inbox import quarantine_items
+
+        item = {"submission_uuid": str(self.receipt.submission_uuid), "reason": "content_conflict"}
+        self.assertEqual(self.first_table(lambda: quarantine_items(self.node, [item])), SubmissionReceipt._meta.db_table)

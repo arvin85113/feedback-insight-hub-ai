@@ -290,7 +290,7 @@ ORM 與 Worker 兩條統計路徑的母體一致：以該問卷完成且未作�
 | 其他問卷的改善發送紀錄指向本問卷回覆、改善紀錄指向本問卷 AI Stage（`SET_NULL`） | 保留，指標清空 |
 
 - 全部在一個交易內，先鎖問卷列，並在 `suppress_analysis_scheduling()` 內執行（刪除不得排程任何分析工作）。
-- 收件匣的**全域鎖序**：問卷列（只有 purge）→ `SubmissionReceipt`（依 pk）→ `InboxSubmission`（依 pk）→ `InboxCounter`。abandon 已是此順序；ACK 改為先鎖該回覆的收據再鎖正文（原本先鎖正文）。purge **只對實際鎖定並刪除的正文**依節點加總後更新 `InboxCounter`，已被 ACK 或 abandon 先刪除的正文不再扣減。
+- 收件匣的**全域鎖序**：問卷列（只有 purge）→ `SubmissionReceipt`（依 pk）→ `InboxSubmission`（依 pk）→ `InboxCounter`。abandon 已是此順序；ACK 與隔離（`quarantine_items`）改為先鎖該回覆的收據再鎖正文（原本先動正文）。purge **只對實際鎖定並刪除的正文**依節點加總後更新 `InboxCounter`，已被 ACK 或 abandon 先刪除的正文不再扣減。
 - 雲端拒絕 `owner_node` 有值的問卷。本機以 `SurveySyncState` 辨識雲端副本：**本機套用雲端定義（`upsert_definition`）建立問卷時，在同一交易內建立 `SurveySyncState`**，因此建立或複製後尚未經過同步循環也能辨識；本機拒絕清除雲端副本，刪除按鈕改走雲端（第 7.1 節）。本機資料庫的測試資料改以整個重建處理（需授權）。
 - **dry-run**：在同一個交易內實際執行刪除、記錄各模型筆數後回滾，列出的筆數即實際會刪除的量；不得以 `Collector.collect()` 預估（遇到 `PROTECT` 會直接失敗）。
 - 不為了方便刪除而把任何 `PROTECT` 改成 `CASCADE`。

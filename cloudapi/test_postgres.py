@@ -280,3 +280,123 @@ class ConcurrentResultPostgreSQLTests(_InboxPostgreSQLCase):
         self.assertEqual((state.publish_sequence, state.published_upload_uuid), (12, uuid12))
         self.assertEqual(state.published_display_payload["statistics"]["title"], "twelve")
         self.assertFalse(PublishedResultRecord.objects.get(publish_uuid=uuid11).applied)
+
+
+class PurgeInboxLockOrderPostgreSQLTests(TransactionTestCase):
+    """purge, ACK and abandon share one lock order (receipt, body, counter), so none of them deadlocks (spec §7.4)."""
+
+    @classmethod
+    def setUpClass(cls):
+        if connection.vendor != "postgresql":
+            raise SkipTest("需要使用隔離 PostgreSQL 執行")
+        super().setUpClass()
+
+    def setUp(self):
+        import uuid as uuid_module
+
+        from django.utils import timezone
+
+        from cloudapi.models import InboxCounter, InboxSubmission, SubmissionReceipt
+        from feedback.models import Survey
+
+        self.node, _ = NodeDevice.issue("pg-purge")
+        self.survey = Survey.objects.create(title="purge", slug="purge-pg", owner_node=self.node)
+        self.uid = uuid_module.uuid4()
+        state = InboxSubmission.State.QUARANTINED if self.quarantined else InboxSubmission.State.PENDING
+        InboxSubmission.objects.create(submission_uuid=self.uid, node=self.node, survey=self.survey, envelope={},
+                                       answers_hash="a" * 64, payload_hash="a" * 64, size_bytes=100, state=state)
+        self.receipt = SubmissionReceipt.objects.create(
+            submission_uuid=self.uid, node=self.node, survey=self.survey, submitted_at=timezone.now(),
+            definition_version=1, response_sequence=1, payload_hash="a" * 64,
+            status=SubmissionReceipt.Status.QUARANTINED if self.quarantined else SubmissionReceipt.Status.RECEIVED,
+        )
+        InboxCounter.objects.update_or_create(node=self.node, defaults={"occupied_count": 1, "occupied_bytes": 100})
+        Survey.objects.filter(pk=self.survey.pk).update(owner_node=None)
+
+    quarantined = False
+
+    def race(self, other):
+        """Purge holds the receipt locks; `other` must queue behind them instead of grabbing the body first."""
+
+        from unittest.mock import patch
+
+        from django.core.exceptions import ObjectDoesNotExist
+
+        import feedback.survey_purge as purge_module
+
+        from feedback.models import Survey
+
+        holding, release = threading.Event(), threading.Event()
+        purge_errors, competitor_errors = [], []
+        original = purge_module._lock_receipts
+
+        def lock_then_hold(survey):
+            original(survey)
+            holding.set()
+            release.wait(10)
+
+        def run(target, errors, *, allowed=()):
+            try:
+                target()
+            except allowed:
+                pass  # losing the race to purge (the row is already gone) is an allowed outcome
+            except Exception as exc:  # a deadlock abort (OperationalError) or any purge failure lands here
+                errors.append(exc)
+            finally:
+                close_old_connections()
+
+        with patch.object(purge_module, "_lock_receipts", side_effect=lock_then_hold):
+            purger = threading.Thread(target=run, args=(lambda: purge_module.purge_survey(self.survey), purge_errors))
+            purger.start()
+            self.assertTrue(holding.wait(10))
+            competitor = threading.Thread(target=run, args=(other, competitor_errors),
+                                          kwargs={"allowed": (ObjectDoesNotExist,)})
+            competitor.start()
+            time.sleep(0.5)
+            self.assertTrue(competitor.is_alive())  # queued on the receipt lock
+            release.set()
+            purger.join(30)
+            competitor.join(30)
+        self.assertFalse(purger.is_alive() or competitor.is_alive())
+        self.assertEqual((purge_errors, competitor_errors), ([], []))
+        self.assertFalse(Survey.objects.filter(pk=self.survey.pk).exists())
+
+    def assert_capacity_matches_bodies(self):
+        from django.db.models import Sum
+
+        from cloudapi.models import InboxCounter, InboxSubmission
+
+        counter = InboxCounter.objects.get(node=self.node)
+        bodies = InboxSubmission.objects.filter(node=self.node)
+        self.assertEqual((counter.occupied_count, counter.occupied_bytes),
+                         (bodies.count(), bodies.aggregate(total=Sum("size_bytes"))["total"] or 0))
+
+    def test_purge_and_ack_do_not_double_release_capacity(self):
+        from cloudapi.inbox import ack_items
+
+        self.race(lambda: ack_items(self.node, [{"submission_uuid": str(self.uid), "payload_hash": "a" * 64}]))
+        self.assert_capacity_matches_bodies()
+
+
+class PurgeAbandonLockOrderPostgreSQLTests(PurgeInboxLockOrderPostgreSQLTests):
+    quarantined = True
+
+    def test_purge_and_ack_do_not_double_release_capacity(self):
+        self.skipTest("covered by the parent class")
+
+    def test_purge_and_abandon_do_not_double_release_capacity(self):
+        from cloudapi.inbox import abandon
+
+        self.race(lambda: abandon(self.receipt, None))
+        self.assert_capacity_matches_bodies()
+
+
+class PurgeQuarantineLockOrderPostgreSQLTests(PurgeInboxLockOrderPostgreSQLTests):
+    def test_purge_and_ack_do_not_double_release_capacity(self):
+        self.skipTest("covered by the parent class")
+
+    def test_purge_and_quarantine_do_not_deadlock(self):
+        from cloudapi.inbox import quarantine_items
+
+        self.race(lambda: quarantine_items(self.node, [{"submission_uuid": str(self.uid), "reason": "content_conflict"}]))
+        self.assert_capacity_matches_bodies()
