@@ -4,6 +4,14 @@
 [本機節點架構總覽](2026-09-30-local-node-architecture-design.md)；本機節點基礎見
 [主控台與登入](2026-09-30-local-node-console-and-auth-design.md)。
 
+> **問卷建立工具改版後的取代說明**（[改版規格](2026-10-03-survey-builder-redesign-design.md) 實作時一併套用）：
+> - 問卷改為草稿／發布生命週期：只有草稿能編輯題目，發布後只接受白名單設定變更；第 1 節「兩端都能編輯」僅限草稿。
+> - 第 2 節的「只套用在 `owner_node` 已設定的問卷」改為所有問卷都保存每個版本的 revision；填答、封套與新鮮度改用 `published_version`。
+> - 題目語意鎖（第 2 節 `has_received_answer` 的鎖定、第 4 節 API 的 422、第 8 節錯誤分類的「語意鎖」、第 13 節語意鎖與「語意修改與第一筆回答同時發生」的測試）移除，
+>   由「發布後定義固定」取代；`has_received_answer` 欄位保留但不再用於鎖定。
+> - 封套新增 `answers_format`（選擇題答案改為代碼）；`payload_version` 維持保留給加密。
+> - 不搬移既有回覆（第 10 節），`legacy_unmigrated` 與「雲端既有 N 筆未納入分析」的顯示移除。
+
 ## 目標
 
 讓一台本機節點（目前即開發機，視為一家公司）與雲端（Render＋Supabase）同步：
