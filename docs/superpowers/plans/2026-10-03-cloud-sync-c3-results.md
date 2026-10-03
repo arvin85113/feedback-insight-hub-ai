@@ -294,7 +294,7 @@ class RecordPublicationTests(TestCase):
   - `cloudapi.results.apply_upload(node, *, publish_uuid, publish_sequence, content_hash, content) -> tuple[str, bool]`；例外 `ResultConflict`、`ResultInvalid(message)`、`PermissionError`
   - `POST results/`、心跳 `surveys[].publish_sequence`
 
-`apply_upload` 順序（一個交易）：驗證（Global Constraints；問卷以合法 UUID 查 `owner_node=node`）→ `get_or_create` 後 `select_for_update` 鎖 `SurveyAnalysisState` → 同 `publish_uuid` 已存在：雜湊與序號都同回 `("applied" if state.published_upload_uuid == publish_uuid else "stale", False)`；否則在交易內記下衝突、結束交易後以 `PublishedResultRecord.objects.filter(pk=...).update(conflict_count=F("conflict_count") + 1)` 遞增，再拋 `ResultConflict` → 建歷史 → 鎖內比較三條件 → 成立則寫 `published_display_payload`、`published_ai_payload`（`None` → `{}`）、`publication_manifest = {"source": "node", "publish_uuid", "stages", "pipeline", "coverage", "ai_source", "input_fingerprint"}`、`published_at`、`published_snapshot=None`、`published_ai_stage=None`、四個新欄位，`record.applied=True`。
+`apply_upload` 順序（一個交易）：驗證（Global Constraints；`publish_uuid` 以 `uuid.UUID(...)` 解析一次，之後的查詢、寫入與比較都用解析後的值；問卷以合法 UUID 查 `owner_node=node`）→ `get_or_create` 後 `select_for_update` 鎖 `SurveyAnalysisState` → 同 `publish_uuid` 已存在：雜湊與序號都同回 `("applied" if state.published_upload_uuid == publish_uuid else "stale", False)`；否則在交易內記下衝突、結束交易後以 `PublishedResultRecord.objects.filter(pk=...).update(conflict_count=F("conflict_count") + 1)` 遞增，再拋 `ResultConflict` → 建歷史 → 鎖內比較三條件 → 成立則寫 `published_display_payload`、`published_ai_payload`（`None` → `{}`）、`publication_manifest = {"source": "node", "publish_uuid", "stages", "pipeline", "coverage", "ai_source", "input_fingerprint"}`、`published_at`、`published_snapshot=None`、`published_ai_stage=None`、四個新欄位，`record.applied=True`。
 
 - [ ] **Step 1: 寫失敗測試**
 
