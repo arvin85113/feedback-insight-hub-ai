@@ -74,4 +74,4 @@ jobs:
           python-version: "3.13"
           cache: pip
       - run: python -m pip install -r requirements.txt
-      - run: python manage.py test feedback.test_analysis_jobs_postgres --settings=config.settings_postgres_test
+      - run: python manage.py test feedback.test_analysis_jobs_postgres cloudapi.test_postgres --settings=config.settings_postgres_test

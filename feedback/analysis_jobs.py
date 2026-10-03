@@ -14,6 +14,7 @@ import json
 import re
 import uuid
 
+from django.conf import settings
 from django.db import connection, transaction
 from django.db.models import F, Q
 from django.utils import timezone
@@ -169,6 +170,9 @@ def schedule_survey_analysis(
     with transaction.atomic():
         survey = Survey.objects.select_for_update().filter(pk=survey_id).first()
         if not survey:
+            return None
+        if not settings.IS_NODE and survey.owner_node_id:
+            # Node-owned surveys are analysed only on the node (spec §3).
             return None
         binding = resolve_analysis_source(survey, lock=True)
         requested_source = any(value is not None for value in (source_kind, source_ref, source_version))
