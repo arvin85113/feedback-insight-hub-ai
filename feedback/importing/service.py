@@ -329,6 +329,8 @@ def _ensure_survey_and_questions(mapping):
             question = title_matches.first()
             matched_by_title = question is not None
         expected = _expected_question(spec, code, order)
+        if survey.published_version is not None and (question is None or (matched_by_title and question.code != code)):
+            raise ValueError(f"既有題目 {spec.title!r} 與 mapping 不相容：已發布的問卷不能新增或改題（請建立新問卷）")
         if question is None:
             item = _question_item(spec, code, order)
             question = Question.objects.create(

@@ -67,9 +67,25 @@ def _locked_write(survey, *, expected_version, definition, prepare=None):
     return record_version(survey)
 
 
+def _check_choice_codes(survey, definition):
+    """An existing question keeps its codes; new options arrive without one (builder spec §2.1)."""
+
+    existing = {str(q.uuid): ({c["code"] for c in q.choices}, q.next_choice_number) for q in survey.questions.all()}
+    for item in definition["questions"]:
+        if str(item["uuid"]) not in existing:
+            continue
+        known, next_number = existing[str(item["uuid"])]
+        for choice in item["choices"]:
+            code = choice.get("code") or ""
+            # A code the question never had must be fresh (at or above its counter): deleted codes stay retired.
+            if code and code not in known and int(code[1:]) < next_number:
+                raise DefinitionError("選項代碼不可重複使用")
+
+
 def _lifecycle(survey, definition):
     """Server-owned publish fields: carried over, or set on the draft → published transition."""
 
+    _check_choice_codes(survey, definition)
     definition = dict(definition)
     next_version = survey.definition_version + 1
     definition.update(

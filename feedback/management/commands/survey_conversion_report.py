@@ -4,6 +4,8 @@ from django.db import connection
 from cloudapi.models import SurveyDefinitionRevision
 from feedback.models import Survey, SurveyAnalysisState
 from feedback.published_analysis import _stage_is_current
+from feedback.question_schema import question_errors
+from feedback.schema_conversion import converted_item
 
 
 class Command(BaseCommand):
@@ -25,6 +27,7 @@ class Command(BaseCommand):
                 if (q.kind in ("single_choice", "multiple_choice") and not q.choices)
                 or (q.kind == "scale" and q.scale_min is None)
             ]
+            invalid = [q.title for q in survey.questions.all() if question_errors(converted_item(q))]
             state = SurveyAnalysisState.objects.filter(survey=survey).first()
             current = {}
             if state is not None and state.publication_manifest:
@@ -33,10 +36,10 @@ class Command(BaseCommand):
             status = "已發布" if survey.is_published else "草稿"
             self.stdout.write(
                 f"{survey.slug}｜{status}｜定義版本 {survey.definition_version}｜發布版本 {survey.published_version}"
-                f"｜revision {'有' if has_revision else '缺'}｜未轉換題目 {len(unconverted)}"
+                f"｜revision {'有' if has_revision else '缺'}｜未轉換題目 {len(unconverted)}｜不合法題目 {len(invalid)}"
                 f"｜最新：{', '.join(f'{k}={v}' for k, v in current.items()) or '無已發布結果'}"
             )
-            if not has_revision or unconverted or not survey.is_published:
+            if not has_revision or unconverted or invalid or not survey.is_published:
                 problems += 1
         if problems:
             self.stdout.write(self.style.WARNING(f"有 {problems} 份問卷需要檢查。"))

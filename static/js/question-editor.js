@@ -12,6 +12,9 @@
     const formOf = card => card.querySelector('[data-card-form]');
     const snapshot = form => new URLSearchParams(new FormData(form)).toString();
     const initial = new Map();
+    // Snapshot only after each card's type sections are applied: disabled inputs drop out of FormData,
+    // so an earlier snapshot would mark every card as edited on page load.
+    cards.forEach(card => { if (formOf(card)) applyType(card); });
     cards.forEach(card => { const form = formOf(card); if (form) initial.set(form, snapshot(form)); });
     const isDirty = card => {
         const form = card && formOf(card);
@@ -33,8 +36,8 @@
     function discard(card) {
         const form = formOf(card);
         form.reset();
-        initial.set(form, snapshot(form));
         applyType(card);
+        initial.set(form, snapshot(form));
     }
 
     function askBeforeLeaving(card, next) {

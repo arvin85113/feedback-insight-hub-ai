@@ -763,9 +763,19 @@ class ImprovementListView(DashboardBaseMixin, TemplateView):
     def post(self, request, *args, **kwargs):
         action = request.POST.get("action")
         if action == "toggle-tracking":
+            from cloudapi.definition import serialize_definition, update_survey
+            from cloudapi.errors import DefinitionCommitError
+            from feedback.survey_lifecycle import commit
+
             survey = get_object_or_404(Survey, id=request.POST.get("survey_id"))
-            survey.improvement_tracking_enabled = request.POST.get("enabled") == "on"
-            survey.save(update_fields=["improvement_tracking_enabled"])
+            definition = serialize_definition(survey)
+            update_survey(definition, {"improvement_tracking_enabled": request.POST.get("enabled") == "on"})
+            try:
+                commit(survey, definition, survey.definition_version)
+            except DefinitionCommitError as exc:
+                messages.error(request, exc.user_message)
+                return redirect(f"{reverse('feedback:improvement-list')}?survey={survey.slug}")
+            survey.refresh_from_db()
             state = "啟用" if survey.improvement_tracking_enabled else "停用"
             messages.success(request, f"「{survey.title}」改善追蹤已{state}。")
             return redirect(f"{reverse('feedback:improvement-list')}?survey={survey.slug}")

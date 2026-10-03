@@ -31,6 +31,7 @@ class ConversionMigrationTests(TransactionTestCase):
             # Rows that made 0024 abort would block the final migrate; remove them first.
             current = executor.loader.project_state(list(executor.loader.applied_migrations)).apps
             current.get_model("feedback", "Answer").objects.all().delete()
+            current.get_model("feedback", "Question").objects.all().delete()
         executor = MigrationExecutor(connection)
         executor.migrate(executor.loader.graph.leaf_nodes())
 
@@ -211,3 +212,15 @@ class ConversionMigrationTests(TransactionTestCase):
         self.assertIn(survey.slug, out.getvalue())
         self.assertEqual((Survey.objects.count(), Question.objects.count(),
                           list(Survey.objects.values_list("updated_at", "definition_version"))), before)
+
+
+class ConversionOutputValidityTests(ConversionMigrationTests):
+    """Migration 0024 refuses data whose converted definition the builder would reject (final review #5)."""
+
+    def test_aborts_when_converted_scale_range_is_invalid(self):
+        q = self.old_question(kind="scale", data_type="ordinal", options_text="2\n3\n4\n5\n6")
+        self.assert_aborts_unchanged(q, q.survey.slug)
+
+    def test_aborts_when_text_scale_has_a_single_option(self):
+        q = self.old_question(kind="scale", data_type="ordinal", options_text="還可以")
+        self.assert_aborts_unchanged(q, q.survey.slug)

@@ -10,7 +10,7 @@ import re
 
 from cloudapi.definition import definition_from_fields
 
-from .question_schema import CHOICE_KINDS, ITEM_FIELDS, fields_from_legacy, normalize_question
+from .question_schema import CHOICE_KINDS, ITEM_FIELDS, fields_from_legacy, normalize_question, question_errors
 
 _Q_CODE_RE = re.compile(r"^q(\d+)$")
 _INTEGER_RE = re.compile(r"^-?\d+$")
@@ -31,8 +31,26 @@ def _is_integer_range(lines):
     return numbers == list(range(numbers[0], numbers[0] + len(numbers)))
 
 
+def converted_item(question):
+    """The question's fields after conversion (spec §5 step 3); shared by the migration and its report."""
+
+    item = {name: getattr(question, name) for name in ITEM_FIELDS}
+    legacy_needed = (
+        (question.kind in CHOICE_KINDS and not question.choices)
+        or (question.kind == "scale" and question.scale_min is None)
+    )
+    if legacy_needed:
+        item.update(fields_from_legacy(question.kind, question.data_type, question.options_text))
+    return normalize_question(item)
+
+
 def _problems(Question, Answer, using):
     problems = []
+    # Every converted question must be one the builder accepts, or later edits and syncs would fail.
+    for question in Question.objects.using(using).select_related("survey"):
+        errors = question_errors(converted_item(question))
+        if errors:
+            problems.append(f"{question.survey.slug}：{question.title}（轉換後不合法：{next(iter(errors.values()))}）")
     for question in Question.objects.using(using).select_related("survey").filter(
         kind__in=("single_choice", "multiple_choice", "scale")
     ):
@@ -69,14 +87,7 @@ def convert_definitions(apps, *, using):
 
     summary = {"questions": 0, "answers": 0, "surveys": 0, "revisions": 0}
     for question in Question.objects.using(using).all():
-        item = {name: getattr(question, name) for name in ITEM_FIELDS}
-        legacy_needed = (
-            (question.kind in CHOICE_KINDS and not question.choices)
-            or (question.kind == "scale" and question.scale_min is None)
-        )
-        if legacy_needed:
-            item.update(fields_from_legacy(question.kind, question.data_type, question.options_text))
-        normalized = normalize_question(item)
+        normalized = converted_item(question)
         changed = {name: value for name, value in normalized.items() if getattr(question, name) != value}
         if changed:
             Question.objects.using(using).filter(pk=question.pk).update(**changed)

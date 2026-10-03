@@ -132,8 +132,11 @@ def question_errors(item):
     if kind in CHOICE_KINDS:
         choices = [c for c in (item.get("choices") or []) if str(c.get("label", "")).strip()]
         labels = [str(c["label"]).strip() for c in choices]
+        codes = [c.get("code") or "" for c in choices if c.get("code")]
         included = [c for c in choices if not c.get("excluded")]
-        if len(labels) != len(set(labels)):
+        if any(not _CODE_RE.match(code) for code in codes) or len(codes) != len(set(codes)):
+            errors["choices"] = "選項代碼不合法或重複。"
+        elif len(labels) != len(set(labels)):
             errors["choices"] = "選項文字不可重複。"
         elif any(len(label) > MAX_CHOICE_LABEL for label in labels):
             errors["choices"] = f"選項文字不可超過 {MAX_CHOICE_LABEL} 字。"

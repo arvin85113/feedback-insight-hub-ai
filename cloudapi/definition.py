@@ -65,7 +65,9 @@ QUESTION_FIELDS = (
     "order",
 )
 EDITABLE_QUESTION_FIELDS = tuple(field for field in QUESTION_FIELDS if field not in ("code", "is_active"))
-EDITABLE_SURVEY_FIELDS = ("title", "description", "is_active", "analysis_enabled", "thank_you_email_enabled")
+EDITABLE_SURVEY_FIELDS = (
+    "title", "description", "is_active", "analysis_enabled", "thank_you_email_enabled", "improvement_tracking_enabled",
+)
 _Q_CODE_RE = re.compile(r"^q(\d+)$")
 
 
@@ -328,6 +330,10 @@ def apply_definition(survey, definition, *, version):
         elif question.is_active:
             question.is_active = False
             question.save(update_fields=["is_active"])
+    # Question.save() allocated q<n> codes through the database counter; never serialize a stale one.
+    survey.next_question_number = type(survey).objects.filter(pk=survey.pk).values_list(
+        "next_question_number", flat=True
+    ).get()
 
 
 def _question(definition, question_uuid):
