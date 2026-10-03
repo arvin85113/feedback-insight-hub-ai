@@ -1,6 +1,6 @@
 """Node-side survey edits: the cloud is the only writer (spec §1); the local copy changes only from its reply."""
 
-from cloudapi.errors import DefinitionCommitError, DefinitionError, SemanticLockViolation, VersionConflict
+from cloudapi.errors import DefinitionCommitError, DefinitionError, PublishBlocked, PublishedLocked, VersionConflict
 
 from .client import CLIENT, CONFLICT, SEMANTIC, TRANSIENT, UNAUTHORIZED, CloudError, NotLinked, client_for_link
 from .definitions import upsert_definition
@@ -26,7 +26,7 @@ def _translate(error):
     if error.kind == CONFLICT:
         return VersionConflict(error.payload.get("current_version"))
     if error.kind == SEMANTIC:
-        return SemanticLockViolation(error.payload.get("question_uuid", ""))
+        return PublishBlocked() if error.payload.get("error") == PublishBlocked.code else PublishedLocked()
     return DefinitionError(str(error))
 
 

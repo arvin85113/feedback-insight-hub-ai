@@ -22,6 +22,7 @@ from .analysis_jobs import (
 )
 from .analysis_sources import register_external_dataset_version
 from .local_service import submit_survey_payload
+from .test_utils import published
 from .models import (
     AnalysisJob,
     Answer,
@@ -37,7 +38,7 @@ from .models import (
 
 class AnalysisJobCoordinationTests(TestCase):
     def setUp(self):
-        self.survey = Survey.objects.create(title="Queue fixture", slug="queue-fixture")
+        self.survey = published(Survey.objects.create(title="Queue fixture", slug="queue-fixture"))
 
     def make_snapshot(self, marker, stage_types):
         snapshot = SurveyAIReportSnapshot.objects.create(

@@ -39,7 +39,7 @@ def envelope(sequence, submission_uuid, answers, version=1, consent=False):
             "submitted_at": datetime(2026, 9, 1, 8, sequence, tzinfo=dt_timezone.utc).isoformat(),
             "consent_follow_up": consent, "is_complete": True, "voided_at": None,
             "respondent": {"cloud_user_ref": f"ref-{sequence}", "name": "王小明", "email": "c@example.com"},
-            "answers": answers}
+            "answers": answers, "answers_format": 2}
 
 
 class FakeInboxClient:
@@ -68,13 +68,14 @@ class IntakeTests(TestCase):
         upsert_definition(definition(1))
 
     def test_written_submission_keeps_original_fields_and_raw_answers(self):
-        env = envelope(1, U1, {Q1: "好", Q2: ["甲", "乙"]}, consent=True)
+        env = envelope(1, U1, {Q1: "好", Q2: ["c1", "c2"]}, consent=True)
         self.assertEqual(intake(env, FakeInboxClient([])), "written")
         sub = FeedbackSubmission.objects.get(idempotency_key=U1)
         self.assertEqual((sub.submitted_at.isoformat(), sub.user, sub.respondent_ref), (env["submitted_at"], None, "ref-1"))
         self.assertEqual((sub.respondent_name, sub.consent_follow_up), ("王小明", True))
-        self.assertEqual(Answer.objects.get(submission=sub, question__uuid=Q2).value, "甲, 乙")
-        self.assertEqual(sub.synced_source.original_answers[Q2], ["甲", "乙"])
+        choice_answer = Answer.objects.get(submission=sub, question__uuid=Q2)
+        self.assertEqual((choice_answer.value, choice_answer.choice_codes), ("甲, 乙", ["c1", "c2"]))
+        self.assertEqual(sub.synced_source.original_answers[Q2], ["c1", "c2"])
         self.assertEqual(sub.synced_source.payload_hash, envelope_payload_hash(env))
         self.assertTrue(PendingAck.objects.filter(submission_uuid=U1).exists())
         self.assertEqual(SurveySyncState.objects.get().synced_through_sequence, 1)
@@ -137,3 +138,36 @@ class SyncInboxTests(TestCase):
         sync_inbox(FakeInboxClient([page]))
         survey = Survey.objects.get()
         self.assertEqual(AnalysisJob.objects.filter(survey=survey, status="pending").count(), 1)
+
+
+class AnswersFormatIntakeTests(TestCase):
+    """Builder spec §2.3, §7.3: choice answers travel as codes inside answers_format 2."""
+
+    def setUp(self):
+        upsert_definition(definition(1))
+
+    def test_node_quarantines_missing_answers_format(self):
+        env = envelope(1, U1, {Q1: "好"})
+        env.pop("answers_format")
+        self.assertEqual(intake(env, FakeInboxClient([])), "answers_format")
+        self.assertFalse(FeedbackSubmission.objects.exists())
+
+    def test_node_quarantines_answers_format_other_than_2(self):
+        env = envelope(1, U1, {Q1: "好"})
+        env["answers_format"] = 1
+        self.assertEqual(intake(env, FakeInboxClient([])), "answers_format")
+
+    def test_unknown_choice_code_quarantined(self):
+        self.assertEqual(intake(envelope(1, U1, {Q2: ["c9"]}), FakeInboxClient([])), "answers_format")
+        self.assertFalse(FeedbackSubmission.objects.exists())
+
+    def test_ack_after_codes_written(self):
+        env = envelope(1, U1, {Q2: ["c2"]})
+        self.assertEqual(intake(env, FakeInboxClient([])), "written")
+        self.assertEqual(PendingAck.objects.get(submission_uuid=U1).payload_hash, envelope_payload_hash(env))
+
+    def test_capture_uses_analysis_definition_version(self):
+        from cloudsync.capture import capture_scope
+
+        survey = Survey.objects.get(uuid=SURVEY_UUID)
+        self.assertEqual(capture_scope(survey).definition_version, survey.analysis_definition_version)

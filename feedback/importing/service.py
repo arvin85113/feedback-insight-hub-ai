@@ -1,6 +1,7 @@
 import hashlib
 import json
 import random
+import uuid
 from collections import Counter
 from dataclasses import dataclass, field
 
@@ -18,6 +19,7 @@ from feedback.models import (
 )
 from feedback.text_pipeline import ANALYSIS_VERSION, build_analysis_text, estimate_sentiment_score
 from feedback.analysis_jobs import schedule_survey_analysis, suppress_analysis_scheduling
+from feedback.question_schema import CHOICE_KINDS, analysis_levels, fields_from_legacy, normalize_question
 
 from .mapping import ImportMapping
 from .normalizers import (
@@ -248,17 +250,71 @@ def _question_codes(mapping):
     return codes
 
 
+def _question_item(spec, code, order):
+    """A mapping question as a definition item in the builder schema (codes kept, scales as ranges)."""
+
+    item = {
+        "code": code, "title": spec.title, "help_text": "", "kind": spec.kind, "data_type": spec.data_type,
+        "display": "", "ordered": False, "score_start": 1, "scale_min": None, "scale_max": None,
+        "scale_min_label": "", "scale_max_label": "", "choices": [], "next_choice_number": 1,
+        "is_required": spec.required, "enable_keyword_tracking": spec.enable_keyword_tracking,
+        "is_active": True, "order": order, "options_text": "",
+    }
+    if spec.kind in CHOICE_KINDS or spec.kind == Question.Kind.SCALE:
+        item.update(fields_from_legacy(spec.kind, spec.data_type, "\n".join(spec.options)))
+    return normalize_question(item)
+
+
+def _expected_question(spec, code, order):
+    item = _question_item(spec, code, order)
+    return {
+        "code": code,
+        "title": spec.title,
+        "kind": item["kind"],
+        "data_type": item["data_type"],
+        "analysis_options": analysis_levels(item),
+        "is_required": spec.required,
+        "enable_keyword_tracking": item["enable_keyword_tracking"],
+        "is_active": True,
+        "order": order,
+    }
+
+
+def mapping_compatibility_errors(mapping, survey):
+    """Fields where the survey's questions differ from the mapping, as `"<title>: <field>"` strings."""
+
+    errors = []
+    for order, (spec, code) in enumerate(zip(mapping.questions, _question_codes(mapping)), start=1):
+        question = survey.questions.filter(code=code).first()
+        if question is None:
+            errors.append(f"{spec.title}: missing")
+            continue
+        errors.extend(
+            f"{spec.title}: {name}"
+            for name, value in _expected_question(spec, code, order).items()
+            if getattr(question, name) != value
+        )
+    return errors
+
+
 def _ensure_survey_and_questions(mapping):
     slug = _survey_slug(mapping)
     survey = Survey.objects.filter(slug=slug).first()
     if survey is None:
-        survey = Survey.objects.create(
-            title=mapping.survey.title,
-            slug=slug,
-            description=mapping.survey.description,
-            thank_you_email_enabled=False,
-            is_active=mapping.survey.is_active,
+        from cloudapi.definition import blank_definition
+        from cloudapi.writes import create_imported_survey
+
+        definition = blank_definition(
+            uuid.uuid4(), title=mapping.survey.title, description=mapping.survey.description,
+            is_active=mapping.survey.is_active, thank_you_email_enabled=False,
         )
+        definition["slug"] = slug
+        definition["questions"] = [
+            {"uuid": str(uuid.uuid4()), **{k: v for k, v in _question_item(spec, code, order).items()
+                                          if k != "options_text"}}
+            for order, (spec, code) in enumerate(zip(mapping.questions, _question_codes(mapping)), start=1)
+        ]
+        survey = create_imported_survey(definition).survey
     elif survey.title != mapping.survey.title:
         raise ValueError(f"問卷 slug {slug!r} 已被其他問卷使用")
 
@@ -272,20 +328,14 @@ def _ensure_survey_and_questions(mapping):
                 raise ValueError(f"問卷中有重複題目名稱：{spec.title}")
             question = title_matches.first()
             matched_by_title = question is not None
-        expected_options = "\n".join(spec.options)
-        expected = {
-            "code": code,
-            "title": spec.title,
-            "kind": spec.kind,
-            "data_type": spec.data_type,
-            "options_text": expected_options,
-            "is_required": spec.required,
-            "enable_keyword_tracking": spec.enable_keyword_tracking,
-            "is_active": True,
-            "order": order,
-        }
+        expected = _expected_question(spec, code, order)
+        if survey.published_version is not None and (question is None or (matched_by_title and question.code != code)):
+            raise ValueError(f"既有題目 {spec.title!r} 與 mapping 不相容：已發布的問卷不能新增或改題（請建立新問卷）")
         if question is None:
-            question = Question.objects.create(survey=survey, **expected)
+            item = _question_item(spec, code, order)
+            question = Question.objects.create(
+                survey=survey, **{k: v for k, v in item.items() if k != "options_text"}
+            )
         else:
             if matched_by_title and question.code != code:
                 if survey.questions.filter(code=code).exclude(pk=question.pk).exists():
@@ -308,10 +358,16 @@ def _build_answer(submission, question, value):
         if analysis_text:
             analysis_version = ANALYSIS_VERSION
             sentiment_score = estimate_sentiment_score(value)
+    choice_codes = None
+    if question.kind in CHOICE_KINDS:
+        # Imported choices are matched by label; rows that match nothing never get here (_prepare_row).
+        by_label = {choice["label"]: choice["code"] for choice in question.choices}
+        choice_codes = [by_label[value]] if value in by_label else None
     return Answer(
         submission=submission,
         question=question,
         value=value,
+        choice_codes=choice_codes,
         analysis_text=analysis_text,
         sentiment_score=sentiment_score,
         analysis_version=analysis_version,
@@ -360,6 +416,7 @@ def _import_chunk(survey, questions, batch, chunk, result):
             respondent_name="",
             respondent_email="",
             consent_follow_up=False,
+            definition_version=survey.published_version,
         )
         for _item in candidates
     ]

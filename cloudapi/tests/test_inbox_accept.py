@@ -20,7 +20,7 @@ class AcceptTests(TestCase):
         survey = Survey.objects.create(title="S", slug="s")
         self.question = Question.objects.create(survey=survey, title="Q", kind="short_text", data_type="text", order=1)
         self.survey = assign_survey_to_node(survey, self.node).survey  # version 1
-        Survey.objects.filter(pk=self.survey.pk).update(inbox_since=timezone.now())
+        Survey.objects.filter(pk=self.survey.pk).update(inbox_since=timezone.now(), published_version=1, analysis_definition_version=1)
         self.survey.refresh_from_db()
         self.user = User.objects.create_user(username="c", password="x")
         self.answers = {str(self.question.uuid): "很好"}
@@ -41,12 +41,9 @@ class AcceptTests(TestCase):
         self.assertEqual((counter.occupied_count, counter.occupied_bytes), (1, item.size_bytes))
         self.assertFalse(FeedbackSubmission.objects.exists())
 
-    def test_old_form_is_rejected_without_writing(self):
-        definition = serialize_definition(self.survey)
-        update_survey(definition, {"title": "新版"})
-        change_definition(self.survey.uuid, expected_version=1, definition=definition)
+    def test_form_from_another_version_is_rejected_without_writing(self):
         with self.assertRaises(DefinitionOutdated):
-            self.accept()
+            self.accept(form_version=99)
         self.assertFalse(SubmissionReceipt.objects.exists())
         self.assertEqual(InboxCounter.for_node(self.node).occupied_count, 0)
 
@@ -54,7 +51,7 @@ class AcceptTests(TestCase):
         submission_uuid = uuid.uuid4()
         first = self.accept(submission_uuid=submission_uuid)
         definition = serialize_definition(Survey.objects.get(pk=self.survey.pk))
-        update_survey(definition, {"title": "新版"})
+        update_survey(definition, {"thank_you_email_enabled": False})
         change_definition(self.survey.uuid, expected_version=1, definition=definition)
         again = self.accept(submission_uuid=submission_uuid)  # same content, form still says v1
         self.assertTrue(again.reused)

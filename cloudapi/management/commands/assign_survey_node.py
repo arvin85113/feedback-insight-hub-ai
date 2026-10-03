@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
+from cloudapi.errors import PublishedLocked
 from cloudapi.models import NodeDevice
 from cloudapi.writes import assign_survey_to_node
 from feedback.models import Survey
@@ -20,5 +21,8 @@ class Command(BaseCommand):
         node = NodeDevice.objects.filter(name=options["node"]).first()
         if survey is None or node is None:
             raise CommandError("找不到問卷或節點")
-        revision = assign_survey_to_node(survey, node)
+        try:
+            revision = assign_survey_to_node(survey, node)
+        except PublishedLocked as exc:
+            raise CommandError("問卷已發布，收件節點不能變更；請複製為新草稿再指派") from exc
         self.stdout.write(f"{survey.slug} 已指派給 {node.name}，版本 {revision.version}")

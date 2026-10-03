@@ -7,9 +7,8 @@ from feedback.models import (
     FeedbackSubmission,
     ImprovementNotice,
     ImprovementUpdate,
-    Question,
-    Survey,
 )
+from feedback.seed_support import create_published_survey, reset_survey, text_question
 
 
 TEST_SURVEY_SLUG = "notification-test-survey"
@@ -39,28 +38,19 @@ TEST_USERS = [
 class Command(BaseCommand):
     help = "建立通知流程測試資料與未寄送草稿；不會寄送 email"
 
+    def add_arguments(self, parser):
+        parser.add_argument("--reset", action="store_true", help="先清除既有測試問卷再重建")
+
     def handle(self, *args, **options):
-        survey, _ = Survey.objects.update_or_create(
+        if options["reset"]:
+            reset_survey(TEST_SURVEY_SLUG)
+        survey = create_published_survey(
             slug=TEST_SURVEY_SLUG,
-            defaults={
-                "title": TEST_SURVEY_TITLE,
-                "description": "供通知草稿、預覽與明確確認流程測試使用。",
-                "thank_you_email_enabled": False,
-                "improvement_tracking_enabled": True,
-                "is_active": True,
-            },
+            title=TEST_SURVEY_TITLE,
+            description="供通知草稿、預覽與明確確認流程測試使用。",
+            questions=[text_question("改善建議", long=True, tracked=True, required=False)],
         )
-        question, _ = Question.objects.update_or_create(
-            survey=survey,
-            title="改善建議",
-            defaults={
-                "kind": Question.Kind.LONG_TEXT,
-                "data_type": Question.DataType.TEXT,
-                "is_required": False,
-                "enable_keyword_tracking": True,
-                "order": 1,
-            },
-        )
+        question = survey.questions.get()
 
         for index, spec in enumerate(TEST_USERS, start=1):
             user, created = User.objects.update_or_create(
@@ -82,6 +72,7 @@ class Command(BaseCommand):
                     "respondent_name": f"通知測試顧客 {index}",
                     "respondent_email": user.email,
                     "consent_follow_up": spec["consent_follow_up"],
+                    "definition_version": survey.published_version,
                 },
             )
             Answer.objects.update_or_create(

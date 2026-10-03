@@ -36,6 +36,10 @@ class ResendRejected(InboxRejected):
     user_message = "這份回覆無法重複送出，請重新填寫"
 
 
+class SurveyClosed(InboxRejected):
+    user_message = "這份問卷目前未開放填答。"
+
+
 @dataclass
 class AcceptResult:
     receipt: SubmissionReceipt
@@ -74,7 +78,10 @@ def accept_submission(survey, *, user, submission_uuid, form_version, consent_fo
             raise ResendRejected()
         return AcceptResult(existing, reused=True)
 
-    if form_version != survey.definition_version:
+    # Only a new reply needs an open survey and the published form (builder spec §7.1).
+    if not survey.accepts_responses:
+        raise SurveyClosed()
+    if form_version != survey.published_version:
         raise DefinitionOutdated()
 
     now = timezone.now()
@@ -132,7 +139,7 @@ def accept_submission(survey, *, user, submission_uuid, form_version, consent_fo
     return AcceptResult(receipt, reused=False)
 
 
-QUARANTINE_REASONS = ("content_conflict", "definition_unavailable")
+QUARANTINE_REASONS = ("content_conflict", "definition_unavailable", "answers_format")
 
 
 def ack_items(node, items):

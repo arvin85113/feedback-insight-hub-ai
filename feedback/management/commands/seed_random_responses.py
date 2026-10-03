@@ -36,7 +36,11 @@ _TEXT_LONG_PARTS = [
 
 def _random_answer_for_question(question: Question, rng: random.Random):
     """產生與 SurveyFormBuilder / submit_survey_payload 相容的值（多選為 list）。"""
-    opts = [line.strip() for line in question.options_text.splitlines() if line.strip()]
+    # Every option label, including "不納入分析" ones, the way a respondent sees them.
+    if question.kind in (Question.Kind.SINGLE_CHOICE, Question.Kind.MULTIPLE_CHOICE):
+        opts = [choice["label"] for choice in question.choices]
+    else:
+        opts = list(question.analysis_options)
 
     if question.kind == Question.Kind.SHORT_TEXT:
         return rng.choice(_TEXT_SHORT)
@@ -155,6 +159,8 @@ class Command(BaseCommand):
 
         if not survey.questions.exists():
             raise CommandError(f"問卷 {slug!r} 沒有任何題目，無法產生填答")
+        if not survey.accepts_responses:
+            raise CommandError(f"問卷 {slug!r} 尚未發布或未開放收件，無法產生填答")
 
         user = None
         if options["as_user"]:
@@ -188,6 +194,7 @@ class Command(BaseCommand):
                 respondent_email="",
                 consent_follow_up=bool(rng.getrandbits(1)),
                 answers=answers,
+                form_version=survey.published_version,
             )
             sid = payload["submission_id"]
             created_ids.append(sid)

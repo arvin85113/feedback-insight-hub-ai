@@ -11,6 +11,8 @@ from decimal import Decimal
 
 HASH_VERSION = 1
 DEFINITION_HISTORY_RECORDED = "recorded"
+# Choice answers are option codes (single: string, multiple: list); builder spec §7.3.
+ANSWERS_FORMAT = 2
 
 
 def canonical_bytes(obj):
@@ -25,7 +27,8 @@ def answers_hash(answers):
     return sha256_hex(answers)
 
 
-def payload_hash(*, survey_uuid, definition_version, consent_follow_up, is_complete, voided_at, answers):
+def payload_hash(*, survey_uuid, definition_version, consent_follow_up, is_complete, voided_at, answers,
+                 answers_format=ANSWERS_FORMAT):
     return sha256_hex({
         "survey_uuid": str(survey_uuid),
         "definition_version": definition_version,
@@ -33,6 +36,7 @@ def payload_hash(*, survey_uuid, definition_version, consent_follow_up, is_compl
         "is_complete": is_complete,
         "voided_at": voided_at,
         "answers": answers,
+        "answers_format": answers_format,
     })
 
 
@@ -44,6 +48,7 @@ def envelope_payload_hash(envelope):
         is_complete=envelope["is_complete"],
         voided_at=envelope["voided_at"],
         answers=envelope["answers"],
+        answers_format=envelope.get("answers_format"),
     )
 
 
@@ -93,4 +98,5 @@ def build_envelope(*, submission_uuid, survey, definition_version, response_sequ
         "voided_at": None,
         "respondent": {"cloud_user_ref": respondent_ref, "name": name, "email": email},
         "answers": answers,
+        "answers_format": ANSWERS_FORMAT,
     }

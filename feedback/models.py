@@ -5,11 +5,12 @@ import uuid
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import models, transaction
 from django.db.models import Count
 from django.urls import reverse
 from django.utils import timezone
-from django.utils.text import slugify
+
+from . import question_schema
 
 
 class SurveyCategory(models.Model):
@@ -46,6 +47,12 @@ class Survey(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     definition_version = models.PositiveIntegerField(default=0)
+    # Draft until published_version is set; the published definition never changes (spec §4).
+    published_version = models.PositiveIntegerField(null=True, blank=True)
+    published_at = models.DateTimeField(null=True, blank=True)
+    # Last definition version that changed analysis (publish, analysis_enabled, archived_at; spec §4.1).
+    analysis_definition_version = models.PositiveIntegerField(null=True, blank=True)
+    next_question_number = models.PositiveIntegerField(default=1)
     owner_node = models.ForeignKey(
         "cloudapi.NodeDevice",
         on_delete=models.PROTECT,
@@ -66,8 +73,12 @@ class Survey(models.Model):
         return reverse("feedback:survey-detail", args=[self.slug])
 
     @property
+    def is_published(self):
+        return self.published_version is not None
+
+    @property
     def accepts_responses(self):
-        return self.is_active and self.archived_at is None
+        return self.is_published and self.is_active and self.archived_at is None
 
 
 class Question(models.Model):
@@ -100,6 +111,15 @@ class Question(models.Model):
     order = models.PositiveIntegerField(default=1)
     uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     has_received_answer = models.BooleanField(default=False)
+    display = models.CharField(max_length=16, blank=True, default="")
+    ordered = models.BooleanField(default=False)
+    score_start = models.PositiveSmallIntegerField(default=1)
+    scale_min = models.PositiveSmallIntegerField(null=True, blank=True)
+    scale_max = models.PositiveSmallIntegerField(null=True, blank=True)
+    scale_min_label = models.CharField(max_length=40, blank=True, default="")
+    scale_max_label = models.CharField(max_length=40, blank=True, default="")
+    choices = models.JSONField(default=list, blank=True)
+    next_choice_number = models.PositiveIntegerField(default=1)
 
     class Meta:
         ordering = ["order", "id"]
@@ -110,38 +130,61 @@ class Question(models.Model):
     def __str__(self):
         return f"{self.survey.title} - {self.title}"
 
+    def _item(self):
+        return {name: getattr(self, name) for name in question_schema.ITEM_FIELDS}
+
+    def sync_schema(self):
+        """Fill new fields from a legacy `options_text` when needed, then derive type and mirrors."""
+
+        needs_legacy = (
+            not self.choices
+            and self.options_text.strip()
+            and (self.kind in question_schema.CHOICE_KINDS or (self.kind == self.Kind.SCALE and self.scale_min is None))
+        )
+        if needs_legacy:
+            for name, value in question_schema.fields_from_legacy(self.kind, self.data_type, self.options_text).items():
+                setattr(self, name, value)
+        for name, value in question_schema.normalize_question(self._item()).items():
+            setattr(self, name, value)
+
     def clean(self):
         super().clean()
-        allowed_types = {
-            self.Kind.SHORT_TEXT: {self.DataType.TEXT},
-            self.Kind.LONG_TEXT: {self.DataType.TEXT},
-            self.Kind.SINGLE_CHOICE: {self.DataType.NOMINAL, self.DataType.ORDINAL},
-            self.Kind.MULTIPLE_CHOICE: {self.DataType.NOMINAL},
-            self.Kind.INTEGER: {self.DataType.DISCRETE},
-            self.Kind.DECIMAL: {self.DataType.CONTINUOUS},
-            self.Kind.SCALE: {self.DataType.ORDINAL},
-        }
-        if self.kind in allowed_types and self.data_type not in allowed_types[self.kind]:
-            raise ValidationError(
-                {"data_type": f"{self.get_kind_display()} 不支援此資料型態。"}
-            )
-        if self.kind in {self.Kind.SINGLE_CHOICE, self.Kind.MULTIPLE_CHOICE} and not self.options:
-            raise ValidationError({"options_text": "單選與多選題至少需要一個選項。"})
+        self.sync_schema()
+        errors = question_schema.question_errors(self._item())
+        if errors:
+            raise ValidationError(errors)
+
+    @property
+    def analysis_options(self):
+        override = getattr(self, "_analysis_options", None)
+        return list(override) if override is not None else question_schema.analysis_levels(self)
+
+    @property
+    def analysis_excluded_options(self):
+        override = getattr(self, "_analysis_excluded", None)
+        return list(override) if override is not None else question_schema.analysis_excluded(self)
 
     @property
     def options(self):
-        return [line.strip() for line in self.options_text.splitlines() if line.strip()]
+        return self.analysis_options
 
     def save(self, *args, **kwargs):
         if not self.code:
-            base = slugify(self.title)[:64] or "question"
-            code = base
-            suffix = 2
-            while type(self).objects.filter(survey_id=self.survey_id, code=code).exclude(pk=self.pk).exists():
-                code = f"{base[:70]}-{suffix}"
-                suffix += 1
-            self.code = code
+            self.code = allocate_question_code(self.survey_id)
+        self.sync_schema()
         return super().save(*args, **kwargs)
+
+
+def allocate_question_code(survey_id):
+    """Next `q<n>` from the survey's counter; numbers are never reused (spec §2.1)."""
+
+    with transaction.atomic():
+        survey = Survey.objects.select_for_update().only("next_question_number").get(pk=survey_id)
+        number = survey.next_question_number
+        while Question.objects.filter(survey_id=survey_id, code=f"q{number}").exists():
+            number += 1
+        Survey.objects.filter(pk=survey_id).update(next_question_number=number + 1)
+    return f"q{number}"
 
 
 class FeedbackSubmission(models.Model):
@@ -163,6 +206,8 @@ class FeedbackSubmission(models.Model):
     ingested_at = models.DateTimeField(auto_now_add=True)
     is_complete = models.BooleanField(default=True)
     voided_at = models.DateTimeField(null=True, blank=True)
+    # The published definition version the reply was answered against (spec §4.4).
+    definition_version = models.PositiveIntegerField(null=True, blank=True)
 
     class Meta:
         ordering = ["-submitted_at"]
@@ -264,6 +309,8 @@ class Answer(models.Model):
     submission = models.ForeignKey(FeedbackSubmission, on_delete=models.CASCADE, related_name="answers")
     question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name="answers")
     value = models.TextField()
+    # Canonical choice answer as option codes; `value` keeps the labels for display only (spec §7.3).
+    choice_codes = models.JSONField(null=True, blank=True)
     analysis_text = models.TextField(null=True, blank=True)
     sentiment_score = models.FloatField(null=True, blank=True)
     analysis_version = models.CharField(max_length=32, null=True, blank=True)

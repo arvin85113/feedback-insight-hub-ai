@@ -30,33 +30,31 @@ class CloudBuilderForNodeSurveysTests(TestCase):
         self.assertContains(page, 'name="definition_version" value="1"')
         self.assertContains(page, f'name="question_uuid" value="{self.question.uuid}"')
 
-    def test_delete_without_answers_only_deactivates_and_bumps_version(self):
+    def test_delete_on_draft_removes_question_and_bumps_version(self):
         self.post(action="delete-question", question_uuid=str(self.question.uuid), question_id=self.question.pk)
-        self.question.refresh_from_db()
-        self.assertFalse(self.question.is_active)
+        self.assertFalse(Question.objects.filter(pk=self.question.pk).exists())
         self.survey.refresh_from_db()
         self.assertEqual(self.survey.definition_version, 2)
 
     def test_stale_form_is_rejected(self):
-        self.post(action="restore-question", question_uuid=str(self.question.uuid), question_id=self.question.pk)
+        self.post(action="duplicate-question", question_uuid=str(self.question.uuid))
         response = self.client.post(
             self.url,
             {"definition_version": 1, "action": "delete-question", "question_uuid": str(self.question.uuid)},
             follow=True,
         )
-        self.assertContains(response, "版本不一致，請重新載入")
-        self.question.refresh_from_db()
-        self.assertTrue(self.question.is_active)
+        self.assertContains(response, "此問卷已在其他視窗修改")
+        self.assertTrue(Question.objects.filter(pk=self.question.pk).exists())
 
-    def test_semantic_edit_of_answered_question_is_refused(self):
-        Answer.objects.create(submission=FeedbackSubmission.objects.create(survey=self.survey), question=self.question, value="x")
-        Question.objects.filter(pk=self.question.pk).update(has_received_answer=True)
+    def test_question_edit_of_published_survey_is_refused(self):
+        from feedback.test_utils import published
+
+        published(self.survey)
         response = self.client.post(self.url, {
-            "definition_version": 1, "action": "edit-question", "question_uuid": str(self.question.uuid),
-            "question_id": self.question.pk, "title": "Q", "help_text": "", "kind": "long_text", "data_type": "text",
-            "options_text": "", "is_required": "on", "order": 1,
-        }, follow=True)
-        self.assertContains(response, "此題已有回覆，請新增題目取代並停用舊題")
+            "definition_version": 1, "action": "save-question", "question_uuid": str(self.question.uuid),
+            "ui_type": "long_text", "title": "Q", "help_text": "", "is_required": "on",
+        })
+        self.assertContains(response, "問卷已發布，題目不能修改；請複製為新草稿")
         self.question.refresh_from_db()
         self.assertEqual(self.question.kind, "short_text")
 
@@ -73,10 +71,12 @@ class CloudBuilderForNodeSurveysTests(TestCase):
         self.assertEqual(self.survey.definition_version, 2)
         self.assertTrue(Survey.objects.filter(pk=self.survey.pk).exists())
 
-    def test_unassigned_surveys_keep_the_old_behaviour(self):
+    def test_unassigned_draft_goes_through_the_versioned_path(self):
         plain = Survey.objects.create(title="P", slug="p")
         question = Question.objects.create(survey=plain, title="Q", kind="short_text", data_type="text", order=1)
-        self.client.post(reverse("feedback:survey-builder", args=["p"]), {"action": "delete-question", "question_id": question.pk})
-        self.assertFalse(Question.objects.filter(pk=question.pk).exists())  # hard delete as before
+        self.client.post(reverse("feedback:survey-builder", args=["p"]), {
+            "action": "delete-question", "question_uuid": str(question.uuid), "definition_version": 0,
+        })
+        self.assertFalse(Question.objects.filter(pk=question.pk).exists())
         plain.refresh_from_db()
-        self.assertEqual(plain.definition_version, 0)
+        self.assertEqual(plain.definition_version, 1)

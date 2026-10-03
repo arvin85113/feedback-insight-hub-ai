@@ -23,6 +23,31 @@ class TableInput:
             yield {name: row.get(name) for name in columns}
 
 
+CHOICE_KINDS = ("single_choice", "multiple_choice")
+
+
+def answer_cell(question, value, choice_codes):
+    """One answer as the statistics see it (builder spec §7.3).
+
+    Choice answers map their codes to the question's current labels; a multiple choice answer
+    is a list.  Legacy rows without codes keep their stored text (multiple choice split on ", ").
+    """
+
+    if question.kind not in CHOICE_KINDS:
+        return value
+    if choice_codes is None:
+        if value is None:
+            return None
+        if question.kind == "multiple_choice":
+            return [item.strip() for item in value.split(",") if item.strip()]
+        return value
+    labels = {choice["code"]: choice["label"] for choice in question.choices}
+    mapped = [labels.get(code, code) for code in choice_codes]
+    if question.kind == "multiple_choice":
+        return mapped
+    return mapped[0] if mapped else None
+
+
 class AnswerInput(TableInput):
     source_kind = "native_answers"
 
@@ -44,17 +69,21 @@ class AnswerInput(TableInput):
         self.extra_filter = extra_filter
 
     @classmethod
-    def from_answers(cls, answers, question_fields, *, version, name, submission_ids=()):
+    def from_answers(cls, answers, question_fields, *, version, name, submission_ids=(), questions=None):
         # Materialize a fixed worker input. No names, emails, respondent IDs or ORM writes.
         rows = {pk: {} for pk in submission_ids}
         for answer in answers:
             field = question_fields[answer.question_id]
-            rows.setdefault(answer.submission_id, {})[field.name] = answer.value
+            question = (questions or {}).get(answer.question_id) or answer.question
+            rows.setdefault(answer.submission_id, {})[field.name] = answer_cell(
+                question, answer.value, answer.choice_codes
+            )
         return cls(list(rows.values()), question_fields.values(), version=version, name=name)
 
     @classmethod
     def from_survey(cls, survey, *, version, extra_filter=None):
         alias = survey._state.db or "default"
+        questions = list(survey.questions.filter(is_active=True).order_by("order", "id"))
         fields = {
             q.pk: AnalysisField(
                 f"question_{q.pk}",
@@ -62,10 +91,11 @@ class AnswerInput(TableInput):
                 True,
                 q.title,
                 q.kind,
-                tuple(q.options),
+                tuple(q.analysis_options),
                 q.enable_keyword_tracking,
+                tuple(q.analysis_excluded_options),
             )
-            for q in survey.questions.filter(is_active=True).order_by("order", "id")
+            for q in questions
         }
         adapter = cls(
             None,
@@ -77,6 +107,7 @@ class AnswerInput(TableInput):
             extra_filter=extra_filter,
         )
         adapter.question_fields = fields
+        adapter.questions = {q.pk: q for q in questions}
         adapter.keyword_rules = list(
             survey.keyword_categories.values("keyword", "category", "threshold")
         )
@@ -86,8 +117,6 @@ class AnswerInput(TableInput):
         if self.survey_id is None:
             yield from super().scan(columns)
             return
-
-        from django.db.models import OuterRef, Subquery
 
         from .models import Answer, FeedbackSubmission
 
@@ -101,33 +130,33 @@ class AnswerInput(TableInput):
         )
         if self.extra_filter is not None:
             submissions = submissions.filter(self.extra_filter)
+        submission_ids = submissions.order_by("pk").values_list("pk", flat=True)
         if not columns:
-            submission_ids = (
-                submissions
-                .order_by("pk")
-                .values_list("pk", flat=True)
-            )
             for _submission_id in submission_ids.iterator(chunk_size=2000):
                 yield {}
             return
-        question_ids = {field.name: question_id for question_id, field in self.question_fields.items()}
-        annotations = {}
-        value_query = Answer.objects.using(self.database_alias).filter(
-            submission_id=OuterRef("pk")
-        )
-        for index, name in enumerate(columns):
-            annotations[f"analysis_value_{index}"] = Subquery(
-                value_query.filter(question_id=question_ids[name]).values("value")[:1]
-            )
-        value_names = tuple(annotations)
-        queryset = (
-            submissions
-            .order_by("pk")
-            .annotate(**annotations)
-            .values_list(*value_names)
-        )
-        for values in queryset.iterator(chunk_size=2000):
-            yield dict(zip(columns, values))
+        question_ids = {question_id: field.name for question_id, field in self.question_fields.items()
+                        if field.name in columns}
+        chunk = []
+
+        def flush(ids):
+            rows = {pk: dict.fromkeys(columns) for pk in ids}
+            answers = Answer.objects.using(self.database_alias).filter(
+                submission_id__in=ids, question_id__in=question_ids
+            ).values_list("submission_id", "question_id", "value", "choice_codes")
+            for submission_id, question_id, value, codes in answers:
+                rows[submission_id][question_ids[question_id]] = answer_cell(
+                    self.questions[question_id], value, codes
+                )
+            return [rows[pk] for pk in ids]
+
+        for submission_id in submission_ids.iterator(chunk_size=2000):
+            chunk.append(submission_id)
+            if len(chunk) == 2000:
+                yield from flush(chunk)
+                chunk = []
+        if chunk:
+            yield from flush(chunk)
 
 
 class ParquetInput(TableInput):

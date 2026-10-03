@@ -29,12 +29,13 @@ from cloudapi.models import PublishedResultRecord
 print(PublishedResultRecord.objects.filter(survey__uuid='{survey}').count())
 """
 
+# An analysis setting change makes earlier node results stale (builder spec §7.2); a published title is frozen.
 CLOUD_RENAME = """
 from cloudapi.definition import serialize_definition, update_survey
 from cloudapi.writes import change_definition
 from feedback.models import Survey
 s = Survey.objects.get(uuid='{survey}')
-d = serialize_definition(s); update_survey(d, {{"title": "雲端改名"}})
+d = serialize_definition(s); update_survey(d, {{"analysis_enabled": False}})
 change_definition(s.uuid, expected_version=s.definition_version, definition=d)
 """
 

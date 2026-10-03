@@ -19,6 +19,7 @@ from .local_service import (
     build_text_analysis_payload,
 )
 from .evidence_projection import build_projection_manifests, effective_prompt_version
+from .question_schema import analysis_excluded, analysis_levels
 from .models import (
     Answer,
     FeedbackSubmission,
@@ -243,6 +244,41 @@ def _hash_record(hasher, namespace, values):
     hasher.update(payload)
 
 
+class _Rows:
+    """An in-memory row stream with the queryset `iterator()` interface used below."""
+
+    def __init__(self, rows):
+        self._rows = rows
+
+    def iterator(self, chunk_size=None):
+        return iter(self._rows)
+
+
+def question_fingerprint_row(question):
+    """The legacy question record, with the analysis list in place of options_text (builder spec §5 step 5).
+
+    Builder fields join the record only when they differ from their defaults, so a survey that
+    uses none of them (e.g. TripAdvisor after migration 0024) keeps exactly the same fingerprint.
+    """
+
+    row = (
+        question.id, question.code, question.title, question.help_text, question.kind, question.data_type,
+        "\n".join(analysis_levels(question)), question.is_required, question.enable_keyword_tracking,
+        question.order,
+    )
+    extras = []
+    excluded = analysis_excluded(question)
+    if excluded:
+        extras.append(("excluded", tuple(excluded)))
+    if question.score_start == 0:
+        extras.append(("score_start", 0))
+    if question.scale_min_label or question.scale_max_label:
+        extras.append(("scale_labels", question.scale_min_label, question.scale_max_label))
+    if question.display == "dropdown":
+        extras.append(("display", "dropdown"))
+    return row + tuple(extras)
+
+
 def calculate_data_fingerprint(survey, *, include_improvements=True):
     started = time.perf_counter()
     chunk_size = settings.AI_REPORT_FINGERPRINT_CHUNK_SIZE
@@ -282,19 +318,9 @@ def calculate_data_fingerprint(survey, *, include_improvements=True):
     streams = [
         (
             "question",
-            Question.objects.filter(survey=survey, is_active=True)
-            .order_by("id")
-            .values_list(
-                "id",
-                "code",
-                "title",
-                "help_text",
-                "kind",
-                "data_type",
-                "options_text",
-                "is_required",
-                "enable_keyword_tracking",
-                "order",
+            _Rows(
+                question_fingerprint_row(question)
+                for question in Question.objects.filter(survey=survey, is_active=True).order_by("id")
             ),
         ),
         (
@@ -324,6 +350,7 @@ def calculate_data_fingerprint(survey, *, include_improvements=True):
                 "analysis_text",
                 "sentiment_score",
                 "analysis_version",
+                "choice_codes",
             ),
         ),
         (
@@ -352,6 +379,10 @@ def calculate_data_fingerprint(survey, *, include_improvements=True):
         )
     for namespace, queryset in streams:
         for row in queryset.iterator(chunk_size=chunk_size):
+            if namespace == "answer":
+                *row, codes = row
+                # Choice codes join the record only when present, so text-only answers hash as before.
+                row = (*row, ("choice_codes", tuple(codes))) if codes else tuple(row)
             _hash_record(hasher, namespace, row)
 
     elapsed_ms = round((time.perf_counter() - started) * 1000)
@@ -409,13 +440,16 @@ def _sanitize_distribution(rows, caveats, label):
         if total < settings.AI_REPORT_MIN_RESPONSES:
             suppressed_total += total
             continue
-        visible.append(
-            {
-                "value": _clean_text(row.get("value")),
-                "total": total,
-                "percent": row.get("percent"),
-            }
-        )
+        item = {
+            "value": _clean_text(row.get("value")),
+            "total": total,
+            "percent": row.get("percent"),
+        }
+        # Multiple choice keeps two distinct rates; their names are never mixed (builder spec §2.3).
+        for key in ("selection_rate", "check_share"):
+            if key in row:
+                item[key] = row[key]
+        visible.append(item)
     if suppressed_total:
         caveats.append(f"{label}包含小於三筆的群組，已隱藏或合併。")
         if suppressed_total >= settings.AI_REPORT_MIN_RESPONSES:
@@ -510,6 +544,18 @@ def build_statistics_snapshot(questions, payload, evidence_catalog, caveats):
                     unit="responses",
                     sample_size=item["total"],
                 )
+                for key, label in (("selection_rate", "選取率"), ("check_share", "勾選次數占比")):
+                    if item.get(key) is None:
+                        continue
+                    _append_evidence(
+                        evidence_catalog,
+                        evidence_id=f"{evidence_id}.{key}",
+                        kind="categorical_distribution",
+                        label=f"{question_title}：{item['value']} {label}",
+                        value=item[key],
+                        unit="percent",
+                        sample_size=chart.get("answered_n") or item["total"],
+                    )
 
     statistical_tests = []
     for index, result in enumerate(payload.get("inferential_analysis", []), start=1):

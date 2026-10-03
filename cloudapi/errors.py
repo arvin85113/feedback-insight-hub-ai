@@ -12,12 +12,18 @@ class VersionConflict(DefinitionCommitError):
         self.current_version = current_version
 
 
-class SemanticLockViolation(DefinitionCommitError):
-    user_message = "此題已有回覆，請新增題目取代並停用舊題"
+class PublishedLocked(DefinitionCommitError):
+    """A published survey's questions, title and description never change (builder spec §4.2)."""
 
-    def __init__(self, question_uuid):
-        super().__init__(f"question {question_uuid} already has answers")
-        self.question_uuid = question_uuid
+    code = "published_locked"
+    user_message = "問卷已發布，題目不能修改；請複製為新草稿"
+
+
+class PublishBlocked(DefinitionCommitError):
+    """A node-owned survey can be published only once its replies can go to the inbox (spec §4.3)."""
+
+    code = "publish_blocked"
+    user_message = "收件匣尚未開啟，無法發布指派節點的問卷"
 
 
 class DefinitionError(DefinitionCommitError, ValueError):

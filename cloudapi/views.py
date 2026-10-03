@@ -10,7 +10,8 @@ from feedback.models import Survey
 from .auth import BadRequest, CursorInvalid, make_cursor, node_api, parse_cursor, read_json
 from .inbox import ack_items, database_bytes, inbox_summary, quarantine_items, survey_sequences
 from .results import ResultConflict, ResultInvalid, apply_upload
-from .errors import DefinitionError, SemanticLockViolation, VersionConflict
+from .definition import SCHEMA_VERSION
+from .errors import DefinitionError, PublishBlocked, PublishedLocked, VersionConflict
 from .models import ChangeClock, InboxSubmission, SurveyChange, SurveyDefinitionRevision
 from .writes import change_definition, create_node_survey
 
@@ -81,6 +82,8 @@ def survey_revision(request, survey_uuid, version):
 @require_POST
 def survey_create(request):
     definition = read_json(request)
+    if not isinstance(definition, dict) or definition.get("schema_version") != SCHEMA_VERSION:
+        return JsonResponse({"error": "schema_version", "message": "只接受 schema_version 2"}, status=400)
     try:
         revision, created = create_node_survey(request.node_device, definition)
     except DefinitionError as exc:
@@ -101,14 +104,16 @@ def survey_update(request, survey_uuid):
         definition = body["definition"]
     except (KeyError, TypeError, ValueError):
         return JsonResponse({"error": "bad_request", "message": "需要 expected_version 與 definition"}, status=400)
+    if not isinstance(definition, dict) or definition.get("schema_version") != SCHEMA_VERSION:
+        return JsonResponse({"error": "schema_version", "message": "只接受 schema_version 2"}, status=400)
     try:
         revision = change_definition(survey_uuid, expected_version=expected, definition=definition)
     except DefinitionError as exc:
         return JsonResponse({"error": "invalid_definition", "message": str(exc)}, status=400)
     except VersionConflict as exc:
         return JsonResponse({"error": "version_conflict", "current_version": exc.current_version}, status=409)
-    except SemanticLockViolation as exc:
-        return JsonResponse({"error": "semantic_lock", "question_uuid": exc.question_uuid}, status=422)
+    except (PublishedLocked, PublishBlocked) as exc:
+        return JsonResponse({"error": exc.code, "message": exc.user_message}, status=422)
     return JsonResponse({"definition": revision.definition})
 
 

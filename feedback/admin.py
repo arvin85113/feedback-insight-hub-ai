@@ -19,9 +19,20 @@ from .models import (
 
 
 class QuestionInline(admin.TabularInline):
+    """Read-only: questions change only through the builder's versioned write path (builder spec §7.1)."""
+
     model = Question
-    extra = 1
+    extra = 0
     readonly_fields = ("code",)
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(SurveyCategory)
@@ -34,13 +45,15 @@ class SurveyAdmin(admin.ModelAdmin):
     list_display = ("title", "slug", "is_active", "analysis_enabled", "archived_at", "updated_at")
     prepopulated_fields = {"slug": ("title",)}
     inlines = [QuestionInline]
-    readonly_fields = ("improvement_tracking_enabled",)
     fields = (
         "title", "slug", "description",
         "category",
         "thank_you_email_enabled", "is_active", "analysis_enabled", "archived_at",
         "improvement_tracking_enabled",
     )
+    # Survey definitions change only through the builder's versioned write path (builder spec §7.1).
+    readonly_fields = fields
+    prepopulated_fields = {}
 
 
 @admin.register(FeedbackSubmission)

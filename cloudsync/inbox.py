@@ -12,7 +12,7 @@ from datetime import datetime
 
 from django.db import transaction
 
-from cloudapi.envelope import HASH_VERSION, answer_text, answers_hash, envelope_payload_hash
+from cloudapi.envelope import ANSWERS_FORMAT, HASH_VERSION, answer_text, answers_hash, envelope_payload_hash
 from feedback.analysis_jobs import suppress_analysis_scheduling
 from feedback.models import Answer, FeedbackSubmission, Question, Survey
 
@@ -27,6 +27,7 @@ WRITTEN = "written"
 DUPLICATE = "duplicate"
 CONTENT_CONFLICT = "content_conflict"
 DEFINITION_UNAVAILABLE = "definition_unavailable"
+ANSWERS_FORMAT_REASON = "answers_format"
 ACK_DONE = ("acked", "already_acked")
 
 
@@ -74,18 +75,42 @@ def intake(envelope, client):
         PendingAck.objects.get_or_create(submission_uuid=uid, defaults={"payload_hash": incoming})
         return DUPLICATE
 
+    if envelope.get("answers_format") != ANSWERS_FORMAT:
+        return ANSWERS_FORMAT_REASON
     if not _ensure_definition(envelope, client):
         return DEFINITION_UNAVAILABLE
+    decoded = _decode_answers(envelope)
+    if decoded is None:
+        return ANSWERS_FORMAT_REASON
 
     respondent = envelope.get("respondent") or {}
     with transaction.atomic():
-        survey = _write_reply(envelope, uid, incoming, respondent)
+        survey = _write_reply(envelope, uid, incoming, respondent, decoded)
         # Outside the suppression, same transaction: a moved watermark queues analysis atomically.
         advance_and_schedule(survey)
     return WRITTEN
 
 
-def _write_reply(envelope, uid, incoming, respondent):
+def _decode_answers(envelope):
+    """{question uuid: (choice_codes, display value)}; None when a choice code is unknown (spec §7.3)."""
+
+    questions = {str(q.uuid): q for q in Question.objects.filter(survey__uuid=envelope["survey_uuid"],
+                                                               uuid__in=list(envelope["answers"]))}
+    decoded = {}
+    for key, value in envelope["answers"].items():
+        question = questions[key]
+        if question.kind not in ("single_choice", "multiple_choice"):
+            decoded[key] = (None, answer_text(value))
+            continue
+        labels = {choice["code"]: choice["label"] for choice in question.choices}
+        codes = value if isinstance(value, list) else [value]
+        if not codes or any(code not in labels for code in codes):
+            return None
+        decoded[key] = (list(codes), ", ".join(labels[code] for code in codes))
+    return decoded
+
+
+def _write_reply(envelope, uid, incoming, respondent, decoded):
     with suppress_analysis_scheduling():
         survey = Survey.objects.select_for_update().get(uuid=envelope["survey_uuid"])
         submission = FeedbackSubmission.objects.create(
@@ -102,8 +127,8 @@ def _write_reply(envelope, uid, incoming, respondent):
         )
         questions = {str(q.uuid): q for q in Question.objects.filter(survey=survey, uuid__in=list(envelope["answers"]))}
         Answer.objects.bulk_create(
-            Answer(submission=submission, question=questions[key], value=answer_text(value))
-            for key, value in envelope["answers"].items()
+            Answer(submission=submission, question=questions[key], value=decoded[key][1], choice_codes=decoded[key][0])
+            for key in envelope["answers"]
         )
         SyncedSubmissionSource.objects.create(
             submission=submission,

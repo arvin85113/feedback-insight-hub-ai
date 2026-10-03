@@ -6,6 +6,7 @@ from django.test import TestCase, override_settings
 from .analysis_jobs import claim_next_job, suppress_analysis_scheduling
 from .analysis_worker import execute_deterministic_job
 from .local_service import submit_survey_payload
+from .test_utils import published
 from .models import AnalysisJob, Answer, Question, Survey, SurveyAnalysisState
 from .published_analysis import get_published_analysis_payload
 
@@ -13,7 +14,7 @@ from .published_analysis import get_published_analysis_payload
 @override_settings(ANALYSIS_AUTO_AI_ENABLED=True)
 class ScheduledAnalysisEndToEndTests(TestCase):
     def test_new_responses_coalesce_run_and_publish_without_sync_ai(self):
-        survey = Survey.objects.create(title="端到端測試", slug="scheduled-e2e")
+        survey = published(Survey.objects.create(title="端到端測試", slug="scheduled-e2e"))
         with suppress_analysis_scheduling():
             rating = Question.objects.create(
                 survey=survey,

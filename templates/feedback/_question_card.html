@@ -1,0 +1,165 @@
+{# One builder card (builder spec §3). Expects: card, read_only, ui_types, scale_max_range, survey. #}
+<article class="q-card{% if card.is_open %} is-open{% endif %}{% if not card.is_active %} is-inactive{% endif %}"
+         data-card data-uuid="{{ card.uuid }}" id="{% if card.uuid %}card-{{ card.uuid }}{% else %}card-new{% endif %}">
+    <header class="q-card-summary">
+        <span class="question-order-badge">{{ card.position }}</span>
+        <div class="q-card-heading">
+            <strong>{% if card.title %}{{ card.title }}{% else %}新增題目{% endif %}</strong>
+            <span class="pill">{{ card.type_label }}</span>
+            {% if card.uuid and card.is_required %}<span class="pill pill-active">必填</span>{% endif %}
+            {% if not card.is_active %}<span class="pill">已停用</span>{% endif %}
+        </div>
+        {% if not read_only %}
+            <div class="q-card-tools">
+                {% if card.uuid %}
+                    <form method="post" class="q-card-inline">
+                        {% csrf_token %}{% include "feedback/_definition_version_field.html" %}
+                        <input type="hidden" name="action" value="move-question">
+                        <input type="hidden" name="question_uuid" value="{{ card.uuid }}">
+                        <button type="submit" name="direction" value="up" class="button button-ghost button-icon" title="上移" aria-label="上移">↑</button>
+                        <button type="submit" name="direction" value="down" class="button button-ghost button-icon" title="下移" aria-label="下移">↓</button>
+                    </form>
+                    <form method="post" class="q-card-inline">
+                        {% csrf_token %}{% include "feedback/_definition_version_field.html" %}
+                        <input type="hidden" name="action" value="duplicate-question">
+                        <input type="hidden" name="question_uuid" value="{{ card.uuid }}">
+                        <button type="submit" class="button button-ghost button-small">複製</button>
+                    </form>
+                    <form method="post" class="q-card-inline" data-confirm="確定刪除這一題？">
+                        {% csrf_token %}{% include "feedback/_definition_version_field.html" %}
+                        <input type="hidden" name="action" value="delete-question">
+                        <input type="hidden" name="question_uuid" value="{{ card.uuid }}">
+                        <button type="submit" class="button button-danger button-small">刪除</button>
+                    </form>
+                {% endif %}
+                <button type="button" class="button button-ghost button-small" data-card-toggle
+                        aria-expanded="{% if card.is_open %}true{% else %}false{% endif %}">{% if card.uuid %}編輯{% else %}＋ 新增題目{% endif %}</button>
+            </div>
+        {% endif %}
+    </header>
+
+    {% if read_only %}
+        <div class="q-card-preview">
+            {% if card.help_text %}<p class="question-preview-help">{{ card.help_text }}</p>{% endif %}
+            {% if card.rows %}
+                <ul class="q-card-preview-options">
+                    {% for row in card.rows %}<li>{{ row.label }}{% if row.excluded %}（不納入分析）{% endif %}</li>{% endfor %}
+                </ul>
+            {% elif card.ui_type == "scale" %}
+                <p>{{ card.scale_min }}{% if card.scale_min_label %}（{{ card.scale_min_label }}）{% endif %} – {{ card.scale_max }}{% if card.scale_max_label %}（{{ card.scale_max_label }}）{% endif %}</p>
+            {% endif %}
+        </div>
+    {% else %}
+        <form method="post" class="q-card-form form-stack" data-card-form {% if not card.uuid %}data-tracking-default-long="1"{% endif %}
+              {% if not card.is_open %}hidden{% endif %}>
+            {% csrf_token %}{% include "feedback/_definition_version_field.html" %}
+            <input type="hidden" name="action" value="save-question">
+            <input type="hidden" name="question_uuid" value="{{ card.uuid }}">
+            {% for error in card.non_field_errors %}<p class="form-error" role="alert">{{ error }}</p>{% endfor %}
+
+            <div class="q-card-row">
+                <div class="field-block q-card-title">
+                    <label for="title-{{ card.position }}">題目</label>
+                    <input type="text" id="title-{{ card.position }}" name="title" value="{{ card.title }}" maxlength="255" required>
+                    {% for error in card.errors.title %}<p class="form-error">{{ error }}</p>{% endfor %}
+                </div>
+                <div class="field-block q-card-type">
+                    <label for="type-{{ card.position }}">題型</label>
+                    <select id="type-{{ card.position }}" name="ui_type" data-ui-type>
+                        {% for value, label in ui_types %}
+                            <option value="{{ value }}" {% if card.ui_type == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="field-block">
+                <label for="help-{{ card.position }}">說明（選填）</label>
+                <input type="text" id="help-{{ card.position }}" name="help_text" value="{{ card.help_text }}" maxlength="255">
+            </div>
+
+            <div class="q-card-section" data-section="radio dropdown checkbox">
+                <p class="section-label">選項</p>
+                <div class="choice-rows" data-choice-rows>
+                    {% for row in card.rows %}
+                        <div class="choice-row" data-choice-row>
+                            <input type="hidden" name="choices-{{ forloop.counter0 }}-code" value="{{ row.code }}">
+                            <input type="hidden" name="choices-{{ forloop.counter0 }}-position" value="{{ forloop.counter0 }}" data-choice-position>
+                            <input type="text" name="choices-{{ forloop.counter0 }}-label" value="{{ row.label }}" maxlength="200" aria-label="選項文字" data-choice-label>
+                            <label class="choice-excluded" data-section="radio dropdown">
+                                <input type="hidden" name="choices-{{ forloop.counter0 }}-excluded" value="0">
+                                <input type="checkbox" name="choices-{{ forloop.counter0 }}-excluded" value="1" {% if row.excluded %}checked{% endif %}>
+                                不納入分析
+                            </label>
+                            <button type="button" class="button button-ghost button-icon" data-choice-up aria-label="選項上移">↑</button>
+                            <button type="button" class="button button-ghost button-icon" data-choice-down aria-label="選項下移">↓</button>
+                            <button type="button" class="button button-ghost button-icon" data-choice-remove aria-label="刪除選項">✕</button>
+                        </div>
+                    {% endfor %}
+                </div>
+                <button type="button" class="button button-ghost button-small" data-choice-add>＋ 新增選項</button>
+                <template data-choice-template>
+                    <div class="choice-row" data-choice-row>
+                        <input type="hidden" name="choices-__N__-code" value="">
+                        <input type="hidden" name="choices-__N__-position" value="__N__" data-choice-position>
+                        <input type="text" name="choices-__N__-label" value="" maxlength="200" aria-label="選項文字" data-choice-label>
+                        <label class="choice-excluded" data-section="radio dropdown">
+                            <input type="hidden" name="choices-__N__-excluded" value="0">
+                            <input type="checkbox" name="choices-__N__-excluded" value="1">
+                            不納入分析
+                        </label>
+                        <button type="button" class="button button-ghost button-icon" data-choice-up aria-label="選項上移">↑</button>
+                        <button type="button" class="button button-ghost button-icon" data-choice-down aria-label="選項下移">↓</button>
+                        <button type="button" class="button button-ghost button-icon" data-choice-remove aria-label="刪除選項">✕</button>
+                    </div>
+                </template>
+                <div data-section="radio dropdown">
+                    <label class="checkbox-label"><input type="checkbox" name="ordered" {% if card.ordered %}checked{% endif %}> 選項有高低順序（由低到高排列）</label>
+                    <label class="inline-field">分數從
+                        <select name="score_start">
+                            <option value="1" {% if card.score_start|stringformat:"s" == "1" %}selected{% endif %}>1</option>
+                            <option value="0" {% if card.score_start|stringformat:"s" == "0" %}selected{% endif %}>0</option>
+                        </select> 起算
+                    </label>
+                </div>
+            </div>
+
+            <div class="q-card-section" data-section="scale">
+                <div class="q-card-row">
+                    <label class="inline-field">起點
+                        <select name="scale_min">
+                            <option value="1" {% if card.scale_min|stringformat:"s" == "1" %}selected{% endif %}>1</option>
+                            <option value="0" {% if card.scale_min|stringformat:"s" == "0" %}selected{% endif %}>0</option>
+                        </select>
+                    </label>
+                    <label class="inline-field">終點
+                        <select name="scale_max">
+                            {% for value in scale_max_range %}
+                                <option value="{{ value }}" {% if card.scale_max|stringformat:"s" == value|stringformat:"s" %}selected{% endif %}>{{ value }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                </div>
+                <div class="q-card-row">
+                    <input type="text" name="scale_min_label" value="{{ card.scale_min_label }}" maxlength="40" placeholder="起點標籤（選填）" aria-label="起點標籤">
+                    <input type="text" name="scale_max_label" value="{{ card.scale_max_label }}" maxlength="40" placeholder="終點標籤（選填）" aria-label="終點標籤">
+                </div>
+                {% for error in card.errors.scale_min %}<p class="form-error">{{ error }}</p>{% endfor %}
+                {% for error in card.errors.scale_max %}<p class="form-error">{{ error }}</p>{% endfor %}
+            </div>
+
+            <div class="q-card-section" data-section="number">
+                <label class="checkbox-label"><input type="checkbox" name="allow_decimal" {% if card.allow_decimal %}checked{% endif %}> 允許小數</label>
+                <p class="hint-text">允許小數的數字題可做平均數比較與相關分析；整數題提供描述統計。</p>
+            </div>
+
+            <div class="q-card-section" data-section="short_text long_text">
+                <label class="checkbox-label"><input type="checkbox" name="enable_keyword_tracking" data-tracking {% if card.enable_keyword_tracking %}checked{% endif %}> 納入文字分析</label>
+            </div>
+
+            <div class="q-card-footer">
+                <label class="checkbox-label"><input type="checkbox" name="is_required" {% if card.is_required %}checked{% endif %}> 必填</label>
+                <button type="submit" class="button button-primary button-small">儲存</button>
+            </div>
+        </form>
+    {% endif %}
+</article>

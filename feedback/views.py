@@ -12,7 +12,7 @@ from django.db.models.fields.json import KT
 from django.db.models.functions import Cast, Coalesce, TruncDate
 import segno
 
-from django.http import Http404, HttpResponse, HttpResponseRedirect, JsonResponse
+from django.http import HttpResponseForbidden, Http404, HttpResponse, HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
@@ -29,11 +29,11 @@ from .forms import (
     ImprovementNoticeForm,
     ImprovementStatusTransitionForm,
     ImprovementUpdateForm,
-    QuestionCreateForm,
     RespondentMetaForm,
     SurveyCreateForm,
     SurveyEditForm,
     SurveyFormBuilder,
+    UI_TYPE_LABELS,
 )
 from .improvement_workflow import (
     ImprovementTransitionError,
@@ -462,20 +462,15 @@ class SurveyCategoryDeleteView(ManagerRequiredMixin, View):
             return redirect("feedback:survey-manager")
         category = get_object_or_404(SurveyCategory, pk=pk)
         name = category.name
-        node_surveys = list(category.surveys.filter(owner_node__isnull=False))
-        if node_surveys:
-            from cloudapi.definition import serialize_definition, update_survey
-            from cloudapi.writes import change_definition
+        from cloudapi.definition import serialize_definition, update_survey
+        from feedback.survey_lifecycle import commit
 
-            with transaction.atomic():
-                for survey in node_surveys:
-                    definition = serialize_definition(survey)
-                    update_survey(definition, {"category": None})
-                    change_definition(survey.uuid, expected_version=survey.definition_version, definition=definition)
-                category.delete()
-            messages.success(request, f"分類「{name}」已刪除。")
-            return redirect("feedback:survey-manager")
-        category.delete()
+        with transaction.atomic():
+            for survey in category.surveys.all():
+                definition = serialize_definition(survey)
+                update_survey(definition, {"category": None})
+                commit(survey, definition, survey.definition_version)
+            category.delete()
         messages.success(request, f"分類「{name}」已刪除。")
         return redirect("feedback:survey-manager")
 
@@ -496,44 +491,29 @@ class SurveyCreateView(DashboardBaseMixin, CreateView):
         return context
 
     def form_valid(self, form):
+        import uuid as uuid_module
+
+        from cloudapi.errors import DefinitionCommitError
+        from feedback.survey_lifecycle import create_draft
+
+        survey_uuid = uuid_module.uuid4()
         if settings.IS_NODE:
-            import uuid as uuid_module
-
-            from cloudapi.errors import DefinitionCommitError
-            from cloudsync.survey_write import create_survey
-
             try:
-                survey_uuid = str(uuid_module.UUID(self.request.POST.get("survey_uuid", "")))
+                survey_uuid = uuid_module.UUID(self.request.POST.get("survey_uuid", ""))
             except ValueError:
                 messages.error(self.request, "表單已過期，請重新開啟建立問卷頁。")
                 return self.form_invalid(form)
-            data = form.cleaned_data
-            definition = {
-                "survey_uuid": survey_uuid, "version": 0, "title": data["title"], "slug": "",
-                "description": data.get("description", ""), "is_active": data.get("is_active", True),
-                "analysis_enabled": data.get("analysis_enabled", True),
+        data = form.cleaned_data
+        try:
+            self.object = create_draft({
+                "survey_uuid": survey_uuid, "title": data["title"], "description": data.get("description", ""),
+                "is_active": data.get("is_active", True), "analysis_enabled": data.get("analysis_enabled", True),
                 "thank_you_email_enabled": data.get("thank_you_email_enabled", True),
-                "improvement_tracking_enabled": True,
                 "category": data["category"].name if data.get("category") else None,
-                "archived_at": None, "questions": [],
-            }
-            try:
-                self.object = create_survey(definition)
-            except DefinitionCommitError as exc:
-                messages.error(self.request, exc.user_message)
-                return self.form_invalid(form)
-            return HttpResponseRedirect(self.get_success_url())
-        form.instance.improvement_tracking_enabled = True
-        self.object = form.save()
-        base_slug = slugify(form.cleaned_data["title"]) or f"survey-{self.object.pk}"
-        slug = base_slug
-        counter = 2
-        while Survey.objects.filter(slug=slug).exclude(pk=self.object.pk).exists():
-            slug = f"{base_slug}-{counter}"
-            counter += 1
-        if self.object.slug != slug:
-            self.object.slug = slug
-            self.object.save(update_fields=["slug"])
+            })
+        except DefinitionCommitError as exc:
+            messages.error(self.request, exc.user_message)
+            return self.form_invalid(form)
         return HttpResponseRedirect(self.get_success_url())
 
     def get_success_url(self):
@@ -551,9 +531,14 @@ class SurveyBuilderView(DashboardBaseMixin, DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context.update(self.get_dashboard_base_context())
-        context["question_form"] = kwargs.get("question_form") or QuestionCreateForm(
-            initial={"order": self.object.questions.count() + 1}
-        )
+        from .builder_cards import build_cards
+
+        context["cards"], context["new_card"] = build_cards(self.object, kwargs.get("card_form"))
+        context["card_conflict"] = kwargs.get("card_conflict", False)
+        context["card_error"] = kwargs.get("card_error")
+        context["read_only"] = self.object.published_version is not None
+        context["ui_types"] = UI_TYPE_LABELS
+        context["scale_max_range"] = range(2, 11)
         context["survey_edit_form"] = kwargs.get("survey_edit_form") or SurveyEditForm(instance=self.object)
         external = external_source_totals([self.object.pk]).get(self.object.pk)
         if external:
@@ -568,83 +553,11 @@ class SurveyBuilderView(DashboardBaseMixin, DetailView):
         return context
 
     def post(self, request, *args, **kwargs):
+        from cloudapi.builder import builder_post
+        from feedback.survey_lifecycle import commit
+
         self.object = self.get_object()
-        if not settings.IS_NODE and self.object.owner_node_id:
-            from cloudapi.builder import builder_post, cloud_commit
-
-            return builder_post(self, request, cloud_commit)
-        if settings.IS_NODE:
-            from cloudapi.builder import builder_post
-            from cloudsync.survey_write import node_commit
-
-            return builder_post(self, request, node_commit)
-        action = request.POST.get("action")
-
-        if action == "move-question":
-            question = get_object_or_404(Question, id=request.POST.get("question_id"), survey=self.object)
-            direction = request.POST.get("direction")
-            questions = list(self.object.questions.order_by("order", "id"))
-            idx = next((i for i, q in enumerate(questions) if q.id == question.id), None)
-            if idx is not None:
-                if direction == "up" and idx > 0:
-                    swap = questions[idx - 1]
-                    question.order, swap.order = swap.order, question.order
-                    question.save(update_fields=["order"])
-                    swap.save(update_fields=["order"])
-                elif direction == "down" and idx < len(questions) - 1:
-                    swap = questions[idx + 1]
-                    question.order, swap.order = swap.order, question.order
-                    question.save(update_fields=["order"])
-                    swap.save(update_fields=["order"])
-            return redirect(reverse("feedback:survey-builder", args=[self.object.slug]) + "?tab=questions")
-
-        if action == "delete-question":
-            question = get_object_or_404(Question, id=request.POST.get("question_id"), survey=self.object)
-            if question.answers.exists():
-                question.is_active = False
-                question.save(update_fields=["is_active"])
-                messages.success(request, "題目已有歷史回答，已停用並保留資料。")
-            else:
-                question.delete()
-                messages.success(request, "尚無回答的題目已移除。")
-            return redirect("feedback:survey-builder", slug=self.object.slug)
-
-        if action == "restore-question":
-            question = get_object_or_404(Question, id=request.POST.get("question_id"), survey=self.object)
-            question.is_active = True
-            question.save(update_fields=["is_active"])
-            messages.success(request, "題目已恢復，會重新納入填答與分析。")
-            return redirect("feedback:survey-builder", slug=self.object.slug)
-
-        if action == "edit-question":
-            question = get_object_or_404(Question, id=request.POST.get("question_id"), survey=self.object)
-            question_form = QuestionCreateForm(request.POST, instance=question)
-            if question_form.is_valid():
-                question_form.save()
-                messages.success(request, "題目已更新。")
-                return redirect(reverse("feedback:survey-builder", args=[self.object.slug]) + "?tab=questions")
-            context = self.get_context_data(question_form=question_form, object=self.object)
-            return self.render_to_response(context)
-
-        if action == "update-survey":
-            survey_edit_form = SurveyEditForm(request.POST, instance=self.object)
-            if survey_edit_form.is_valid():
-                survey_edit_form.save()
-                messages.success(request, "問卷設定已儲存。")
-                return redirect(reverse("feedback:survey-builder", args=[self.object.slug]) + "?tab=settings")
-            context = self.get_context_data(survey_edit_form=survey_edit_form, object=self.object)
-            return self.render_to_response(context)
-
-        question_form = QuestionCreateForm(request.POST)
-        if question_form.is_valid():
-            question = question_form.save(commit=False)
-            question.survey = self.object
-            question.save()
-            messages.success(request, "新題目已加入問卷。")
-            return redirect("feedback:survey-builder", slug=self.object.slug)
-
-        context = self.get_context_data(question_form=question_form, object=self.object)
-        return self.render_to_response(context)
+        return builder_post(self, request, commit)
 
 
 class SurveyQRCodeView(ManagerRequiredMixin, View):
@@ -666,23 +579,9 @@ class SurveyDeleteView(DashboardBaseMixin, DeleteView):
         return Survey.objects.all()
 
     def form_valid(self, form):
-        survey = self.get_object()
-        if not settings.IS_NODE and survey.owner_node_id:
-            from cloudapi.builder import archive_post, cloud_commit
+        from cloudapi.builder import delete_post
 
-            archive_post(self.request, survey, cloud_commit)
-            return HttpResponseRedirect(self.get_success_url())
-        if settings.IS_NODE:
-            from cloudapi.builder import archive_post
-            from cloudsync.survey_write import node_commit
-
-            archive_post(self.request, survey, node_commit)
-            return HttpResponseRedirect(self.get_success_url())
-        survey.is_active = False
-        survey.analysis_enabled = False
-        survey.archived_at = timezone.now()
-        survey.save(update_fields=("is_active", "analysis_enabled", "archived_at", "updated_at"))
-        messages.success(self.request, f"問卷「{survey.title}」已封存，歷史資料與分析版本均已保留。")
+        delete_post(self.request, self.get_object())
         return HttpResponseRedirect(self.get_success_url())
 
 
@@ -864,9 +763,19 @@ class ImprovementListView(DashboardBaseMixin, TemplateView):
     def post(self, request, *args, **kwargs):
         action = request.POST.get("action")
         if action == "toggle-tracking":
+            from cloudapi.definition import serialize_definition, update_survey
+            from cloudapi.errors import DefinitionCommitError
+            from feedback.survey_lifecycle import commit
+
             survey = get_object_or_404(Survey, id=request.POST.get("survey_id"))
-            survey.improvement_tracking_enabled = request.POST.get("enabled") == "on"
-            survey.save(update_fields=["improvement_tracking_enabled"])
+            definition = serialize_definition(survey)
+            update_survey(definition, {"improvement_tracking_enabled": request.POST.get("enabled") == "on"})
+            try:
+                commit(survey, definition, survey.definition_version)
+            except DefinitionCommitError as exc:
+                messages.error(request, exc.user_message)
+                return redirect(f"{reverse('feedback:improvement-list')}?survey={survey.slug}")
+            survey.refresh_from_db()
             state = "啟用" if survey.improvement_tracking_enabled else "停用"
             messages.success(request, f"「{survey.title}」改善追蹤已{state}。")
             return redirect(f"{reverse('feedback:improvement-list')}?survey={survey.slug}")
@@ -996,26 +905,37 @@ class SurveyDetailView(DetailView):
     slug_field = "slug"
     slug_url_kwarg = "slug"
 
+    def _is_preview(self, request):
+        return request.GET.get("preview") == "1" and getattr(request.user, "is_manager", False)
+
+    def _notice(self, message, kind):
+        return self.render_to_response(self.get_context_data(survey_notice=message, survey_notice_type=kind))
+
     def dispatch(self, request, *args, **kwargs):
         self.object = self.get_object()
         if not request.user.is_authenticated:
             messages.warning(request, "這份問卷需要先登入後才能填答。")
             return redirect(f"{reverse('accounts:login')}?next={request.path}")
-        if not self.object.accepts_responses:
-            return self.render_to_response(
-                self.get_context_data(survey_notice="這份問卷目前未開放填答。", survey_notice_type="error")
-            )
-        if not self.object.questions.filter(is_active=True).exists():
-            return self.render_to_response(
-                self.get_context_data(survey_notice="這份問卷目前沒有任何題目。", survey_notice_type="warning")
-            )
-        if not request.user.is_manager:
-            from cloudapi.receipts import has_submitted
+        if request.GET.get("preview") == "1" and request.method != "GET":
+            return HttpResponseForbidden("預覽模式不能送出")
+        if self._is_preview(request):
+            response = super().dispatch(request, *args, **kwargs)
+            # Only the manager preview may be framed, by the builder on this site (builder spec §3).
+            response["X-Frame-Options"] = "SAMEORIGIN"
+            return response
+        if request.method == "GET":
+            # Display limits only; a POST is judged by the service under the survey lock (spec §7.1).
+            if not self.object.is_published:
+                return self._notice("問卷尚未開放", "error")
+            if not self.object.accepts_responses:
+                return self._notice("這份問卷目前未開放填答。", "error")
+            if not self.object.questions.filter(is_active=True).exists():
+                return self._notice("這份問卷目前沒有任何題目。", "warning")
+            if not request.user.is_manager:
+                from cloudapi.receipts import has_submitted
 
-            if has_submitted(self.object, request.user):
-                return self.render_to_response(
-                    self.get_context_data(survey_notice="你已填答過這份問卷。", survey_notice_type="info")
-                )
+                if has_submitted(self.object, request.user):
+                    return self._notice("你已填答過這份問卷。", "info")
         return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
@@ -1031,53 +951,70 @@ class SurveyDetailView(DetailView):
         from cloudapi.inbox import uses_inbox
 
         context["uses_inbox"] = uses_inbox(self.object)
-        context["inbox_definition_version"] = self.object.definition_version
+        context["form_version"] = self.object.published_version
+        context["preview"] = self._is_preview(self.request)
         return context
 
     def post(self, request, *args, **kwargs):
         self.object = self.get_object()
         respondent_form = RespondentMetaForm(request.POST, prefix="meta")
         form = SurveyFormBuilder(request.POST, survey=self.object)
-        if form.is_valid() and respondent_form.is_valid():
-            consent_follow_up = respondent_form.cleaned_data["consent_follow_up"]
-            if request.user.is_authenticated and not request.user.is_manager:
+        if not (form.is_valid() and respondent_form.is_valid()):
+            context = self.get_context_data(object=self.object, form=form, respondent_form=respondent_form)
+            return self.render_to_response(context)
+        consent_follow_up = respondent_form.cleaned_data["consent_follow_up"]
+
+        from cloudapi.inbox import uses_inbox
+
+        if uses_inbox(self.object):
+            if not request.user.is_manager:
                 request.user.notification_opt_in = consent_follow_up
                 request.user.save(update_fields=["notification_opt_in"])
+            return self._submit_to_inbox(request, form, respondent_form, consent_follow_up)
 
-            from cloudapi.inbox import uses_inbox
-
-            if uses_inbox(self.object):
-                return self._submit_to_inbox(request, form, respondent_form, consent_follow_up)
-
-            respondent_name = request.user.get_full_name() if request.user.is_authenticated else ""
-            respondent_email = request.user.email if request.user.is_authenticated else ""
-
+        try:
+            form_version = int(request.POST.get("definition_version", ""))
+        except ValueError:
+            form_version = -1  # a form without a version can never match the published one
+        try:
             submission_result = local_service.submit_survey_payload(
                 self.object,
-                user=request.user if request.user.is_authenticated else None,
-                respondent_name=respondent_name,
-                respondent_email=respondent_email,
+                user=request.user,
+                respondent_name=request.user.get_full_name(),
+                respondent_email=request.user.email,
                 consent_follow_up=consent_follow_up,
                 answers={key: value for key, value in form.cleaned_data.items()},
                 idempotency_key=respondent_form.cleaned_data["idempotency_key"],
+                form_version=form_version,
+                reject_repeat=not request.user.is_manager,
             )
+        except local_service.SurveyFormOutdated as exc:
+            messages.error(request, exc.user_message)
+            context = self.get_context_data(object=self.object, form=form, respondent_form=respondent_form)
+            return self.render_to_response(context)
+        except (local_service.SurveyNotAccepting, local_service.SurveyAlreadySubmitted) as exc:
+            return self._notice(exc.user_message, "error")
+        except ValueError:
+            messages.error(request, "這份回覆無法重複送出，請重新填寫")
+            context = self.get_context_data(object=self.object, form=form, respondent_form=respondent_form)
+            return self.render_to_response(context)
 
-            if (
-                not submission_result["reused"]
-                and submission_result["thank_you_email_enabled"]
-                and submission_result["respondent_email"]
-            ):
-                send_mail(
-                    subject=f"感謝填寫 {submission_result['survey_title']}",
-                    message="我們已收到你的回覆。若後續有對應的改善通知，將依你的偏好主動提供最新進度。",
-                    from_email=None,
-                    recipient_list=[submission_result["respondent_email"]],
-                    fail_silently=True,
-                )
-            return HttpResponseRedirect(reverse("feedback:survey-success", args=[self.object.slug]))
-
-        context = self.get_context_data(object=self.object, form=form, respondent_form=respondent_form)
-        return self.render_to_response(context)
+        if not request.user.is_manager and not submission_result["reused"]:
+            request.user.notification_opt_in = consent_follow_up
+            request.user.save(update_fields=["notification_opt_in"])
+        if (
+            not submission_result["reused"]
+            and submission_result["thank_you_email_enabled"]
+            and submission_result["respondent_email"]
+        ):
+            send_mail(
+                subject=f"感謝填寫 {submission_result['survey_title']}",
+                message="我們已收到你的回覆。若後續有對應的改善通知，將依你的偏好主動提供最新進度。",
+                from_email=None,
+                recipient_list=[submission_result["respondent_email"]],
+                fail_silently=True,
+            )
+        return HttpResponseRedirect(reverse("feedback:survey-success", args=[self.object.slug]))
 
     def _submit_to_inbox(self, request, form, respondent_form, consent_follow_up):
         from cloudapi.envelope import encode_answers

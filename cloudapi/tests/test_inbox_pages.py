@@ -8,7 +8,7 @@ from cloudapi.models import InboxSubmission, NodeDevice, SubmissionReceipt
 from cloudapi.receipts import received_counts
 from cloudapi.writes import assign_survey_to_node, change_definition
 from feedback.models import FeedbackSubmission, Question, Survey
-from feedback.test_utils import cloud_only
+from feedback.test_utils import cloud_only, published
 
 User = get_user_model()
 
@@ -20,8 +20,8 @@ class InboxFillPageTests(TestCase):
         node, _ = NodeDevice.issue("office")
         survey = Survey.objects.create(title="S", slug="s")
         self.question = Question.objects.create(survey=survey, title="Q", kind="short_text", data_type="text", order=1)
-        self.survey = assign_survey_to_node(survey, node).survey
-        Survey.objects.filter(pk=self.survey.pk).update(inbox_since=timezone.now())
+        self.survey = published(assign_survey_to_node(survey, node).survey)
+        Survey.objects.filter(pk=self.survey.pk).update(inbox_since=timezone.now(), published_version=1, analysis_definition_version=1)
         self.customer = User.objects.create_user(username="c", password="x")
         self.client.force_login(self.customer)
         self.url = reverse("feedback:survey-detail", args=["s"])
@@ -39,10 +39,7 @@ class InboxFillPageTests(TestCase):
         self.assertContains(self.client.get(self.url), "你已填答過這份問卷。")
 
     def test_outdated_form_shows_message_and_keeps_input(self):
-        definition = serialize_definition(Survey.objects.get(pk=self.survey.pk))
-        update_survey(definition, {"title": "新版"})
-        change_definition(self.survey.uuid, expected_version=1, definition=definition)
-        response = self.submit(version=1)
+        response = self.submit(version=99)
         self.assertContains(response, "問卷已更新，請確認後重新送出")
         self.assertContains(response, 'value="好"')
         self.assertFalse(SubmissionReceipt.objects.exists())

@@ -4,14 +4,16 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import connection, transaction
 
 from feedback.local_service import submit_survey_payload
-from feedback.survey_purge import PurgeRefused, purge_survey
-from feedback.models import (
-    FeedbackSubmission,
-    KeywordCategory,
-    Question,
-    Survey,
-    SurveyCategory,
+from feedback.models import FeedbackSubmission, Survey
+from feedback.seed_support import (
+    answers_by_title,
+    choice_question,
+    create_published_survey,
+    number_question,
+    scale_question,
+    text_question,
 )
+from feedback.survey_purge import PurgeRefused, purge_survey
 
 SURVEY_SLUG = "beverage-feedback"
 SURVEY_TITLE = "飲料店體驗回饋"
@@ -20,65 +22,23 @@ CATEGORY_NAME = "飲料店"
 NAME_PREFIX = "飲料店模擬填答"
 
 STORES = ["信義店", "台北車站店", "公館店", "士林店"]
+DINING = ["內用", "外帶"]
 ITEMS = ["珍珠奶茶", "紅茶", "綠茶", "水果茶", "咖啡", "奶蓋茶"]
 WAIT_LEVELS = ["很快", "普通", "久", "很久"]
+NOT_APPLICABLE = "不適用"
 
+# Builder spec §5 step 6: every question type and all seven statistical methods are exercised.
 QUESTIONS = [
-    {
-        "order": 1,
-        "title": "您最常前往的門市",
-        "kind": Question.Kind.SINGLE_CHOICE,
-        "data_type": Question.DataType.NOMINAL,
-        "options_text": "\n".join(STORES),
-        "is_required": True,
-        "enable_keyword_tracking": False,
-    },
-    {
-        "order": 2,
-        "title": "最常購買的品項（可複選）",
-        "kind": Question.Kind.MULTIPLE_CHOICE,
-        "data_type": Question.DataType.NOMINAL,
-        "options_text": "\n".join(ITEMS),
-        "is_required": True,
-        "enable_keyword_tracking": False,
-    },
-    {
-        "order": 3,
-        "title": "整體滿意度（1-10）",
-        "kind": Question.Kind.SCALE,
-        "data_type": Question.DataType.CONTINUOUS,
-        "options_text": "",
-        "is_required": True,
-        "enable_keyword_tracking": False,
-        "help_text": "1 代表非常不滿意，10 代表非常滿意",
-    },
-    {
-        "order": 4,
-        "title": "甜度與口味滿意度（1-10）",
-        "kind": Question.Kind.SCALE,
-        "data_type": Question.DataType.CONTINUOUS,
-        "options_text": "",
-        "is_required": True,
-        "enable_keyword_tracking": False,
-    },
-    {
-        "order": 5,
-        "title": "等候時間感受",
-        "kind": Question.Kind.SINGLE_CHOICE,
-        "data_type": Question.DataType.ORDINAL,
-        "options_text": "\n".join(WAIT_LEVELS),
-        "is_required": True,
-        "enable_keyword_tracking": False,
-    },
-    {
-        "order": 6,
-        "title": "希望改善的地方",
-        "kind": Question.Kind.LONG_TEXT,
-        "data_type": Question.DataType.TEXT,
-        "options_text": "",
-        "is_required": False,
-        "enable_keyword_tracking": True,
-    },
+    choice_question("門市", STORES),
+    choice_question("內用或外帶", DINING),
+    choice_question("最常購買的品項（可複選）", ITEMS, multiple=True),
+    scale_question("整體滿意度", 1, 10, low_label="非常不滿意", high_label="非常滿意"),
+    scale_question("推薦意願", 0, 10, low_label="完全不會", high_label="一定會"),
+    choice_question("等候時間感受", WAIT_LEVELS + [NOT_APPLICABLE], ordered=True, excluded=(NOT_APPLICABLE,)),
+    number_question("等候分鐘數", decimal=True),
+    number_question("消費金額", decimal=True),
+    number_question("過去 30 天來店次數"),
+    text_question("希望改善的地方", long=True, tracked=True, required=False),
 ]
 
 KEYWORDS = [
@@ -94,6 +54,8 @@ KEYWORDS = [
 # 以利統計推論（ANOVA／Kruskal-Wallis／chi-square）出現顯著結果。
 STORE_PROFILES = {
     "信義店": {
+        "wait_mean": 3.0,
+        "visits": (3, 8),
         "score_range": (8, 10),
         "sweet_range": (7, 10),
         "wait_weights": [0.6, 0.3, 0.1, 0.0],
@@ -107,6 +69,8 @@ STORE_PROFILES = {
         ],
     },
     "台北車站店": {
+        "wait_mean": 9.0,
+        "visits": (1, 4),
         "score_range": (4, 7),
         "sweet_range": (5, 8),
         "wait_weights": [0.0, 0.2, 0.5, 0.3],
@@ -120,6 +84,8 @@ STORE_PROFILES = {
         ],
     },
     "公館店": {
+        "wait_mean": 5.0,
+        "visits": (2, 6),
         "score_range": (6, 9),
         "sweet_range": (6, 9),
         "wait_weights": [0.2, 0.5, 0.25, 0.05],
@@ -133,6 +99,8 @@ STORE_PROFILES = {
         ],
     },
     "士林店": {
+        "wait_mean": 8.0,
+        "visits": (1, 3),
         "score_range": (3, 6),
         "sweet_range": (3, 6),
         "wait_weights": [0.0, 0.2, 0.5, 0.3],
@@ -150,8 +118,8 @@ STORE_PROFILES = {
 
 class Command(BaseCommand):
     help = (
-        "建立飲料店示範問卷（6 題、6 條關鍵字分類）並灌入 100 筆模擬填答。"
-        "支援 --cleanup（僅清填答）與 --reset（連同問卷整份重建）。"
+        "建立並發布飲料店示範問卷（10 題、6 條關鍵字分類），灌入模擬填答（填答者名稱前綴「飲料店模擬填答」）。"
+        "問卷已存在時需加 --reset 重建；--cleanup 只清除模擬填答。"
     )
 
     def add_arguments(self, parser):
@@ -187,84 +155,49 @@ class Command(BaseCommand):
         if opts["count"] < 1:
             raise CommandError("--count 必須 >= 1")
 
-        survey = self._ensure_survey()
-        self._ensure_questions(survey)
-        self._ensure_keywords(survey)
-
+        survey = create_published_survey(
+            slug=SURVEY_SLUG, title=SURVEY_TITLE, description=SURVEY_DESCRIPTION, category=CATEGORY_NAME,
+            questions=QUESTIONS, keywords=KEYWORDS,
+        )
         rng = random.Random(opts["seed"])
         created = self._seed_responses(survey, opts["count"], rng)
 
         self.stdout.write(self.style.SUCCESS(
-            f"完成：問卷 {survey.slug!r} 已建立／更新，灌入 {created} 筆模擬填答"
+            f"完成：問卷 {survey.slug!r} 已建立並發布，灌入 {created} 筆模擬填答"
         ))
         self._print_db_hint()
 
-    def _ensure_survey(self) -> Survey:
-        category, _ = SurveyCategory.objects.get_or_create(name=CATEGORY_NAME)
-        survey, _ = Survey.objects.update_or_create(
-            slug=SURVEY_SLUG,
-            defaults={
-                "title": SURVEY_TITLE,
-                "description": SURVEY_DESCRIPTION,
-                "category": category,
-                "thank_you_email_enabled": False,
-                "improvement_tracking_enabled": True,
-                "is_active": True,
-            },
-        )
-        return survey
-
-    def _ensure_questions(self, survey: Survey):
-        for spec in QUESTIONS:
-            Question.objects.update_or_create(
-                survey=survey,
-                order=spec["order"],
-                defaults={k: v for k, v in spec.items() if k != "order"},
-            )
-
-    def _ensure_keywords(self, survey: Survey):
-        for keyword, category in KEYWORDS:
-            KeywordCategory.objects.update_or_create(
-                survey=survey,
-                keyword=keyword,
-                defaults={"category": category, "threshold": 2},
-            )
-
     def _seed_responses(self, survey: Survey, count: int, rng: random.Random) -> int:
-        questions = list(survey.questions.order_by("order"))
-        q_store = next(q for q in questions if q.order == 1)
-        q_items = next(q for q in questions if q.order == 2)
-        q_score = next(q for q in questions if q.order == 3)
-        q_sweet = next(q for q in questions if q.order == 4)
-        q_wait = next(q for q in questions if q.order == 5)
-        q_text = next(q for q in questions if q.order == 6)
-
         per_store = count // len(STORES)
-        remainder = count - per_store * len(STORES)
-        store_cycle = [s for s in STORES for _ in range(per_store)]
-        store_cycle.extend(rng.choices(STORES, k=remainder))
+        store_cycle = [store for store in STORES for _ in range(per_store)]
+        store_cycle.extend(rng.choices(STORES, k=count - len(store_cycle)))
         rng.shuffle(store_cycle)
 
         with transaction.atomic():
             for i, store in enumerate(store_cycle, start=1):
                 profile = STORE_PROFILES[store]
+                dining = rng.choice(DINING)
                 lo, hi = profile["score_range"]
-                slo, shi = profile["sweet_range"]
-                items_lo, items_hi = profile["item_count"]
-                items_pool = profile["item_pool"]
-
-                wait = rng.choices(WAIT_LEVELS, weights=profile["wait_weights"])[0]
-                k = rng.randint(items_lo, min(items_hi, len(items_pool)))
-                items = rng.sample(items_pool, k=k)
-                text = rng.choice(profile["text_pool"])
-
-                answers = {
-                    f"question_{q_store.id}": store,
-                    f"question_{q_items.id}": items,
-                    f"question_{q_score.id}": rng.randint(lo, hi),
-                    f"question_{q_sweet.id}": rng.randint(slo, shi),
-                    f"question_{q_wait.id}": wait,
-                    f"question_{q_text.id}": text,
+                # Take-away customers wait less and are a little happier (Welch t / Mann-Whitney).
+                wait_minutes = round(max(0.5, rng.gauss(profile["wait_mean"], 1.5) - (1.5 if dining == "外帶" else 0)), 1)
+                score = min(10, max(1, rng.randint(lo, hi) + (1 if dining == "外帶" else 0) - int(wait_minutes // 6)))
+                spend = round(max(35.0, rng.gauss(55 + score * 6, 12)), 1)  # higher spend with higher satisfaction
+                wait_feeling = WAIT_LEVELS[min(3, int(wait_minutes // 3.5))]
+                if rng.random() < 0.05:
+                    wait_feeling = NOT_APPLICABLE  # e.g. delivered by a friend: excluded from analysis
+                items = rng.sample(profile["item_pool"], k=rng.randint(1, min(profile["item_count"][1],
+                                                                         len(profile["item_pool"]))))
+                values = {
+                    "門市": store,
+                    "內用或外帶": dining,
+                    "最常購買的品項（可複選）": items,
+                    "整體滿意度": str(score),
+                    "推薦意願": str(min(10, max(0, score + rng.randint(-2, 1)))),
+                    "等候時間感受": wait_feeling,
+                    "等候分鐘數": f"{wait_minutes}",
+                    "消費金額": f"{spend}",
+                    "過去 30 天來店次數": str(rng.randint(profile["visits"][0], profile["visits"][1])),
+                    "希望改善的地方": rng.choice(profile["text_pool"]),
                 }
                 submit_survey_payload(
                     survey,
@@ -272,7 +205,7 @@ class Command(BaseCommand):
                     respondent_name=f"{NAME_PREFIX} #{i}",
                     respondent_email="",
                     consent_follow_up=bool(rng.getrandbits(1)),
-                    answers=answers,
+                    answers=answers_by_title(survey, values),
                 )
         return count
 
