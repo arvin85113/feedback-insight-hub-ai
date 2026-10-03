@@ -1,7 +1,7 @@
 # 問卷建立工具改版：Google 表單式編輯、草稿與發布、自動資料型態
 
-狀態：規格第四版之一（2026-10-03）。第三版經兩輪獨立審查；第四版依產品決策改為「草稿可編輯、發布後定義固定」，
-並依真實問卷反推加入選項分數與「不納入分析」選項；本版納入第四版獨立審查（REQUEST CHANGES）的 12 項修正。
+狀態：規格第四版之二（2026-10-03）。第三版經兩輪獨立審查；第四版依產品決策改為「草稿可編輯、發布後定義固定」，
+並依真實問卷反推加入選項分數與「不納入分析」選項；4.1 納入第四版獨立審查的 12 項修正；4.2 依實作計畫審查新增第 7 節「流程與合約」，並調整白名單新鮮度、文字刻度轉換、初始版本與節點草稿刪除；4.2 第二輪補上受控寫入入口、填答版本核對與重送順序、節點分析版本、收件匣容量與本機副本辨識。
 相關文件：[雲端同步](2026-10-01-cloud-sync-design.md)、[真實問卷反推的題目與統計需求](../../survey-instrument-requirements.md)。
 
 ## 目標
@@ -27,7 +27,7 @@
 2. 管理者看不到「名目／順序／離散／連續」；資料型態完全由題型與最多一個開關決定，不可能組出不合法的組合。
 3. 草稿可任意修改；**發布後題目、選項、刻度、標籤、分數、問卷標題與說明固定，即使尚無回覆也一樣**；
    只能變更第 4.2 節白名單內的設定（收件狀態、封存等）與複製成新草稿。
-4. 每筆回覆記錄填答時的**發布版本**（`published_version`）；收件狀態等白名單變更不影響已開啟的表單，也不讓分析結果變成「非最新」。
+4. 每筆回覆記錄填答時的**發布版本**（`published_version`）；白名單變更不影響已開啟的表單；其中收件狀態、分類、感謝信、改善追蹤也不讓分析結果變成「非最新」（第 7.2 節）。
 5. 複選答案可完整還原，選項含逗號也不影響；複選統計同時呈現選取人數、選取率（分母為該題填答人數）與勾選次數。
 6. 標為「不納入分析」的選項不參與排序與檢定，每題報告有效 N、未作答數、「不納入分析」數與無效數，四者互不重疊。
 7. 有序選項有明確分數（可從 0 或 1 起算）；刻度可從 0 起算。
@@ -99,7 +99,7 @@
 | 一般填答寫入 `submit_survey_payload`（`feedback/local_service.py`）與 `SurveyDetailView` | 只接受已發布且收件中的問卷；寫入 `choice_codes` 與 `definition_version`（＝發布版本）；`value` 存顯示用文字 |
 | 收件匣送出 `accept_submission`（`cloudapi/inbox.py`）與 `encode_answers`（`cloudapi/envelope.py`） | 在問卷列鎖內再核對「已發布且收件中」；表單版本與 `published_version` 比對；以代碼建立封套答案 |
 | C2 封套與本機寫入（`cloudapi/envelope.py`、`cloudsync/inbox.py`） | 封套新增 `answers_format: 2`（選擇題答案為代碼：單選字串、複選陣列），納入雜湊；本機寫入時產生 `choice_codes` 與顯示用 `value`。缺少或不是 2 者隔離，`QUARANTINE_REASONS` 新增 `answers_format`。`payload_version` 維持 1（保留給加密） |
-| 結果新鮮度 `node_freshness`（`cloudapi/freshness.py`） | 「定義是否最新」改比對 `published_version`；`legacy_unmigrated` 與網站的「雲端既有 N 筆未納入分析」移除（不搬移，見雲端同步規格第 10 節） |
+| 結果新鮮度 `node_freshness`（`cloudapi/freshness.py`） | 「定義是否最新」改比對 `analysis_definition_version`（第 7.2 節）；`legacy_unmigrated` 與網站的「雲端既有 N 筆未納入分析」移除（不搬移，見雲端同步規格第 10 節） |
 | C1 定義與寫入（`cloudapi/definition.py`、`cloudapi/writes.py`、`cloudapi/views.py`） | 見第 4 節；`check_semantic_lock` 與 `SEMANTIC_FIELDS` 移除；`Question.has_received_answer` 欄位保留（收件時照舊標記，不再用於鎖定） |
 | 種子與測試資料：`seed_demo_beverage.py`、`seed_random_responses.py`、`seed_demo.py`、`scripts/seed_demo_data.py` | 以新欄位建立題目並寫入 `choice_codes`；建立後發布 |
 | 匯入器（`feedback/importing/service.py`） | 以 `analysis_levels` 驗證答案；與既有題目的相容比對改以新結構為準；寫入 `choice_codes`；建立的問卷直接為已發布 |
@@ -136,7 +136,9 @@
   - `definition_version`：**任何**定義變更都遞增（草稿編輯、發布、發布後的白名單變更），**每個版本都保存 `SurveyDefinitionRevision`**
     （所有問卷皆然；儲存是手動按鈕，不會產生大量版本）。節點問卷另照 C1 寫入 `SurveyChange`，同步沿用現有機制。
   - `published_version`：發布時設為當下的 `definition_version`，之後不再改變。填答表單核對、`FeedbackSubmission.definition_version`、
-    收件封套的 `definition_version`、分析結果的新鮮度判斷都使用它，因此白名單變更不會讓已開啟的表單被拒，也不會讓結果變成「非最新」。
+    收件封套的 `definition_version` 都使用它，因此白名單變更不會讓已開啟的表單被拒；分析是否需要重算依第 7.2 節。
+  - 新建立（含複製、匯入）的問卷即為版本 1，並保存 revision；不存在沒有 revision 的版本。
+  - `analysis_definition_version`（新增欄位）：最後一次**影響分析**的定義版本——發布時設為發布版本，`analysis_enabled` 或 `archived_at` 變更時設為新的 `definition_version`，其他白名單變更不改。隨定義 dict 同步到節點；節點上傳結果時申報它，雲端以它判定節點結果的定義是否最新（第 7.2 節）。
 - **草稿編輯**：請求帶上載入時的 `definition_version`，不符回 409。
 - **發布**：在交易內 `select_for_update` 鎖定問卷列，核對請求版本等於目前版本（拒絕發布未看過的修改），驗證完整性
   （至少一題；選擇題選項數符合第 2.1 節），遞增 `definition_version` 並保存 revision，設定 `published_version` 與 `published_at`。
@@ -164,7 +166,7 @@
 ### 4.4 填答與複製
 
 - **填答**：網站與收件匣都只接受已發布且收件中的問卷；回覆記錄 `FeedbackSubmission.definition_version`（新增欄位，可空）＝發布版本。
-- **複製為新草稿**：建立新問卷（新網址、未發布、版本 0、不帶收件節點），題目與選項**保留原代碼與計數器**，以利日後跨問卷對應（例如前後測）；
+- **複製為新草稿**：建立新問卷（新網址、未發布、版本 1；雲端複製不帶收件節點，在本機複製時由雲端指派給該節點，仍為草稿可再變更），題目與選項**保留原代碼與計數器**，以利日後跨問卷對應（例如前後測）；
   新舊問卷的分析各自獨立。
 
 ## 5. 舊資料：捨棄並重新模擬
@@ -177,7 +179,7 @@ TripAdvisor（真實外部資料，答案只在本機 Parquet，Supabase 只有�
    開發資料庫與本機節點資料庫以同一指令清除測試與模擬問卷後再升級。
 3. **Migration**（schema 與資料轉換分成兩個 migration；資料轉換只用 queryset `update()`／`bulk_update()`，**不呼叫 `save()`、不觸動 `updated_at`**）：
    新增欄位；轉換所有題目定義——`options_text` 逐行產生 `choices`（不排除、有序題分數從 1 起算）並依序設定代碼與計數器；
-   `ordered` 取自現有 `data_type`；刻度題的選項全是連續整數者設為刻度範圍（TripAdvisor 的六題評分 → 1–5），其他刻度設 1–5；
+   `ordered` 取自現有 `data_type`；刻度題的選項全是連續整數者設為刻度範圍（TripAdvisor 的六題評分 → 1–5）；選項含文字者轉為有序單選（`single_choice`、`ordered`、`display=radio`，選項沿用）；沒有選項者設 1–5；
    `data_type` 依第 1 節重新推導；非文字題 `enable_keyword_tracking` 設為 `False`；
    **既有問卷全部視為已發布**：`published_version`＝目前 `definition_version`（為 0 者兩者都設為 1），`published_at`＝建立時間，並補存該版本的 revision。
    單選題的既有答案，若 `Answer.value` 恰好等於一個選項文字，寫入對應 `choice_codes`。
@@ -195,12 +197,9 @@ TripAdvisor（真實外部資料，答案只在本機 Parquet，Supabase 只有�
 
 ### 5.1 問卷刪除政策與 `purge_survey`
 
-- 一般介面的「刪除問卷」：草稿可直接刪除；已發布的問卷只能封存（不硬刪）。
+- 一般介面的「刪除問卷」：未指派節點的草稿可直接刪除（經同一個刪除程序）；已指派節點的草稿與已發布的問卷只能封存（不硬刪）。
 - 管理指令 `purge_survey --survey <slug> [--confirm]` 只用於清除測試或模擬資料：預設 dry-run，列出將刪除的筆數；
-  加 `--confirm` 才在一個交易內依序刪除：改善通知（`ImprovementNotice`，對改善紀錄為 `PROTECT`）→ 改善發送紀錄 → 改善紀錄
-  （`ImprovementUpdate.survey` 為 `SET_NULL`，不先刪會留下孤兒）→ 同步變更紀錄（`SurveyChange`，`PROTECT`）→ 問卷定義 revision（`PROTECT`）
-  → 分析工作、Snapshot、AI Stage、分析狀態與結果上傳紀錄 → 回覆與答案 → 問卷。實作以 Django `Collector` 檢查沒有遺漏的 `PROTECT` 關聯。
-  指派給節點的問卷（`owner_node` 有值）拒絕執行。
+  加 `--confirm` 才刪除。刪除順序、dry-run 計數方式與拒絕條件見第 7.4 節。
 - `seed_demo_beverage --reset` 改為呼叫同一個刪除程序，不再直接 `delete()`。
 
 ## 6. 外部資料（TripAdvisor、Amazon Beauty）
@@ -209,6 +208,103 @@ TripAdvisor（真實外部資料，答案只在本機 Parquet，Supabase 只有�
 - mapping 中的題型與資料型態必須通過 `derive_data_type`；現有兩份 mapping 皆符合（刻度＝順序、整數＝離散、文字＝文字、單選＝名目）。
 - 依 mapping 建立的資料庫題目採新結構並直接為已發布：沿用 mapping 代碼；選項產生代碼；整數選項的刻度設定範圍；`enable_keyword_tracking` 沿用 mapping（僅文字題可為真）。
 - 小型資料匯入成 `FeedbackSubmission`／`Answer` 時（例如 Amazon Beauty「是否驗證購買」），匯入器以選項文字比對寫入 `choice_codes`，比對不到者列入匯入報告。
+
+## 7. 流程與合約
+
+本節是各層共同遵守的規則；與前面章節衝突時以本節為準。雲端同步的 ACK、重送、隔離與結果上傳沿用[雲端同步規格](2026-10-01-cloud-sync-design.md)，本節只列改動。
+
+### 7.1 狀態轉換（單一寫入路徑）
+
+**問卷定義只能經由下列受控入口寫入**，全部位於 `cloudapi/writes.py`，共用同一個內部程序 `_locked_write`：在交易內鎖問卷列 → 核對版本與狀態 → `apply_definition` → `record_version`。
+
+| 受控入口 | 用途 |
+|---|---|
+| `change_definition(survey_uuid, *, expected_version, definition)` | 草稿編輯、發布、白名單變更、封存 |
+| `create_survey(definition)` | 雲端網站建立草稿、雲端複製 |
+| `create_node_survey(node, definition)` | 本機建立草稿、本機複製（雲端指派給該節點） |
+| `assign_survey_to_node(survey, node)` | 草稿指派節點 |
+| `create_imported_survey(definition)` | 外部資料匯入建立問卷（版本 1、直接發布） |
+
+網站的建立工具一律先編輯定義 dict，再交給 `feedback.survey_lifecycle`：雲端模式直接呼叫上表入口；本機模式經 API 送到雲端，成功後以回傳的定義更新本機副本。
+**建立問卷的**種子指令（`seed_demo_beverage`、`seed_demo`、`seed_notification_test`、`scripts/seed_demo_data.py`）也經由 `feedback.survey_lifecycle` 建立與發布；問卷已存在時，未加 `--reset` 一律拒絕，不直接修改既有題目。只產生回覆的 `seed_random_responses` 不建立問卷，對既有已發布問卷經一般填答 service 送出（帶發布版本）。
+唯一不經由上表的寫入是資料轉換 migration（第 5 節），它在單一交易內以歷史模型自行建立 revision。
+
+| 動作 | 入口 | 前置條件 | 結果版本 | revision／SurveyChange |
+|---|---|---|---|---|
+| 建立草稿 | 雲端網頁、本機網頁（API `POST`）、種子指令（經 `survey_lifecycle`） | — | `definition_version=1`、未發布 | 建立／節點問卷另建 |
+| 儲存題目或設定 | 雲端網頁、本機網頁（API `PUT`） | 草稿；版本相符（否則 409） | ＋1 | 建立／節點問卷另建 |
+| 發布 | 同上（dict `published` 由假變真） | 草稿；版本相符；至少一題；有節點時收件匣已開 | ＋1、`published_version`＝新版本、有節點時設 `inbox_since` | 建立／節點問卷另建 |
+| 白名單變更 | 同上；刪除分類時自動清空 | 已發布；只改白名單欄位（否則 `published_locked`） | ＋1、`published_version` 不變 | 建立／節點問卷另建 |
+| 封存 | 刪除按鈕（已發布或已指派節點的草稿） | 版本相符 | ＋1 | 建立／節點問卷另建 |
+| 刪除 | 刪除按鈕（未指派節點的草稿） | 鎖內重新確認仍為未指派節點的草稿、版本相符 | 問卷消失 | 依第 7.4 節刪除 |
+| 複製為新草稿 | 雲端網頁、本機網頁（API `POST`） | 任何狀態 | 新問卷版本 1、未發布 | 建立（本機複製由雲端指派給該節點） |
+| 指派節點 | 管理指令 `assign_survey_node` | 草稿 | ＋1 | 建立＋SurveyChange |
+| 填答 | 網站表單（GET 顯示限制，POST 一律交給 service 判定）、收件匣（兩者的表單都帶發布版本） | 鎖內依序：①同一回覆 ID 已成功者：屬於同一問卷、同一人，且發布版本、答案與追蹤同意完全相同時，直接回傳先前結果（沿用重送合約，即使之後已停收或封存）；同 ID 但任何一項不同則拒絕；②已發布且收件中；③表單版本＝`published_version`，缺少或不符時拒絕、不建立回覆 | 不變 | 無 |
+| 清除 | 管理指令 `purge_survey` | 未指派節點 | 問卷消失 | 依第 7.4 節 |
+
+`enable_survey_inbox` 不再使用（發布時設定 `inbox_since`），對任何問卷都拒絕並提示改用發布。雲端 API 的 `POST`／`PUT` 只接受 `schema_version` 2；`schema_version` 1 只在讀取既有 revision 時自動轉換（第 4.3 節）。
+
+### 7.2 分析重算對照
+
+分析狀態的 `input_version`（輸入）與 `config_version`（設定）只在下表標示的情況遞增；其餘寫入必須以只更新變動欄位的方式儲存，不觸發重算。
+寫入定義時只儲存實際變動的問卷欄位與題目，未變動的題目不得重新儲存。
+
+| 變動 | 重算 |
+|---|---|
+| 新回覆、作廢回覆、答案變動 | 輸入 |
+| 草稿的任何編輯、發布 | 不重算（草稿沒有回覆，不排程分析） |
+| 白名單：`is_active`、`category`、`thank_you_email_enabled`、`improvement_tracking_enabled` | 不重算 |
+| 白名單：`analysis_enabled`、`archived_at` | 設定（沿用現行規則）；並更新 `analysis_definition_version` |
+| 關鍵字規則 | 設定（沿用現行規則） |
+| 資料轉換 migration | 不重算（只用 queryset `update()`／`bulk_update()`，不送出模型訊號） |
+
+AI Snapshot 指紋（`calculate_data_fingerprint`）屬於內部重用判斷，白名單變更可能改變它，但不影響網站顯示的「最新」判定；
+網站以 `feedback/published_analysis.py` 的版本比對為準；節點問卷由雲端比對上傳結果申報的定義版本與 `analysis_definition_version`，因此 `analysis_enabled`／`archived_at` 變更後，舊結果（含延遲上傳者）不再標為最新，其他四個白名單欄位不影響。
+
+### 7.3 回答合約
+
+| 情況 | 儲存 | 分析 |
+|---|---|---|
+| 選擇題作答 | `Answer.choice_codes`（正本）＋ `Answer.value`（選項文字，複選以「, 」串接，只供顯示） | 依代碼對應目前選項文字 |
+| 選到「不納入分析」選項 | 同上（代碼照存） | 計入 `excluded_n`，不進入檢定 |
+| 未作答 | 不建立 `Answer`，或值為空字串 | 計入 `missing_n` |
+| 代碼不在題目選項內 | 網站表單驗證拒絕；收件匣封套在本機以 `answers_format` 隔離 | 不會進入分析 |
+| 數字題 | `Answer.value` 為數字字串 | 無法轉成數字者計入 `invalid_n` |
+| 文字題 | `Answer.value` | 依「納入文字分析」 |
+
+ORM 與 Worker 兩條統計路徑的母體一致：以該問卷完成且未作廢的 `FeedbackSubmission` 為列（沒有任何答案的回覆也算一列），各題缺值即未作答。
+收件封套 `answers_format: 2` 中，選擇題答案為代碼（單選字串、複選陣列），其他題型與現行相同。
+
+### 7.4 刪除關聯與 `purge_survey`
+
+問卷相關的 `PROTECT` 與孤兒來源（以模型關聯盤點，三個 app）：
+
+| 關聯 | 刪除方式 |
+|---|---|
+| `ImprovementNotice.improvement`（`PROTECT`）、`ImprovementUpdate.survey`（`SET_NULL`，會留下孤兒） | 先刪該問卷改善紀錄的通知，再刪改善紀錄（發送紀錄、狀態歷史隨之 CASCADE） |
+| `ImportedSubmissionSource.batch`（`PROTECT`） | 先刪該問卷匯入批次的來源紀錄 |
+| `SurveyAnalysisSource.active_external_version`（`PROTECT`，與 `ExternalDatasetVersion.source` 互相指向） | 先清空指標 |
+| `cloudapi`：`InboxSubmission`、`SubmissionReceipt`、`PublishedResultRecord`、`SurveyChange`、`SurveyDefinitionRevision`（皆 `PROTECT`） | 逐一刪除；每刪除一筆 `InboxSubmission`（pending 與 quarantined 都占容量）就依其 `size_bytes` 退回該節點 `InboxCounter` 一次 |
+| `cloudsync.PendingAck`（無外鍵，以回覆 uuid 對應） | 依該問卷回覆的 `idempotency_key` 刪除 |
+| 其餘（題目、回覆、答案、匯入批次、關鍵字、Snapshot、AI Stage、分析狀態與來源、分析工作、同步狀態、結果上傳） | 刪除問卷時 CASCADE |
+| 其他問卷的改善發送紀錄指向本問卷回覆、改善紀錄指向本問卷 AI Stage（`SET_NULL`） | 保留，指標清空 |
+
+- 全部在一個交易內，先鎖問卷列，並在 `suppress_analysis_scheduling()` 內執行（刪除不得排程任何分析工作）。
+- 收件匣的**全域鎖序**：問卷列（只有 purge）→ `SubmissionReceipt`（依 pk）→ `InboxSubmission`（依 pk）→ `InboxCounter`。abandon 已是此順序；ACK 改為先鎖該回覆的收據再鎖正文（原本先鎖正文）。purge **只對實際鎖定並刪除的正文**依節點加總後更新 `InboxCounter`，已被 ACK 或 abandon 先刪除的正文不再扣減。
+- 雲端拒絕 `owner_node` 有值的問卷。本機以 `SurveySyncState` 辨識雲端副本：**本機套用雲端定義（`upsert_definition`）建立問卷時，在同一交易內建立 `SurveySyncState`**，因此建立或複製後尚未經過同步循環也能辨識；本機拒絕清除雲端副本，刪除按鈕改走雲端（第 7.1 節）。本機資料庫的測試資料改以整個重建處理（需授權）。
+- **dry-run**：在同一個交易內實際執行刪除、記錄各模型筆數後回滾，列出的筆數即實際會刪除的量；不得以 `Collector.collect()` 預估（遇到 `PROTECT` 會直接失敗）。
+- 不為了方便刪除而把任何 `PROTECT` 改成 `CASCADE`。
+
+### 7.5 部署與轉換流程
+
+1. 合併並部署 `purge_survey`（不含 schema 變更）。
+2. 備份 Supabase，還原到隔離資料庫。在隔離資料庫上依序：`purge_survey` 三份舊問卷 → `migrate` → 執行唯讀檢查指令 `survey_conversion_report`，
+   確認每份問卷皆已發布且有對應 revision、題目轉換結果、TripAdvisor 已發布統計／文字／AI 判定仍為最新。
+3. 經授權，在正式資料庫執行 `purge_survey` 三份舊問卷，再部署改版（`build.sh` 套用 migration）。
+4. 若資料轉換中止：部署失敗、舊程式繼續執行；schema migration（只新增欄位）已套用，不影響舊程式。依中止訊息處理後重新部署。
+   若轉換後發現資料錯誤：以第 2 步的備份還原。
+5. 經授權重新模擬飲料店並發布分析；Gemini 另行授權。
+6. 本機節點資料庫（目前只有測試資料）經授權後整個重建，不做資料轉換。
 
 ## 不在本次範圍
 
@@ -229,10 +325,10 @@ TripAdvisor（真實外部資料，答案只在本機 Parquet，Supabase 只有�
 - 填答表單：選項值為代碼；下拉、刻度範圍與兩端標籤、整數與小數欄位正確；一般填答與收件匣都寫入 `choice_codes` 與發布版本。
 - 生命週期：草稿不接受填答（網站與收件匣）；草稿儲存遞增版本並存 revision，舊版本儲存回 409 且畫面保留輸入；發布時版本不符被拒；
   發布後題目與標題變更被拒（零回覆亦然）；白名單變更遞增 `definition_version` 但不改 `published_version`；
-  停止收件後再恢復，已開啟的表單仍可送出；白名單變更後分析結果仍為最新；刪除分類會清空已發布問卷的分類；複製為新草稿版本為 0、不帶節點。
+  停止收件後再恢復，已開啟的表單仍可送出；白名單變更後分析結果仍為最新；刪除分類會清空已發布問卷的分類；複製為新草稿版本為 1、雲端複製不帶節點；分析開關與封存照現行規則標記需重算。
 - 收件節點：草稿可指派節點；已發布問卷改指派或執行 `enable_survey_inbox` 被拒；收件匣未開啟時有節點的問卷不能發布；發布時設定 `inbox_since`；
   `accept_submission` 拒收未發布或停止收件的問卷。
-- 刪除：草稿可刪除、已發布只能封存；`purge_survey` 在舊 schema 上可執行；dry-run 不寫入；`--confirm` 依序刪除（含 `SurveyChange`）且不留下孤兒改善紀錄；
+- 刪除：未指派節點的草稿可刪除，已指派節點的草稿與已發布只能封存；`purge_survey` 在舊 schema 上可執行；dry-run 的計數與實際刪除一致且不留任何寫入；`--confirm` 依第 7.4 節刪除、不留下孤兒改善紀錄、收件匣容量正確退回；
   拒絕指派給節點的問卷；`seed_demo_beverage --reset` 在已有回覆、revision 與同步變更紀錄時仍可重建。
 - 錯誤顯示：不合法輸入時卡片內顯示錯誤、輸入保留。
 - C1：`schema_version` 1 的舊 revision 可讀入並轉換，雲端與本機結果相同；只接受 v2 寫入；草稿節點問卷出現在 snapshot 與變更序列；
@@ -243,3 +339,4 @@ TripAdvisor（真實外部資料，答案只在本機 Parquet，Supabase 只有�
 - Migration：在隔離資料庫以正式資料備份（刪除舊問卷後）執行；複選題有答案或單選答案對不到選項時中止；既有問卷皆為已發布且有對應 revision；
   不改變任何 `updated_at`；**轉換後 TripAdvisor 的已發布統計與 AI 段落仍判定為最新（`feedback/published_analysis.py` 的 `is_published_ai_stage_current` 等判定）、AI Snapshot 指紋不變**。
 - 重新模擬：新的 `seed_demo_beverage` 跑過統計（七種方法皆有產出）、文字與發布流程。
+- 流程與合約：第 7.1 節每一列至少一個測試（含本機經 API 的路徑）；第 7.2 節每一列驗證重算與不重算；第 7.3 節 ORM 與 Worker 路徑的計數、統計量與 p 值一致（含全未作答的回覆）；第 7.4 節每一種關聯都有 fixture；`survey_conversion_report` 為唯讀。
