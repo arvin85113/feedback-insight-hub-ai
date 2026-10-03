@@ -8,12 +8,12 @@ from django.urls import reverse
 from .analysis_adapters import AnswerInput
 from .local_service import submit_survey_payload
 from .models import Answer, FeedbackSubmission, Question, Survey
-from .test_utils import cloud_only
+from .test_utils import published, cloud_only
 
 
 class FeedbackSchemaV2Tests(TestCase):
     def setUp(self):
-        self.survey = Survey.objects.create(title="Schema v2", slug="schema-v2")
+        self.survey = published(Survey.objects.create(title="Schema v2", slug="schema-v2"))
         self.question = Question.objects.create(
             survey=self.survey,
             title="Overall",

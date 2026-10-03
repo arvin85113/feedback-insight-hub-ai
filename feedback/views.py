@@ -12,7 +12,7 @@ from django.db.models.fields.json import KT
 from django.db.models.functions import Cast, Coalesce, TruncDate
 import segno
 
-from django.http import Http404, HttpResponse, HttpResponseRedirect, JsonResponse
+from django.http import HttpResponseForbidden, Http404, HttpResponse, HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
@@ -895,26 +895,37 @@ class SurveyDetailView(DetailView):
     slug_field = "slug"
     slug_url_kwarg = "slug"
 
+    def _is_preview(self, request):
+        return request.GET.get("preview") == "1" and getattr(request.user, "is_manager", False)
+
+    def _notice(self, message, kind):
+        return self.render_to_response(self.get_context_data(survey_notice=message, survey_notice_type=kind))
+
     def dispatch(self, request, *args, **kwargs):
         self.object = self.get_object()
         if not request.user.is_authenticated:
             messages.warning(request, "這份問卷需要先登入後才能填答。")
             return redirect(f"{reverse('accounts:login')}?next={request.path}")
-        if not self.object.accepts_responses:
-            return self.render_to_response(
-                self.get_context_data(survey_notice="這份問卷目前未開放填答。", survey_notice_type="error")
-            )
-        if not self.object.questions.filter(is_active=True).exists():
-            return self.render_to_response(
-                self.get_context_data(survey_notice="這份問卷目前沒有任何題目。", survey_notice_type="warning")
-            )
-        if not request.user.is_manager:
-            from cloudapi.receipts import has_submitted
+        if request.GET.get("preview") == "1" and request.method != "GET":
+            return HttpResponseForbidden("預覽模式不能送出")
+        if self._is_preview(request):
+            response = super().dispatch(request, *args, **kwargs)
+            # Only the manager preview may be framed, by the builder on this site (builder spec §3).
+            response["X-Frame-Options"] = "SAMEORIGIN"
+            return response
+        if request.method == "GET":
+            # Display limits only; a POST is judged by the service under the survey lock (spec §7.1).
+            if not self.object.is_published:
+                return self._notice("問卷尚未開放", "error")
+            if not self.object.accepts_responses:
+                return self._notice("這份問卷目前未開放填答。", "error")
+            if not self.object.questions.filter(is_active=True).exists():
+                return self._notice("這份問卷目前沒有任何題目。", "warning")
+            if not request.user.is_manager:
+                from cloudapi.receipts import has_submitted
 
-            if has_submitted(self.object, request.user):
-                return self.render_to_response(
-                    self.get_context_data(survey_notice="你已填答過這份問卷。", survey_notice_type="info")
-                )
+                if has_submitted(self.object, request.user):
+                    return self._notice("你已填答過這份問卷。", "info")
         return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
@@ -930,53 +941,70 @@ class SurveyDetailView(DetailView):
         from cloudapi.inbox import uses_inbox
 
         context["uses_inbox"] = uses_inbox(self.object)
-        context["inbox_definition_version"] = self.object.definition_version
+        context["form_version"] = self.object.published_version
+        context["preview"] = self._is_preview(self.request)
         return context
 
     def post(self, request, *args, **kwargs):
         self.object = self.get_object()
         respondent_form = RespondentMetaForm(request.POST, prefix="meta")
         form = SurveyFormBuilder(request.POST, survey=self.object)
-        if form.is_valid() and respondent_form.is_valid():
-            consent_follow_up = respondent_form.cleaned_data["consent_follow_up"]
-            if request.user.is_authenticated and not request.user.is_manager:
+        if not (form.is_valid() and respondent_form.is_valid()):
+            context = self.get_context_data(object=self.object, form=form, respondent_form=respondent_form)
+            return self.render_to_response(context)
+        consent_follow_up = respondent_form.cleaned_data["consent_follow_up"]
+
+        from cloudapi.inbox import uses_inbox
+
+        if uses_inbox(self.object):
+            if not request.user.is_manager:
                 request.user.notification_opt_in = consent_follow_up
                 request.user.save(update_fields=["notification_opt_in"])
+            return self._submit_to_inbox(request, form, respondent_form, consent_follow_up)
 
-            from cloudapi.inbox import uses_inbox
-
-            if uses_inbox(self.object):
-                return self._submit_to_inbox(request, form, respondent_form, consent_follow_up)
-
-            respondent_name = request.user.get_full_name() if request.user.is_authenticated else ""
-            respondent_email = request.user.email if request.user.is_authenticated else ""
-
+        try:
+            form_version = int(request.POST.get("definition_version", ""))
+        except ValueError:
+            form_version = -1  # a form without a version can never match the published one
+        try:
             submission_result = local_service.submit_survey_payload(
                 self.object,
-                user=request.user if request.user.is_authenticated else None,
-                respondent_name=respondent_name,
-                respondent_email=respondent_email,
+                user=request.user,
+                respondent_name=request.user.get_full_name(),
+                respondent_email=request.user.email,
                 consent_follow_up=consent_follow_up,
                 answers={key: value for key, value in form.cleaned_data.items()},
                 idempotency_key=respondent_form.cleaned_data["idempotency_key"],
+                form_version=form_version,
+                reject_repeat=not request.user.is_manager,
             )
+        except local_service.SurveyFormOutdated as exc:
+            messages.error(request, exc.user_message)
+            context = self.get_context_data(object=self.object, form=form, respondent_form=respondent_form)
+            return self.render_to_response(context)
+        except (local_service.SurveyNotAccepting, local_service.SurveyAlreadySubmitted) as exc:
+            return self._notice(exc.user_message, "error")
+        except ValueError:
+            messages.error(request, "這份回覆無法重複送出，請重新填寫")
+            context = self.get_context_data(object=self.object, form=form, respondent_form=respondent_form)
+            return self.render_to_response(context)
 
-            if (
-                not submission_result["reused"]
-                and submission_result["thank_you_email_enabled"]
-                and submission_result["respondent_email"]
-            ):
-                send_mail(
-                    subject=f"感謝填寫 {submission_result['survey_title']}",
-                    message="我們已收到你的回覆。若後續有對應的改善通知，將依你的偏好主動提供最新進度。",
-                    from_email=None,
-                    recipient_list=[submission_result["respondent_email"]],
-                    fail_silently=True,
-                )
-            return HttpResponseRedirect(reverse("feedback:survey-success", args=[self.object.slug]))
-
-        context = self.get_context_data(object=self.object, form=form, respondent_form=respondent_form)
-        return self.render_to_response(context)
+        if not request.user.is_manager and not submission_result["reused"]:
+            request.user.notification_opt_in = consent_follow_up
+            request.user.save(update_fields=["notification_opt_in"])
+        if (
+            not submission_result["reused"]
+            and submission_result["thank_you_email_enabled"]
+            and submission_result["respondent_email"]
+        ):
+            send_mail(
+                subject=f"感謝填寫 {submission_result['survey_title']}",
+                message="我們已收到你的回覆。若後續有對應的改善通知，將依你的偏好主動提供最新進度。",
+                from_email=None,
+                recipient_list=[submission_result["respondent_email"]],
+                fail_silently=True,
+            )
+        return HttpResponseRedirect(reverse("feedback:survey-success", args=[self.object.slug]))
 
     def _submit_to_inbox(self, request, form, respondent_form, consent_follow_up):
         from cloudapi.envelope import encode_answers

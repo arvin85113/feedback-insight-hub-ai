@@ -825,6 +825,62 @@ def _submission_result(submission, *, reused=False):
     }
 
 
+class SurveyNotAccepting(Exception):
+    user_message = "這份問卷目前未開放填答。"
+
+
+class SurveyFormOutdated(Exception):
+    user_message = "問卷已更新，請確認後重新送出"
+
+
+class SurveyAlreadySubmitted(Exception):
+    user_message = "你已填答過這份問卷。"
+
+
+def _encode_answer(question, value):
+    """(choice_codes, display value) for one answer; choice answers accept codes or exact labels."""
+
+    if question.kind not in (Question.Kind.SINGLE_CHOICE, Question.Kind.MULTIPLE_CHOICE):
+        return None, str(value)
+    by_code = {choice["code"]: choice["label"] for choice in question.choices}
+    by_label = {choice["label"]: choice["code"] for choice in question.choices}
+    items = value if isinstance(value, (list, tuple)) else [value]
+    codes = []
+    for item in items:
+        item = str(item)
+        code = item if item in by_code else by_label.get(item.strip())
+        if code is None:
+            raise ValueError("選項不在題目中")
+        codes.append(code)
+    order = [choice["code"] for choice in question.choices]
+    codes = sorted(set(codes), key=order.index)
+    return codes, ", ".join(by_code[code] for code in codes)
+
+
+def _encoded_answers(survey, answers):
+    encoded = {}
+    for question in survey.questions.filter(is_active=True):
+        value = answers.get(f"question_{question.id}")
+        if value is None or value == "" or value == []:
+            continue
+        encoded[question.id] = _encode_answer(question, value)
+    return encoded
+
+
+def _same_submission(submission, survey, user, form_version, consent_follow_up, encoded):
+    stored = {
+        answer.question_id: (answer.choice_codes, answer.value)
+        for answer in submission.answers.all()
+    }
+    return (
+        submission.survey_id == survey.pk
+        and submission.user_id == getattr(user, "pk", None)
+        and submission.definition_version == form_version
+        and submission.consent_follow_up == consent_follow_up
+        and stored == encoded
+    )
+
+
 def submit_survey_payload(
     survey,
     *,
@@ -834,39 +890,49 @@ def submit_survey_payload(
     consent_follow_up,
     answers,
     idempotency_key=None,
+    form_version=None,
+    reject_repeat=False,
 ):
+    """Write one reply (builder spec §7.1, §7.3).
+
+    Under the survey row lock and in this order: a resend of the same reply returns the earlier
+    result; a new reply needs a published survey that accepts replies and the published version
+    the form was built from.  `form_version=None` is for trusted internal callers (seeds,
+    imports) and means the current published version.
+    """
+
     with transaction.atomic():
-        with suppress_analysis_scheduling():
-            defaults = {
-                    "survey": survey,
-                    "user": user,
-                    "respondent_name": respondent_name,
-                    "respondent_email": respondent_email,
-                    "consent_follow_up": consent_follow_up,
-            }
-            if idempotency_key:
-                submission, created = FeedbackSubmission.objects.get_or_create(
-                    idempotency_key=idempotency_key,
-                    defaults=defaults,
-                )
-            else:
-                submission = FeedbackSubmission.objects.create(**defaults)
-                created = True
-            if not created:
-                if submission.survey_id != survey.pk or submission.user_id != getattr(user, "pk", None):
+        survey = Survey.objects.select_for_update().get(pk=survey.pk)
+        version = survey.published_version if form_version is None else form_version
+        encoded = _encoded_answers(survey, answers)
+        if idempotency_key:
+            existing = FeedbackSubmission.objects.filter(idempotency_key=idempotency_key).first()
+            if existing is not None:
+                if not _same_submission(existing, survey, user, version, consent_follow_up, encoded):
                     raise ValueError("idempotency key 已由其他填答使用")
-                return _submission_result(submission, reused=True)
-            for question in survey.questions.filter(is_active=True):
-                key = f"question_{question.id}"
-                value = answers.get(key)
-                if value is None:
-                    continue
-                if isinstance(value, list):
-                    value = ", ".join(value)
-                Answer.objects.create(
-                    submission=submission,
-                    question=question,
-                    value=value,
-                )
+                return _submission_result(existing, reused=True)
+        if not survey.accepts_responses:
+            raise SurveyNotAccepting()
+        if version != survey.published_version:
+            raise SurveyFormOutdated()
+        if reject_repeat and user is not None:
+            from cloudapi.receipts import has_submitted
+
+            if has_submitted(survey, user):
+                raise SurveyAlreadySubmitted()
+        with suppress_analysis_scheduling():
+            submission = FeedbackSubmission.objects.create(
+                survey=survey,
+                user=user,
+                respondent_name=respondent_name,
+                respondent_email=respondent_email,
+                consent_follow_up=consent_follow_up,
+                definition_version=survey.published_version,
+                **({"idempotency_key": idempotency_key} if idempotency_key else {}),
+            )
+            Answer.objects.bulk_create(
+                Answer(submission=submission, question_id=question_id, value=value, choice_codes=codes)
+                for question_id, (codes, value) in encoded.items()
+            )
         schedule_survey_analysis(survey.pk, change="input")
     return _submission_result(submission)

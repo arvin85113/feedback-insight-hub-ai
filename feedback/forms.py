@@ -25,14 +25,13 @@ class SurveyFormBuilder(forms.Form):
         if question.kind == Question.Kind.LONG_TEXT:
             return forms.CharField(widget=forms.Textarea(attrs={"rows": 4}), **common)
         if question.kind == Question.Kind.SINGLE_CHOICE:
-            return forms.ChoiceField(
-                choices=[(option, option) for option in question.options],
-                widget=forms.RadioSelect,
-                **common,
-            )
+            choices = [(choice["code"], choice["label"]) for choice in question.choices]
+            if question.display == "dropdown":
+                return forms.ChoiceField(choices=[("", "請選擇")] + choices, widget=forms.Select, **common)
+            return forms.ChoiceField(choices=choices, widget=forms.RadioSelect, **common)
         if question.kind == Question.Kind.MULTIPLE_CHOICE:
             return forms.MultipleChoiceField(
-                choices=[(option, option) for option in question.options],
+                choices=[(choice["code"], choice["label"]) for choice in question.choices],
                 widget=forms.CheckboxSelectMultiple,
                 **common,
             )
@@ -41,14 +40,17 @@ class SurveyFormBuilder(forms.Form):
         if question.kind == Question.Kind.DECIMAL:
             return forms.DecimalField(decimal_places=2, max_digits=10, **common)
         if question.kind == Question.Kind.SCALE:
-            options = question.options
-            if options:
-                return forms.ChoiceField(
-                    choices=[(o, o) for o in options],
-                    widget=forms.RadioSelect,
-                    **common,
-                )
-            return forms.IntegerField(min_value=1, max_value=5, **common)
+            values = question.analysis_options or [str(v) for v in range(1, 6)]
+            field = forms.ChoiceField(
+                choices=[(value, value) for value in values],
+                widget=forms.RadioSelect(attrs={"class": "scale-option"}),
+                **common,
+            )
+            # Rendered at the two ends of the scale buttons (builder spec §1).
+            field.scale_min_label = question.scale_min_label
+            field.scale_max_label = question.scale_max_label
+            field.is_scale = True
+            return field
         return forms.CharField(**common)
 
 

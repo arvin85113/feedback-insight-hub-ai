@@ -6120,7 +6120,7 @@ input[type="checkbox"] {
 .manager-shell .choice-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; flex-wrap: wrap; }
 .manager-shell .choice-row input[type="text"] { flex: 1 1 200px; }
 .manager-shell .choice-excluded { font-size: 0.85rem; white-space: nowrap; }
-.manager-shell .inline-field { display: inline-flex; gap: 6px; align-items: center; }
+.manager-shell .inline-field { display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; flex-wrap: nowrap; }
 .manager-shell .form-error { color: #b91c1c; margin: 4px 0; }
 .manager-shell .builder-alert { border: 1px solid #fca5a5; background: #fef2f2; border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .manager-shell .builder-alert p { margin: 0; flex-basis: 100%; }

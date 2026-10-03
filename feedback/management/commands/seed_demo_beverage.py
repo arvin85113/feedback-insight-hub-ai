@@ -2,6 +2,7 @@ import random
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import connection, transaction
+from django.utils import timezone
 
 from feedback.local_service import submit_survey_payload
 from feedback.survey_purge import PurgeRefused, purge_survey
@@ -190,6 +191,7 @@ class Command(BaseCommand):
         survey = self._ensure_survey()
         self._ensure_questions(survey)
         self._ensure_keywords(survey)
+        survey = self._ensure_published(survey)
 
         rng = random.Random(opts["seed"])
         created = self._seed_responses(survey, opts["count"], rng)
@@ -221,6 +223,17 @@ class Command(BaseCommand):
                 order=spec["order"],
                 defaults={k: v for k, v in spec.items() if k != "order"},
             )
+
+    def _ensure_published(self, survey: Survey) -> Survey:
+        """Replies need a published survey (builder spec §4); rebuilt properly with the new seed later."""
+
+        if survey.published_version is None:
+            version = survey.definition_version or 1
+            Survey.objects.filter(pk=survey.pk).update(
+                definition_version=version, published_version=version, analysis_definition_version=version,
+                published_at=timezone.now(),
+            )
+        return Survey.objects.get(pk=survey.pk)
 
     def _ensure_keywords(self, survey: Survey):
         for keyword, category in KEYWORDS:

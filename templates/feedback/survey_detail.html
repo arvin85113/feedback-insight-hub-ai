@@ -14,6 +14,10 @@
         </div>
     </div>
 
+    {% if preview %}
+        <article class="survey-notice survey-notice-info"><p>預覽模式：這是填答者會看到的樣子，無法送出。</p></article>
+    {% endif %}
+
     {% if survey_notice %}
         <article class="survey-notice survey-notice-{{ survey_notice_type|default:'info' }}">
             <p>{{ survey_notice }}</p>
@@ -34,7 +38,7 @@
           data-total-q="{{ active_question_count }}">
         {% csrf_token %}
         {{ respondent_form.idempotency_key }}
-        {% if uses_inbox %}<input type="hidden" name="definition_version" value="{{ inbox_definition_version }}">{% endif %}
+        <input type="hidden" name="definition_version" value="{{ form_version }}">
 
         {# Step 0: respondent info + consent #}
         <article class="survey-card survey-card-accent survey-step"
@@ -70,7 +74,15 @@
                 <div class="question-index">{{ forloop.counter }}</div>
                 <div class="field-block">
                     {{ field.label_tag }}
-                    {{ field }}
+                    {% if field.field.is_scale %}
+                        <div class="scale-field">
+                            {% if field.field.scale_min_label %}<span class="scale-end-label">{{ field.field.scale_min_label }}</span>{% endif %}
+                            <div class="scale-buttons">{{ field }}</div>
+                            {% if field.field.scale_max_label %}<span class="scale-end-label">{{ field.field.scale_max_label }}</span>{% endif %}
+                        </div>
+                    {% else %}
+                        {{ field }}
+                    {% endif %}
                     {% if field.help_text %}
                         <small class="muted-text">{{ field.help_text }}</small>
                     {% endif %}
@@ -79,6 +91,7 @@
             </article>
         {% endfor %}
 
+        {% if not preview %}
         {# Navigation (JS-driven) #}
         <div class="survey-nav" id="surveyNav" style="display:none">
             <button type="button" class="button button-ghost" id="surveyPrev">← 上一題</button>
@@ -92,6 +105,7 @@
         <div class="survey-submit" id="surveyFallbackSubmit" style="display:none">
             <button type="submit" class="button button-primary">送出回饋</button>
         </div>
+        {% endif %}
     </form>
     {% endif %}
 </section>
