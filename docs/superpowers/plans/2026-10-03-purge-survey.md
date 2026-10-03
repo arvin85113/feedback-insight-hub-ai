@@ -60,16 +60,20 @@ def test_dry_run_reports_real_counts_and_writes_nothing(self):
     self.assertEqual(snapshot_counts(), before)
     self.assertEqual(counts["feedback.Survey"], 1)
     self.assertEqual(counts["feedback.ImprovementNotice"], 1)
-    self.assertEqual(counts["cloudapi.InboxSubmission"], 1)
+    self.assertEqual(counts["cloudapi.InboxSubmission"], 2)     # 本問卷的 pending 與 quarantined
     self.assertEqual(purge_survey(Survey.objects.get(pk=survey.pk)), counts)
 
-def test_purge_leaves_nothing_and_releases_inbox_capacity(self):
-    survey = make_full_survey(); make_inbox_history(survey)
+def test_purge_leaves_nothing_of_target_and_keeps_other_survey(self):
+    survey = make_full_survey(); other = make_inbox_history(survey)   # 回傳另一問卷
     purge_survey(survey)
-    for model in (Survey, Question, FeedbackSubmission, Answer, ImprovementUpdate, ImprovementNotice, ImprovementDispatch,
-                  DatasetImportBatch, ImportedSubmissionSource, SurveyAnalysisSource, ExternalDatasetVersion,
-                  SurveyDefinitionRevision, SurveyChange, InboxSubmission, SubmissionReceipt, PublishedResultRecord):
-        self.assertEqual(model.objects.count(), 0, model.__name__)
+    self.assertFalse(Survey.objects.filter(pk=survey.pk).exists())
+    for model, lookup in TARGET_LOOKUPS:            # 例：(Question, "survey_id")、(InboxSubmission, "survey_id")、(ImprovementNotice, "improvement__survey_id")
+        self.assertFalse(model.objects.filter(**{lookup: survey.pk}).exists(), model.__name__)
+    for model in (ImprovementUpdate, ImprovementNotice, DatasetImportBatch, ImportedSubmissionSource,
+                  SurveyAnalysisSource, ExternalDatasetVersion):
+        self.assertEqual(model.objects.count(), 0, model.__name__)   # fixture 只為目標問卷建立這些
+    self.assertTrue(Survey.objects.filter(pk=other.pk).exists())
+    self.assertEqual(InboxSubmission.objects.filter(survey=other).count(), 1)
     counter = InboxCounter.objects.get()
     self.assertEqual((counter.occupied_count, counter.occupied_bytes), (1, 30))   # 只剩另一問卷的項目
 
@@ -110,10 +114,11 @@ def test_failure_rolls_back_everything(self):
 
 - [ ] **Step 2: 執行確認失敗** → ImportError（`feedback.survey_purge` 不存在）。
 - [ ] **Step 3: 實作 `feedback/survey_purge.py`**：`suppress_analysis_scheduling()` 與 `transaction.atomic()` 內 `select_for_update` 鎖問卷 → 拒絕條件 → 依規格 §7.4 表格順序：
-  通知 → 改善紀錄 → 匯入來源 → 清空 `active_external_version` → 該問卷全部 `InboxSubmission`（依節點彙總筆數與 `size_bytes`，以一次 `F()` 更新退回 `InboxCounter`） → `SubmissionReceipt` → `PublishedResultRecord`
+  通知 → 改善紀錄 → 匯入來源 → 清空 `active_external_version` → 該問卷的 `InboxSubmission`（沿用 ACK／abandon 的鎖序：先 `select_for_update().order_by("pk")` 鎖定正文列，刪除這些已鎖定的列，再依節點以**實際刪除列**的筆數與 `size_bytes` 一次 `F()` 退回 `InboxCounter`） → `SubmissionReceipt` → `PublishedResultRecord`
   → `SurveyChange` → `SurveyDefinitionRevision` → （本機）`PendingAck` → `_delete_survey_row(survey)`。每一步把 `QuerySet.delete()` 回傳的明細累加進結果。
   `dry_run=True` 時最後 `transaction.set_rollback(True)`。
 - [ ] **Step 4: 實作指令** `purge_survey --survey <slug> [--confirm]`（無 `--confirm` 即 `dry_run=True`），印出各模型筆數。
 - [ ] **Step 5: `seed_demo_beverage._reset` 改呼叫 `purge_survey(existing)`**，保留確認提示與 `--yes`。
-- [ ] **Step 6: 執行測試**（雲端與 `DEPLOYMENT_MODE=node`）→ PASS；`makemigrations --check --dry-run --settings=config.settings_test` → `No changes detected`。
-- [ ] **Step 7: Commit** `feat: purge_survey command for test and simulated surveys`
+- [ ] **Step 6: PostgreSQL 併發測試**：在 `cloudapi/test_postgres.py` 新增 `test_purge_and_ack_do_not_double_release_capacity`——同一正文由 ACK 與 purge 兩個連線同時處理，結束後 `InboxCounter` 與剩餘正文的實際總和相符；另測 purge 與 abandon 同時處理。指令：`.venv/Scripts/python.exe manage.py test cloudapi.test_postgres --settings=config.settings_postgres_test`（需獨立 `TEST_DATABASE_URL`，無法確認隔離就停止並回報）。
+- [ ] **Step 7: 執行測試**（雲端與 `DEPLOYMENT_MODE=node`）→ PASS；`makemigrations --check --dry-run --settings=config.settings_test` → `No changes detected`。
+- [ ] **Step 8: Commit** `feat: purge_survey command for test and simulated surveys`

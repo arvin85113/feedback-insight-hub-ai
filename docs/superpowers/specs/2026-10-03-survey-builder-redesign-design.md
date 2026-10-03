@@ -226,7 +226,7 @@ TripAdvisor（真實外部資料，答案只在本機 Parquet，Supabase 只有�
 | `create_imported_survey(definition)` | 外部資料匯入建立問卷（版本 1、直接發布） |
 
 網站的建立工具一律先編輯定義 dict，再交給 `feedback.survey_lifecycle`：雲端模式直接呼叫上表入口；本機模式經 API 送到雲端，成功後以回傳的定義更新本機副本。
-種子指令也經由 `feedback.survey_lifecycle` 建立與發布；問卷已存在時，未加 `--reset` 一律拒絕，不直接修改既有題目。
+**建立問卷的**種子指令（`seed_demo_beverage`、`seed_demo`、`seed_notification_test`、`scripts/seed_demo_data.py`）也經由 `feedback.survey_lifecycle` 建立與發布；問卷已存在時，未加 `--reset` 一律拒絕，不直接修改既有題目。只產生回覆的 `seed_random_responses` 不建立問卷，對既有已發布問卷經一般填答 service 送出（帶發布版本）。
 唯一不經由上表的寫入是資料轉換 migration（第 5 節），它在單一交易內以歷史模型自行建立 revision。
 
 | 動作 | 入口 | 前置條件 | 結果版本 | revision／SurveyChange |
@@ -239,7 +239,7 @@ TripAdvisor（真實外部資料，答案只在本機 Parquet，Supabase 只有�
 | 刪除 | 刪除按鈕（未指派節點的草稿） | 鎖內重新確認仍為未指派節點的草稿、版本相符 | 問卷消失 | 依第 7.4 節刪除 |
 | 複製為新草稿 | 雲端網頁、本機網頁（API `POST`） | 任何狀態 | 新問卷版本 1、未發布 | 建立（本機複製由雲端指派給該節點） |
 | 指派節點 | 管理指令 `assign_survey_node` | 草稿 | ＋1 | 建立＋SurveyChange |
-| 填答 | 網站表單、收件匣（兩者的表單都帶發布版本） | 鎖內依序：①同一回覆 ID 已成功者直接回傳先前結果（沿用重送合約，即使之後已停收或封存）；②已發布且收件中；③表單版本＝`published_version`，缺少或不符時拒絕、不建立回覆 | 不變 | 無 |
+| 填答 | 網站表單（GET 顯示限制，POST 一律交給 service 判定）、收件匣（兩者的表單都帶發布版本） | 鎖內依序：①同一回覆 ID 已成功者：屬於同一問卷、同一人，且發布版本、答案與追蹤同意完全相同時，直接回傳先前結果（沿用重送合約，即使之後已停收或封存）；同 ID 但任何一項不同則拒絕；②已發布且收件中；③表單版本＝`published_version`，缺少或不符時拒絕、不建立回覆 | 不變 | 無 |
 | 清除 | 管理指令 `purge_survey` | 未指派節點 | 問卷消失 | 依第 7.4 節 |
 
 `enable_survey_inbox` 不再使用（發布時設定 `inbox_since`），對任何問卷都拒絕並提示改用發布。雲端 API 的 `POST`／`PUT` 只接受 `schema_version` 2；`schema_version` 1 只在讀取既有 revision 時自動轉換（第 4.3 節）。
@@ -290,6 +290,7 @@ ORM 與 Worker 兩條統計路徑的母體一致：以該問卷完成且未作�
 | 其他問卷的改善發送紀錄指向本問卷回覆、改善紀錄指向本問卷 AI Stage（`SET_NULL`） | 保留，指標清空 |
 
 - 全部在一個交易內，先鎖問卷列，並在 `suppress_analysis_scheduling()` 內執行（刪除不得排程任何分析工作）。
+- 收件匣正文沿用 ACK 與 abandon 的鎖序：先 `select_for_update` 鎖定該問卷的正文列，**只對實際鎖定並刪除的正文**依節點加總，再更新 `InboxCounter`；已被 ACK 或 abandon 先刪除的正文不再扣減。
 - 雲端拒絕 `owner_node` 有值的問卷。本機以 `SurveySyncState` 辨識雲端副本：**本機套用雲端定義（`upsert_definition`）建立問卷時，在同一交易內建立 `SurveySyncState`**，因此建立或複製後尚未經過同步循環也能辨識；本機拒絕清除雲端副本，刪除按鈕改走雲端（第 7.1 節）。本機資料庫的測試資料改以整個重建處理（需授權）。
 - **dry-run**：在同一個交易內實際執行刪除、記錄各模型筆數後回滾，列出的筆數即實際會刪除的量；不得以 `Collector.collect()` 預估（遇到 `PROTECT` 會直接失敗）。
 - 不為了方便刪除而把任何 `PROTECT` 改成 `CASCADE`。

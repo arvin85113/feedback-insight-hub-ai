@@ -261,7 +261,8 @@ def test_tripadvisor_published_results_stay_current_after_migration(self):
     for key in ("statistics", "text"):
         self.assertTrue(_stage_is_current(state, key), key)
     self.assertTrue(is_published_ai_stage_current(state.published_ai_stage))
-    self.assertEqual(mapping_compatibility_errors(load_mapping("tripadvisor_hotel_reviews.json"), survey), [])
+    mapping = load_mapping(settings.BASE_DIR / "feedback" / "import_mappings" / "tripadvisor_hotel_reviews.json")   # 同 test_tripadvisor_import.MAPPING_PATH
+    self.assertEqual(mapping_compatibility_errors(mapping, survey), [])
 
 def test_conversion_report_is_read_only(self): ...          # 執行前後所有模型筆數與 updated_at 不變
 ```
@@ -462,12 +463,13 @@ def test_long_text_tracking_default_on_short_text_off(self): ...
 
 **Interfaces:**
 - Consumes: Task 1。
-- Produces: `SurveyFormBuilder` 的選擇題 `choices` 為 `(code, label)`；`submit_survey_payload(..., form_version: int)` 在交易內 `select_for_update` 重新取得問卷，依規格 §7.1 填答列的順序：①同一 `idempotency_key` 已存在且屬於同一人 → 回傳先前結果；②未發布或未收件時 `raise SurveyNotAccepting`；③`form_version != published_version` 時 `raise SurveyFormOutdated`（訊息「問卷已更新，請確認後重新送出」）（`feedback/local_service.py` 新例外，View 顯示「這份問卷目前未開放填答。」），再寫入 `Answer.choice_codes`（單選 `[code]`、複選依選項順序）、`Answer.value`（標籤，複選以「, 」串接）、`FeedbackSubmission.definition_version = survey.published_version`；
+- Produces: `SurveyFormBuilder` 的選擇題 `choices` 為 `(code, label)`；`submit_survey_payload(..., form_version: int)` 在交易內 `select_for_update` 重新取得問卷，依規格 §7.1 填答列的順序：①同一 `idempotency_key` 已存在：同一問卷、同一人，且 `definition_version`、答案（`choice_codes`／`value`）與 `consent_follow_up` 完全相同 → 回傳先前結果；任何一項不同 → `raise ValueError("idempotency key 已由其他填答使用")`（沿用現有訊息，View 顯示「這份回覆無法重複送出，請重新填寫」）；②未發布或未收件時 `raise SurveyNotAccepting`；③`form_version != published_version` 時 `raise SurveyFormOutdated`（訊息「問卷已更新，請確認後重新送出」）（`feedback/local_service.py` 新例外，View 顯示「這份問卷目前未開放填答。」），再寫入 `Answer.choice_codes`（單選 `[code]`、複選依選項順序）、`Answer.value`（標籤，複選以「, 」串接）、`FeedbackSubmission.definition_version = survey.published_version`；
   `SurveyDetailView`：未發布 → 「問卷尚未開放」；管理者加 `?preview=1` 可預覽草稿（不顯示送出鈕、POST 拒絕），**只有這個預覽回應**以 `xframe_options_sameorigin` 允許同源嵌入，其他頁面維持 `DENY`。
+  `SurveyDetailView.dispatch` 只在 GET 套用「未開放」與「已填答」的顯示限制；POST 保留登入與預覽保護，其餘一律交給 service 依規格 §7.1 順序判定（新提交仍由 service 檢查是否已填答）。
 
 - [ ] **Step 1: 寫失敗測試**：`test_choice_value_is_code_not_label`、`test_dropdown_uses_select_widget`、`test_scale_renders_range_with_end_labels`（0–10 產生 11 個選項、兩端標籤出現、無預選）、
   `test_integer_and_decimal_fields`、`test_submission_records_codes_and_published_version`、`test_draft_shows_not_open_notice`、`test_manager_preview_of_draft_has_no_submit`、
-  `test_service_rejects_draft_and_closed_survey`（直接呼叫 `submit_survey_payload`）、`test_missing_or_wrong_form_version_creates_nothing`、`test_resubmit_after_close_returns_previous_result`、`test_all_fill_forms_carry_published_version`（一般填答與收件匣表單都有隱藏欄位）、`test_view_checked_then_closed_before_write_is_rejected`、
+  `test_service_rejects_draft_and_closed_survey`（直接呼叫 `submit_survey_payload`）、`test_missing_or_wrong_form_version_creates_nothing`、`test_resubmit_after_close_returns_previous_result`、`test_same_key_with_other_survey_answers_or_consent_rejected`、`test_customer_http_resend_after_close_or_archive_redirects_to_success`（以 CUSTOMER 身分經 HTTP POST 重送，不受 dispatch 的停收與已填答檢查攔截）、`test_all_fill_forms_carry_published_version`（一般填答與收件匣表單都有隱藏欄位）、`test_view_checked_then_closed_before_write_is_rejected`、
   `test_preview_header_sameorigin_only_for_manager_preview`（顧客帶 `?preview=1` 不能預覽；一般填答頁仍是 `DENY`）、`test_preview_post_rejected`。
 - [ ] **Step 2–4: 確認失敗 → 實作 → 執行** `feedback.test_fill_form feedback.tests` → PASS。
 - [ ] **Step 5: 瀏覽器驗證**：以 `.claude/launch.json` 的伺服器搭配測試資料（或使用者授權的開發 DB）開啟建立工具，七種題型各新增一次、觸發一次驗證錯誤、一次 409、預覽 iframe 正常載入、發布後唯讀，截圖存證。
@@ -606,14 +608,14 @@ def test_snapshot_and_grounding_name_both_rates(self): ...  # 證據標籤分別
 
 **Interfaces:**
 - Consumes: Task 1–8。
-- Produces: 所有種子指令經由 `feedback.survey_lifecycle` 建立與發布；問卷已存在且未加 `--reset` 時 `CommandError`（不直接修改題目）。`seed_demo_beverage` 題目（spec §5 第 6 步，依序）：門市（單選，信義店／台北車站店／公館店／士林店）、內用或外帶（單選，內用／外帶）、品項（複選，沿用 `ITEMS`）、
+- Produces: **建立問卷的**種子指令（`seed_demo_beverage`、`seed_demo`、`seed_notification_test`、`scripts/seed_demo_data.py`）經由 `feedback.survey_lifecycle` 建立與發布；問卷已存在且未加 `--reset` 時 `CommandError`（不直接修改題目）。`seed_random_responses` 只對既有已發布問卷經 `submit_survey_payload`（帶 `form_version=published_version`）產生回覆、寫入代碼，不修改定義。`seed_demo_beverage` 題目（spec §5 第 6 步，依序）：門市（單選，信義店／台北車站店／公館店／士林店）、內用或外帶（單選，內用／外帶）、品項（複選，沿用 `ITEMS`）、
   整體滿意度（刻度 1–10，「非常不滿意」／「非常滿意」）、推薦意願（刻度 0–10，「完全不會」／「一定會」）、等候時間感受（有序單選：很快／普通／久／很久＋排除「不適用」）、
   等候分鐘數（允許小數）、消費金額（允許小數）、來店次數（整數）、改善建議（段落，納入文字分析）；建立後發布；填答者名稱維持「飲料店模擬填答」前綴；
   模擬分布讓等候分鐘數與滿意度負相關、消費金額與滿意度正相關，內用與外帶的滿意度有差異。其他種子改用新欄位並寫 `choice_codes`、建立後發布。
 
 - [ ] **Step 1: 失敗測試**：`test_beverage_seed_produces_all_seven_methods`（seed 後 `build_stats_payload` 的 `method_key` 集合包含 `welch_t_test`、`one_way_anova`、`chi_square`、`mann_whitney_u`、`kruskal_wallis`、`pearson`、`spearman`）、`test_beverage_seed_marks_simulated_respondents`、`test_beverage_reset_twice`、`test_other_seeds_create_published_surveys_with_codes`、
   `test_beverage_seed_text_analysis_and_publish`（文字分析有關鍵字與情緒結果；**在隔離測試中以替身取代 Gemini provider、回傳成功 fixture**，跑完分析並發布，網站讀到最新的已發布結果）、
-  `test_analysis_mock_mode_still_cannot_publish`（系統的 analysis-mock 模式仍被發布器拒絕，AGENTS.md）、`test_seed_refuses_existing_without_reset`。
+  `test_analysis_mock_mode_still_cannot_publish`（系統的 analysis-mock 模式仍被發布器拒絕，AGENTS.md）、`test_seed_refuses_existing_without_reset`、`test_random_responses_fill_existing_published_survey_with_codes_and_version`。
 - [ ] **Step 2–4: 確認失敗 → 實作 → 執行** `feedback.test_seed_commands` → PASS。
 - [ ] **Step 5: 文件**：`next-actions.md` 移除已完成的建立工具待辦，加入規格 §7.5 的部署流程（每一步標示需授權；含隔離資料庫還原、`survey_conversion_report` 檢查與失敗復原）；`architecture.md` 更新題型表與單一寫入路徑。`git diff --check`。
 - [ ] **Step 6: 全套測試**：雲端與 `DEPLOYMENT_MODE=node` 各跑 CI 的完整指令；`makemigrations --check`；`manage.py check`。
