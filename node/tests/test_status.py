@@ -7,7 +7,15 @@ from django.test import SimpleTestCase, TestCase
 from cloudsync.models import CloudLink
 from config.node_paths import NodePaths
 from feedback.worker_heartbeat import write_heartbeat
-from node.status import cloud_status, database_status, disk_status, lan_status, pending_items, worker_status
+from node.status import (
+    cloud_status,
+    database_status,
+    disk_status,
+    inbox_status,
+    lan_status,
+    pending_items,
+    worker_status,
+)
 
 Usage = namedtuple("Usage", "total used free")
 
@@ -83,3 +91,19 @@ class DiskAndFixedStatusTests(SimpleTestCase):
 class DatabaseStatusTests(TestCase):
     def test_reachable_database(self):
         self.assertEqual(database_status().state, "ok")
+
+
+class InboxStatusTests(TestCase):
+    def linked(self, **inbox):
+        return CloudLink(api_url="https://c", node_uuid="99999999-9999-9999-9999-999999999999", inbox_status=inbox)
+
+    def test_inbox_status_warns_on_deadline_and_ack_problems(self):
+        self.assertEqual(inbox_status(CloudLink()).state, "off")
+        self.assertEqual(inbox_status(self.linked(pending_count=4, deadline_state="warn")).state, "warn")
+        ok = inbox_status(self.linked(pending_count=4, deadline_state="ok"))
+        self.assertEqual((ok.state, ok.summary), ("ok", "待收 4 筆"))
+        from cloudsync.models import PendingAck
+
+        PendingAck.objects.create(submission_uuid="d1d1d1d1-d1d1-d1d1-d1d1-d1d1d1d1d1d1", payload_hash="h" * 64,
+                                  last_status="conflict")
+        self.assertEqual(inbox_status(self.linked(pending_count=0, deadline_state="ok")).state, "warn")

@@ -204,6 +204,8 @@ class DashboardBaseMixin(ManagerRequiredMixin):
     def get_dashboard_nav(self):
         if settings.IS_NODE:
             return NODE_CONSOLE_NAV + self.dashboard_nav + NODE_CONSOLE_NAV_TAIL
+        if settings.CLOUD_INBOX_ENABLED:
+            return self.dashboard_nav + [("cloudapi-manage:inbox", "收件匣", "server")]
         return self.dashboard_nav
 
     def get_dashboard_base_context(self):
@@ -399,9 +401,14 @@ class SurveyManagerView(DashboardBaseMixin, TemplateView):
 
         surveys_list = list(qs)
         external_totals = external_source_totals([survey.id for survey in surveys_list])
+        from cloudapi.receipts import received_counts
+
+        received = received_counts([survey.id for survey in surveys_list])
         for survey in surveys_list:
             if survey.id in external_totals:
                 survey.submission_count, survey.latest_submission_at = external_totals[survey.id]
+            else:
+                survey.submission_count = received.get(survey.id, survey.submission_count)
             day_map = count_map.get(survey.id, {})
             survey.trend = [day_map.get(d, 0) for d in trend_days]
             survey.trend_max = max(survey.trend) if any(survey.trend) else 1
@@ -535,7 +542,9 @@ class SurveyBuilderView(DashboardBaseMixin, DetailView):
         if external:
             context["responses_count"], context["latest_response_at"] = external
         else:
-            context["responses_count"] = self.object.submissions.count()
+            from cloudapi.receipts import received_counts
+
+            context["responses_count"] = received_counts([self.object.pk])[self.object.pk]
             latest = self.object.submissions.order_by("-submitted_at").only("submitted_at").first()
             context["latest_response_at"] = latest.submitted_at if latest else None
         context["active_tab"] = self.request.GET.get("tab", "questions")
@@ -984,10 +993,9 @@ class SurveyDetailView(DetailView):
                 self.get_context_data(survey_notice="這份問卷目前沒有任何題目。", survey_notice_type="warning")
             )
         if not request.user.is_manager:
-            already = FeedbackSubmission.objects.filter(
-                survey=self.object, user=request.user
-            ).exists()
-            if already:
+            from cloudapi.receipts import has_submitted
+
+            if has_submitted(self.object, request.user):
                 return self.render_to_response(
                     self.get_context_data(survey_notice="你已填答過這份問卷。", survey_notice_type="info")
                 )
@@ -1003,6 +1011,10 @@ class SurveyDetailView(DetailView):
         context["respondent_form"] = kwargs.get("respondent_form") or RespondentMetaForm(prefix="meta", initial=initial)
         context["form"] = kwargs.get("form") or SurveyFormBuilder(survey=self.object)
         context["active_question_count"] = self.object.questions.filter(is_active=True).count()
+        from cloudapi.inbox import uses_inbox
+
+        context["uses_inbox"] = uses_inbox(self.object)
+        context["inbox_definition_version"] = self.object.definition_version
         return context
 
     def post(self, request, *args, **kwargs):
@@ -1014,6 +1026,11 @@ class SurveyDetailView(DetailView):
             if request.user.is_authenticated and not request.user.is_manager:
                 request.user.notification_opt_in = consent_follow_up
                 request.user.save(update_fields=["notification_opt_in"])
+
+            from cloudapi.inbox import uses_inbox
+
+            if uses_inbox(self.object):
+                return self._submit_to_inbox(request, form, respondent_form, consent_follow_up)
 
             respondent_name = request.user.get_full_name() if request.user.is_authenticated else ""
             respondent_email = request.user.email if request.user.is_authenticated else ""
@@ -1044,6 +1061,38 @@ class SurveyDetailView(DetailView):
 
         context = self.get_context_data(object=self.object, form=form, respondent_form=respondent_form)
         return self.render_to_response(context)
+
+    def _submit_to_inbox(self, request, form, respondent_form, consent_follow_up):
+        from cloudapi.envelope import encode_answers
+        from cloudapi.inbox import DefinitionOutdated, InboxRejected, accept_submission
+
+        try:
+            try:
+                form_version = int(request.POST.get("definition_version", ""))
+            except ValueError as exc:
+                raise DefinitionOutdated() from exc
+            result = accept_submission(
+                self.object,
+                user=request.user,
+                submission_uuid=respondent_form.cleaned_data["idempotency_key"] or uuid.uuid4(),
+                form_version=form_version,
+                consent_follow_up=consent_follow_up,
+                answers=encode_answers(self.object, form.cleaned_data),
+            )
+        except InboxRejected as exc:
+            messages.error(request, exc.user_message)
+            self.object.refresh_from_db()
+            context = self.get_context_data(object=self.object, form=form, respondent_form=respondent_form)
+            return self.render_to_response(context)
+        if not result.reused and self.object.thank_you_email_enabled and request.user.email:
+            send_mail(
+                subject=f"感謝填寫 {self.object.title}",
+                message="我們已收到你的回覆。若後續有對應的改善通知，將依你的偏好主動提供最新進度。",
+                from_email=None,
+                recipient_list=[request.user.email],
+                fail_silently=True,
+            )
+        return HttpResponseRedirect(reverse("feedback:survey-success", args=[self.object.slug]))
 
 
 class SurveySubmitSuccessView(TemplateView):

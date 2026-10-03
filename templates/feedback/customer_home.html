@@ -125,7 +125,7 @@
                             <span class="pill pill-category">{{ row.submission.survey.category.name }}</span>
                         {% endif %}
                     </div>
-                    <p>{{ row.answer_count }} 題已作答，提交時間：{{ row.submission.submitted_date }}</p>
+                    <p>{% if row.submission.via_inbox %}已送出，內容由店家端保存{% else %}{{ row.answer_count }} 題已作答{% endif %}，提交時間：{{ row.submission.submitted_date }}</p>
                     {% if row.latest_notice %}
                         <p class="customer-note">最新改善：{{ row.latest_notice.improvement.title }}</p>
                     {% endif %}

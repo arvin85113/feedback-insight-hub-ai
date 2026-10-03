@@ -139,6 +139,9 @@ def get_customer_home_payload(user):
     for notice in notices:
         notices_by_submission.setdefault(notice.submission_id, notice)
 
+    from cloudapi.receipts import receipt_rows
+
+    inbox_rows = receipt_rows(user)
     submission_rows = []
     for submission in submissions[:8]:
         related_notice = notices_by_submission.get(submission.id)
@@ -151,12 +154,18 @@ def get_customer_home_payload(user):
                 "latest_notice": serialize_notice(related_notice) if related_notice else None,
             }
         )
+    submission_rows.extend(
+        {"submission": row, "answer_count": None, "answer_preview": [], "latest_notice": None} for row in inbox_rows
+    )
+    submission_rows.sort(key=lambda row: row["submission"]["submitted_at"], reverse=True)
+    submission_rows = submission_rows[:8]
     return {
-        "submissions": [serialize_submission(s, s.answers.count()) for s in submissions],
+        "submissions": [serialize_submission(s, s.answers.count()) for s in submissions] + inbox_rows,
         "notices": [serialize_notice(n) for n in notices[:10]],
         "submission_rows": submission_rows,
-        "submission_count": len(submissions),
-        "active_follow_up_count": sum(1 for s in submissions if s.consent_follow_up),
+        "submission_count": len(submissions) + len(inbox_rows),
+        "active_follow_up_count": sum(1 for s in submissions if s.consent_follow_up)
+        + sum(1 for row in inbox_rows if row["consent_follow_up"]),
         "latest_submission": serialize_submission(submissions[0], submissions[0].answers.count()) if submissions else None,
         "latest_notice": serialize_notice(notices[0]) if notices else None,
         "subscribed_survey_count": len({s.survey_id for s in submissions}),

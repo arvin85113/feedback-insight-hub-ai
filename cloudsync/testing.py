@@ -20,7 +20,7 @@ def _free_port():
 
 
 class CloudServer:
-    def __init__(self, workdir, *, startup_timeout=60):
+    def __init__(self, workdir, *, startup_timeout=60, inbox=False):
         self.workdir = Path(workdir)
         self.startup_timeout = startup_timeout
         self.port = _free_port()
@@ -34,6 +34,7 @@ class CloudServer:
             "DEBUG": "False",
             "ALLOWED_HOSTS": "127.0.0.1,localhost",
             "CLOUD_SYNC_PROTOTYPE_ENABLED": "True",
+            "CLOUD_INBOX_ENABLED": "True" if inbox else "False",
             "LOG_LEVEL": "WARNING",
             "PYTHONIOENCODING": "utf-8",
         })

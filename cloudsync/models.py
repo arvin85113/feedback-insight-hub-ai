@@ -22,6 +22,8 @@ class CloudLink(models.Model):
     last_error_message = models.CharField(max_length=255, blank=True)
     consecutive_failures = models.PositiveIntegerField(default=0)
     next_attempt_at = models.DateTimeField(null=True, blank=True)
+    # Last heartbeat's inbox figures (pending, capacity, oldest pending, deadline state).
+    inbox_status = models.JSONField(default=dict, blank=True)
 
     def save(self, *args, **kwargs):
         self.pk = 1
@@ -60,3 +62,51 @@ class CloudLink(models.Model):
     @classmethod
     def update_if_current(cls, generation, **fields):
         return bool(cls.objects.filter(pk=1, generation=generation).update(**fields))
+
+
+class SyncedSubmissionSource(models.Model):
+    """Inbox provenance of a local reply: original JSON answers and hashes used for duplicate checks."""
+
+    submission = models.OneToOneField(
+        "feedback.FeedbackSubmission", on_delete=models.CASCADE, related_name="synced_source"
+    )
+    definition_version = models.PositiveIntegerField()
+    definition_history = models.CharField(max_length=24)
+    response_sequence = models.PositiveBigIntegerField()
+    answers_hash = models.CharField(max_length=64)
+    payload_hash = models.CharField(max_length=64)
+    hash_version = models.PositiveSmallIntegerField()
+    original_answers = models.JSONField()
+
+
+class SurveySyncState(models.Model):
+    """Reply watermark: every sequence up to it is written locally or abandoned in the cloud."""
+
+    survey = models.OneToOneField("feedback.Survey", on_delete=models.CASCADE, related_name="sync_state")
+    synced_through_sequence = models.PositiveBigIntegerField(default=0)
+    abandoned_sequences = models.JSONField(default=list, blank=True)
+
+    @classmethod
+    def advance(cls, survey):
+        state, _ = cls.objects.select_for_update().get_or_create(survey=survey)
+        done = set(
+            SyncedSubmissionSource.objects.filter(
+                submission__survey=survey, response_sequence__gt=state.synced_through_sequence
+            ).values_list("response_sequence", flat=True)
+        ) | set(state.abandoned_sequences)
+        n = state.synced_through_sequence
+        while n + 1 in done:
+            n += 1
+        state.synced_through_sequence = n
+        state.abandoned_sequences = sorted(s for s in state.abandoned_sequences if s > n)
+        state.save()
+        return n
+
+
+class PendingAck(models.Model):
+    """A reply written locally whose ACK the cloud has not confirmed yet; resent until it is."""
+
+    submission_uuid = models.UUIDField(unique=True)
+    payload_hash = models.CharField(max_length=64)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_status = models.CharField(max_length=16, blank=True)

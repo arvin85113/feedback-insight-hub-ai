@@ -62,7 +62,7 @@ Shared DB:
 提供問卷 snapshot／變更序列／版本化寫入；本機 `cloudsync`（只在 node 模式）每 5 分鐘拉取定義，本機編輯問卷一律經 API 寫入雲端，
 未連結或離線時問卷唯讀。指派給節點的問卷有版本號、語意鎖（已有回覆的題目不能改題型與選項），題目只停用不硬刪。
 原型閘門 `CLOUD_SYNC_PROTOTYPE_ENABLED` 預設關閉：關閉時 API 回 503、`assign_survey_node` 拒絕執行；正式網站不開啟。
-回覆收件、結果上傳與資料搬移尚未實作（C2–C4）。規格見 [雲端同步](superpowers/specs/2026-10-01-cloud-sync-design.md)。
+收件匣（原型，C2）：`CLOUD_INBOX_ENABLED` 開啟且問卷已指派節點並設定 `inbox_since` 時，顧客送出改寫入雲端收件匣（明文封套、`SubmissionReceipt` 收據長期保存、每節點容量 20,000 筆／100 MB、單筆 64 KB），送出前依序核對同 ID 重送、填答版本與額度；本機逐筆寫成一般 `FeedbackSubmission`／`Answer`（`SyncedSubmissionSource` 保存原始答案與雜湊），提交後逐筆 ACK，雲端才刪除正文。無法寫入的回覆隔離，由雲端「收件匣」管理頁放回或放棄；最舊待收滿 25／30 天警示。正式網站不開啟此開關。結果上傳與資料搬移尚未實作（C3、C4）。規格見 [雲端同步](superpowers/specs/2026-10-01-cloud-sync-design.md)。
 
 網站與本機工作台共用 Django models、工作協調與分析輸入契約，不維護第二套 HTTP domain service 或 ORM 鏡像。
 

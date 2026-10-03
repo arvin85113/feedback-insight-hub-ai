@@ -25,6 +25,9 @@ if settings.IS_NODE:
     ]
 
 if not settings.IS_NODE:
-    urlpatterns += [path("api/node/v1/", include("cloudapi.urls"))]
+    urlpatterns += [
+        path("api/node/v1/", include("cloudapi.urls")),
+        path("dashboard/inbox/", include("cloudapi.manage_urls")),
+    ]
 
 urlpatterns += [path("", include("feedback.urls"))]

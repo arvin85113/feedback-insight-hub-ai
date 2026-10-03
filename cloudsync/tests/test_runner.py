@@ -12,15 +12,16 @@ from cloudsync.tokens import save_token
 
 
 class FakeClient:
-    def __init__(self, error=None):
+    def __init__(self, error=None, heartbeat=None):
         self.error = error
+        self.heartbeat = heartbeat or {}
         self.posts = []
 
     def post(self, path, body=None):
         if self.error:
             raise self.error
         self.posts.append(path)
-        return {}
+        return self.heartbeat if path == "heartbeat/" else {}
 
 
 class RunCycleTests(TestCase):
@@ -33,7 +34,8 @@ class RunCycleTests(TestCase):
 
     def run_with(self, client, **kwargs):
         with patch("cloudsync.runner.client_for_link", return_value=client), \
-             patch("cloudsync.runner.sync_definitions", return_value=0):
+             patch("cloudsync.runner.sync_definitions", return_value=0), \
+             patch("cloudsync.runner.sync_inbox"):
             return run_cycle(**kwargs)
 
     def test_success_records_time_and_clears_errors(self):
@@ -64,7 +66,8 @@ class RunCycleTests(TestCase):
             return 0
 
         with patch("cloudsync.runner.client_for_link", return_value=FakeClient()), \
-             patch("cloudsync.runner.sync_definitions", side_effect=relink_then_succeed):
+             patch("cloudsync.runner.sync_definitions", side_effect=relink_then_succeed), \
+             patch("cloudsync.runner.sync_inbox"):
             run_cycle()
         fresh = CloudLink.load()
         self.assertEqual(fresh.api_url, "https://new")
@@ -73,3 +76,38 @@ class RunCycleTests(TestCase):
     def test_not_linked(self):
         CloudLink.unlink()
         self.assertEqual(run_cycle(), "not_linked")
+
+
+class InboxCycleTests(TestCase):
+    def setUp(self):
+        self._keyring = memory_keyring()
+        self._keyring.__enter__()
+        self.addCleanup(self._keyring.__exit__, None, None, None)
+        CloudLink.relink("https://c", "88888888-8888-8888-8888-888888888888")
+        save_token("https://c", "tok")
+
+    def test_cycle_runs_inbox_and_stores_heartbeat(self):
+        heartbeat = {"node_uuid": "88888888-8888-8888-8888-888888888888",
+                     "inbox": {"pending_count": 2, "deadline_state": "ok"}, "surveys": []}
+        with patch("cloudsync.runner.client_for_link", return_value=FakeClient(heartbeat=heartbeat)), \
+             patch("cloudsync.runner.sync_definitions", return_value=0), \
+             patch("cloudsync.runner.sync_inbox") as sync_inbox:
+            self.assertEqual(run_cycle(), "ok")
+        sync_inbox.assert_called_once()
+        self.assertEqual(CloudLink.load().inbox_status["pending_count"], 2)
+
+    def test_abandoned_sequences_advance_the_watermark(self):
+        from cloudsync.definitions import upsert_definition
+        from cloudsync.inbox import intake
+        from cloudsync.models import SurveySyncState
+        from cloudsync.tests.test_inbox import FakeInboxClient, SURVEY_UUID, Q1, U1, U3, definition, envelope
+
+        upsert_definition(definition(1))
+        intake(envelope(1, U1, {Q1: "a"}), FakeInboxClient([]))
+        intake(envelope(3, U3, {Q1: "c"}), FakeInboxClient([]))
+        heartbeat = {"surveys": [{"survey_uuid": SURVEY_UUID, "response_sequence": 3, "abandoned_sequences": [2]}]}
+        with patch("cloudsync.runner.client_for_link", return_value=FakeClient(heartbeat=heartbeat)), \
+             patch("cloudsync.runner.sync_definitions", return_value=0), \
+             patch("cloudsync.runner.sync_inbox"):
+            run_cycle()
+        self.assertEqual(SurveySyncState.objects.get(survey__uuid=SURVEY_UUID).synced_through_sequence, 3)

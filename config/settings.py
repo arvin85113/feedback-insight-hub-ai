@@ -42,6 +42,14 @@ _IS_RENDER_RUNTIME = bool(RENDER_EXTERNAL_HOSTNAME) or os.getenv("RENDER", "").l
 ANALYSIS_AUTO_AI_ENABLED = os.getenv("ANALYSIS_AUTO_AI_ENABLED", "False").lower() == "true"
 # Cloud sync phase 1 is an isolated prototype (spec §12); production keeps this off.
 CLOUD_SYNC_PROTOTYPE_ENABLED = os.getenv("CLOUD_SYNC_PROTOTYPE_ENABLED", "False").lower() == "true"
+# Plain-text inbox prototype (spec §12): production keeps this off.
+CLOUD_INBOX_ENABLED = os.getenv("CLOUD_INBOX_ENABLED", "False").lower() == "true"
+CLOUD_INBOX_MAX_COUNT = int(os.getenv("CLOUD_INBOX_MAX_COUNT", "20000"))
+CLOUD_INBOX_MAX_BYTES = int(os.getenv("CLOUD_INBOX_MAX_BYTES", str(100 * 1024 * 1024)))
+CLOUD_INBOX_MAX_ITEM_BYTES = int(os.getenv("CLOUD_INBOX_MAX_ITEM_BYTES", str(64 * 1024)))
+CLOUD_INBOX_WARN_DAYS = 25
+CLOUD_INBOX_CRITICAL_DAYS = 30
+CLOUD_DB_WARN_BYTES = 400 * 1024 * 1024
 
 # Local development defaults to DEBUG; a deployed runtime must opt in explicitly.
 DEBUG = os.getenv("DEBUG", "False" if (_IS_RENDER_RUNTIME or IS_NODE) else "True").lower() == "true"

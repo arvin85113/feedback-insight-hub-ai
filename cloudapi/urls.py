@@ -11,4 +11,7 @@ urlpatterns = [
     path("surveys/<uuid:survey_uuid>/", views.survey_update, name="survey-update"),
     path("surveys/", views.survey_create, name="survey-create"),
     path("heartbeat/", views.heartbeat, name="heartbeat"),
+    path("inbox/", views.inbox_list, name="inbox"),
+    path("inbox/ack/", views.inbox_ack, name="inbox-ack"),
+    path("inbox/quarantine/", views.inbox_quarantine, name="inbox-quarantine"),
 ]
