@@ -34,6 +34,7 @@
           data-total-q="{{ active_question_count }}">
         {% csrf_token %}
         {{ respondent_form.idempotency_key }}
+        {% if uses_inbox %}<input type="hidden" name="definition_version" value="{{ inbox_definition_version }}">{% endif %}
 
         {# Step 0: respondent info + consent #}
         <article class="survey-card survey-card-accent survey-step"
