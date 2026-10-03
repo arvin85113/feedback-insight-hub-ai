@@ -60,9 +60,9 @@ Shared DB:
 
 問卷定義同步（原型，第一階段 C1）：雲端 `cloudapi`（兩種模式都安裝；`/api/node/v1/` 只在 cloud 模式掛載）以裝置權杖認證，
 提供問卷 snapshot／變更序列／版本化寫入；本機 `cloudsync`（只在 node 模式）每 5 分鐘拉取定義，本機編輯問卷一律經 API 寫入雲端，
-未連結或離線時問卷唯讀。指派給節點的問卷有版本號、語意鎖（已有回覆的題目不能改題型與選項），題目只停用不硬刪。
+未連結或離線時問卷唯讀。收件節點只能在草稿設定，發布後不可變更；已發布問卷的題目一律固定（取代原本的語意鎖）。
 原型閘門 `CLOUD_SYNC_PROTOTYPE_ENABLED` 預設關閉：關閉時 API 回 503、`assign_survey_node` 拒絕執行；正式網站不開啟。
-收件匣（原型，C2）：`CLOUD_INBOX_ENABLED` 開啟且問卷已指派節點並設定 `inbox_since` 時，顧客送出改寫入雲端收件匣（明文封套、`SubmissionReceipt` 收據長期保存、每節點容量 20,000 筆／100 MB、單筆 64 KB），送出前依序核對同 ID 重送、填答版本與額度；本機逐筆寫成一般 `FeedbackSubmission`／`Answer`（`SyncedSubmissionSource` 保存原始答案與雜湊），提交後逐筆 ACK，雲端才刪除正文。無法寫入的回覆隔離，由雲端「收件匣」管理頁放回或放棄；最舊待收滿 25／30 天警示。正式網站不開啟此開關。結果上傳（原型，C3）：只適用於雲端同步、分析來源為問卷回覆的問卷。本機分析在建立輸入時凍結回覆水位（只納入序號不大於水位的收件匣回覆），題目、詞典或本機回覆的變更在同一交易遞增版本，使執行中的結果作廢；水位前進即重新排程。每次發布在同一交易內凍結為 `ResultUpload`（身分、序號、內容雜湊不再改變），同步週期以 UTF-8 JSON 上傳；雲端驗證後寫入只含中繼資料的 `PublishedResultRecord`，並在 `SurveyAnalysisState` 列鎖內只於序號、水位、定義版本都不倒退時切換展示。網站對指派給節點的問卷顯示「本機發布 #N」，以定義版本與回覆水位判定是否最新（管線版本為本機申報）。資料搬移尚未實作（C4）。規格見 [雲端同步](superpowers/specs/2026-10-01-cloud-sync-design.md)。
+收件匣（原型，C2）：`CLOUD_INBOX_ENABLED` 開啟且問卷已指派節點並設定 `inbox_since` 時，顧客送出改寫入雲端收件匣（明文封套、`SubmissionReceipt` 收據長期保存、每節點容量 20,000 筆／100 MB、單筆 64 KB），送出前依序核對同 ID 重送、填答版本與額度；本機逐筆寫成一般 `FeedbackSubmission`／`Answer`（`SyncedSubmissionSource` 保存原始答案與雜湊），提交後逐筆 ACK，雲端才刪除正文。無法寫入的回覆隔離，由雲端「收件匣」管理頁放回或放棄；最舊待收滿 25／30 天警示。正式網站不開啟此開關。結果上傳（原型，C3）：只適用於雲端同步、分析來源為問卷回覆的問卷。本機分析在建立輸入時凍結回覆水位（只納入序號不大於水位的收件匣回覆），題目、詞典或本機回覆的變更在同一交易遞增版本，使執行中的結果作廢；水位前進即重新排程。每次發布在同一交易內凍結為 `ResultUpload`（身分、序號、內容雜湊不再改變），同步週期以 UTF-8 JSON 上傳；雲端驗證後寫入只含中繼資料的 `PublishedResultRecord`，並在 `SurveyAnalysisState` 列鎖內只於序號、水位、定義版本都不倒退時切換展示。網站對指派給節點的問卷顯示「本機發布 #N」，以定義版本與回覆水位判定是否最新（管線版本為本機申報）。不搬移既有回覆（C4 擱置）。規格見 [雲端同步](superpowers/specs/2026-10-01-cloud-sync-design.md)。
 
 網站與本機工作台共用 Django models、工作協調與分析輸入契約，不維護第二套 HTTP domain service 或 ORM 鏡像。
 
@@ -75,8 +75,10 @@ Shared DB:
 - 導向登入 / 註冊
 
 ### 2. 問卷管理 (`/dashboard/forms/`)
-- 建立問卷：支援題型 — 簡答 / 詳答、單選、多選、量化（scale）、整數、小數
-- 題目資料型別：`continuous` / `discrete` / `nominal` / `ordinal` / `text`（對應統計分析方法）
+- 建立問卷：Google 表單式卡片，七種題型 — 簡答、段落、選擇題、下拉選單、核取方塊、線性刻度（起點 0／1、終點 2–10、兩端標籤）、數字（可允許小數）
+- 資料型態由題型推得（`feedback/question_schema.py` 的 `derive_data_type`）：文字＝`text`、選擇題＝`nominal`（勾「有高低順序」為 `ordinal`）、核取方塊＝`nominal`、刻度＝`ordinal`、整數＝`discrete`、小數＝`continuous`；管理者看不到統計術語
+- 選項以代碼保存（`Question.choices`、`Answer.choice_codes`），有序題有分數，單選可標「不納入分析」（不參與檢定、另計 `excluded_n`）
+- 生命週期：草稿可編輯 → 發布後題目固定（只能改收件狀態、封存、分類、分析開關、感謝信、改善追蹤）→ 改版請「複製為新草稿」；所有問卷定義只經 `cloudapi.writes` 的受控入口寫入，每個版本都存 revision
 - 問卷設定：標題、分類（SurveyCategory）、說明、是否開放、感謝信
 - Survey Builder：題目設定 tab + 問卷設定 tab，含題目預覽；頂部使用與分析二級頁一致的 KPI 膠囊列
 - 問卷管理列表：分類篩選、排序、統計 chips（題目 / 回覆 / 最近回覆）、3 日趨勢圖；外部資料集來源的問卷顯示資料集筆數

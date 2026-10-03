@@ -119,11 +119,11 @@ def _draft(definition):
 
 
 @transaction.atomic
-def create_survey(definition):
-    """Cloud website: a new draft owned by no node (spec §7.1)."""
+def create_survey(definition, *, slug=None):
+    """Cloud website: a new draft owned by no node (spec §7.1). Seeds may pass a fixed slug."""
 
     definition = validate_definition(definition)
-    survey = Survey(uuid=definition["survey_uuid"], slug=random_slug())
+    survey = Survey(uuid=definition["survey_uuid"], slug=slug or random_slug())
     return _locked_write(survey, expected_version=None, definition={**_draft(definition), "slug": survey.slug})
 
 

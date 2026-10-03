@@ -271,7 +271,7 @@ class SeedResetTests(TestCase):
 
         call_command("seed_demo_beverage", stdout=StringIO())
         survey = Survey.objects.get(slug=SURVEY_SLUG)
-        SurveyDefinitionRevision.objects.create(survey=survey, version=1, definition={})
+        self.assertTrue(SurveyDefinitionRevision.objects.filter(survey=survey).exists())  # recorded by the seed
         ChangeClock.objects.get_or_create(pk=1)
         SurveyChange.objects.create(seq=1, survey=survey, definition_version=1)
         improvement = ImprovementUpdate.objects.create(title="改善", summary="摘要", survey=survey)
@@ -282,4 +282,4 @@ class SeedResetTests(TestCase):
         call_command("seed_demo_beverage", "--reset", "--yes", stdout=StringIO())
         rebuilt = Survey.objects.get(slug=SURVEY_SLUG)
         self.assertNotEqual(rebuilt.pk, survey.pk)
-        self.assertFalse(SurveyDefinitionRevision.objects.filter(survey=rebuilt).exists())
+        self.assertFalse(SurveyDefinitionRevision.objects.filter(survey_id=survey.pk).exists())
