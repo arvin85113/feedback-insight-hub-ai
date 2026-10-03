@@ -68,6 +68,15 @@ class ApplyUploadTests(TestCase):
             with self.subTest(body.get("analyzed_through_sequence")), self.assertRaises(ResultInvalid):
                 self.upload(1, body)
 
+    def test_non_integer_coverage_is_rejected(self):
+        # The overview page casts coverage.analyzed_unique to an integer in SQL; PostgreSQL errors on anything else.
+        for coverage in ({"analyzed_unique": True, "excluded": {"voided": 0, "incomplete": 0}},
+                         {"analyzed_unique": "3.5", "excluded": {"voided": 0, "incomplete": 0}},
+                         {"analyzed_unique": 3, "excluded": {"voided": "x", "incomplete": 0}},
+                         {"analyzed_unique": 3}):
+            with self.subTest(coverage), self.assertRaises(ResultInvalid):
+                self.upload(1, {**content(self.survey), "coverage": coverage})
+
     @override_settings(CLOUD_SYNC_PROTOTYPE_ENABLED=True)
     def test_api_status_codes_utf8_body_and_heartbeat_sequence(self):
         def post(body):

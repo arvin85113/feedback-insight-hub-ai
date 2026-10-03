@@ -175,8 +175,9 @@ def _survey_catalog_rows(queryset):
         published_upload_uuid__isnull=False,
     ).values("survey_id", "publication_manifest"):
         coverage = (row["publication_manifest"] or {}).get("coverage") or {}
-        if isinstance(coverage.get("analyzed_unique"), int):
-            published_counts[row["survey_id"]] = coverage["analyzed_unique"]
+        value = coverage.get("analyzed_unique")
+        if isinstance(value, int) and not isinstance(value, bool):
+            published_counts[row["survey_id"]] = value
     for survey in surveys:
         question_row = question_counts.get(survey.pk, {})
         submission_row = submission_counts.get(survey.pk, {})

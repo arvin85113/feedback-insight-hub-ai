@@ -64,6 +64,14 @@ def _validate(node, publish_uuid, publish_sequence, content_hash, content):
     for key in CONTENT_DICTS:
         if not isinstance(content.get(key), dict):
             raise ResultInvalid(f"{key} must be an object")
+    # coverage feeds an integer cast in the overview query; anything else would error on PostgreSQL.
+    coverage = content["coverage"]
+    _int(coverage.get("analyzed_unique"), "coverage.analyzed_unique")
+    excluded = coverage.get("excluded")
+    if not isinstance(excluded, dict):
+        raise ResultInvalid("coverage.excluded must be an object")
+    for key in ("voided", "incomplete"):
+        _int(excluded.get(key), f"coverage.excluded.{key}")
     if content.get("ai_payload") is not None and not isinstance(content["ai_payload"], dict):
         raise ResultInvalid("ai_payload must be an object or null")
     try:
