@@ -61,9 +61,10 @@ def build_content(state):
         "input_fingerprint": snapshot.data_fingerprint if snapshot else "",
         "published_at": state.published_at.isoformat() if state.published_at else None,
         "pipeline": {
-            "input_version": state.input_version,
-            "config_version": state.config_version,
-            "pipeline_version": state.pipeline_version,
+            # The versions the shown result was computed with, not the state's current ones.
+            "input_version": base["input_version"],
+            "config_version": base["config_version"],
+            "pipeline_version": base["pipeline_version"],
             "implementation_version": scope.get("pipeline_implementation_version", "") if snapshot else "",
         },
         "stages": stages,
@@ -103,7 +104,12 @@ def backfill_publications():
     """Create uploads for publications that have none yet (e.g. made while this code was absent)."""
 
     created = 0
-    for survey_id in SurveyAnalysisState.objects.filter(published_at__isnull=False).values_list("survey_id", flat=True):
+    candidates = (
+        SurveyAnalysisState.objects.filter(published_at__isnull=False, survey__definition_revisions__isnull=False)
+        .values_list("survey_id", flat=True)
+        .distinct()
+    )
+    for survey_id in candidates:
         with transaction.atomic():
             state = (
                 SurveyAnalysisState.objects.select_for_update()
@@ -143,20 +149,32 @@ def upload_results(client):
             if error.kind in RETRYABLE:
                 ResultUpload.objects.filter(pk=upload.pk).update(attempts=upload.attempts + 1, last_error=error.kind)
                 raise
-            _mark(upload, ResultUpload.Status.FAILED, "not_found" if error.status == 404 else error.kind)
+            _mark(upload, ResultUpload.Status.FAILED, REJECTION_NAMES.get(error.status, error.kind))
             counts["failed"] += 1
             continue
-        if reply.get("status") == "applied":
+        status = reply.get("status") if isinstance(reply, dict) else None
+        if status == "applied":
             _mark(upload, ResultUpload.Status.UPLOADED, "")
             counts["uploaded"] += 1
-        else:
+        elif status == "stale":
             _mark(upload, ResultUpload.Status.STALE, "")
             counts["stale"] += 1
+        else:
+            _mark(upload, ResultUpload.Status.FAILED, "bad_reply")
+            counts["failed"] += 1
     return counts
 
 
+REJECTION_NAMES = {400: "invalid", 404: "not_found", 413: "too_large"}
+SETTLED = (ResultUpload.Status.UPLOADED, ResultUpload.Status.STALE)
+
+
 def _mark(upload, status, error):
-    ResultUpload.objects.filter(pk=upload.pk).update(status=status, last_error=error, attempts=upload.attempts + 1)
+    fields = {"status": status, "last_error": error, "attempts": upload.attempts + 1}
+    if status in SETTLED:
+        # Never resent once settled; keep the hash as the record and drop the bulky copy.
+        fields["content"] = {}
+    ResultUpload.objects.filter(pk=upload.pk).update(**fields)
 
 
 def retry_failed():

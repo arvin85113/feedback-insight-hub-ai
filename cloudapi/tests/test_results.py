@@ -68,6 +68,22 @@ class ApplyUploadTests(TestCase):
             with self.subTest(body.get("analyzed_through_sequence")), self.assertRaises(ResultInvalid):
                 self.upload(1, body)
 
+    def test_uuid_of_another_node_conflicts_without_touching_its_record(self):  # M6
+        publish_uuid = uuid.uuid4()
+        self.upload(1, content(self.survey), publish_uuid)
+        other, _ = NodeDevice.issue("other")
+        mine = assign_survey_to_node(Survey.objects.create(title="O", slug="o"), other).survey
+        Survey.objects.filter(pk=mine.pk).update(response_sequence=5)
+        body = content(mine)
+        with self.assertRaises(ResultConflict):
+            apply_upload(other, publish_uuid=str(publish_uuid), publish_sequence=1,
+                         content_hash=sha256_hex(body), content=body)
+        self.assertEqual(PublishedResultRecord.objects.get(publish_uuid=publish_uuid).conflict_count, 0)
+
+    def test_naive_published_at_is_rejected(self):  # M8
+        with self.assertRaises(ResultInvalid):
+            self.upload(1, {**content(self.survey), "published_at": "2026-10-03T00:00:00"})
+
     def test_non_integer_coverage_is_rejected(self):
         # The overview page casts coverage.analyzed_unique to an integer in SQL; PostgreSQL errors on anything else.
         for coverage in ({"analyzed_unique": True, "excluded": {"voided": 0, "incomplete": 0}},

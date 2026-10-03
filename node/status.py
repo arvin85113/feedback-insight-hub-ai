@@ -112,6 +112,8 @@ def inbox_status(link=None):
 
 
 def results_status(link=None):
+    from django.db.models.fields.json import KT
+
     from cloudsync.models import CloudLink, ResultUpload, SyncedSubmissionSource
     from feedback.models import SurveyAnalysisState
 
@@ -122,14 +124,23 @@ def results_status(link=None):
     if failed:
         return StatusItem("results", "結果上傳", "warn", f"{failed} 份結果上傳失敗")
     pending = ResultUpload.objects.filter(status=ResultUpload.Status.PENDING).count()
-    analysed = waiting = 0
-    for state in SurveyAnalysisState.objects.filter(survey__sync_state__isnull=False).select_related("published_snapshot"):
-        snapshot = state.published_snapshot
-        watermark = ((snapshot.source_snapshot or {}).get("data_scope") or {}).get("analyzed_through_sequence", 0) if snapshot else 0
-        analysed += snapshot.response_count if snapshot else 0
-        waiting += SyncedSubmissionSource.objects.filter(
-            submission__survey_id=state.survey_id, response_sequence__gt=watermark
-        ).count()
+    # Fixed number of queries however many surveys: read watermarks without loading Snapshot JSON.
+    rows = (
+        SurveyAnalysisState.objects.filter(survey__sync_state__isnull=False)
+        .annotate(watermark=KT("published_snapshot__source_snapshot__data_scope__analyzed_through_sequence"))
+        .values_list("survey_id", "published_snapshot__response_count", "watermark")
+    )
+    watermarks, analysed = {}, 0
+    for survey_id, response_count, watermark in rows:
+        analysed += response_count or 0
+        watermarks[survey_id] = int(watermark or 0)
+    waiting = sum(
+        1
+        for survey_id, sequence in SyncedSubmissionSource.objects.filter(
+            submission__survey_id__in=list(watermarks)
+        ).values_list("submission__survey_id", "response_sequence")
+        if sequence > watermarks[survey_id]
+    )
     return StatusItem("results", "結果上傳", "ok", f"已分析 {analysed} 筆 · 尚未分析 {waiting} 筆 · 待上傳 {pending} 份")
 
 

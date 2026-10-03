@@ -78,6 +78,8 @@ def _validate(node, publish_uuid, publish_sequence, content_hash, content):
         published_at = datetime.fromisoformat(str(content.get("published_at")))
     except ValueError as exc:
         raise ResultInvalid("published_at is not an ISO datetime") from exc
+    if published_at.tzinfo is None:
+        raise ResultInvalid("published_at must include a time zone")
     return publish_uuid, survey, definition_version, watermark, published_at
 
 
@@ -90,6 +92,8 @@ def apply_upload(node, *, publish_uuid, publish_sequence, content_hash, content)
         SurveyAnalysisState.objects.get_or_create(survey=survey)
         state = SurveyAnalysisState.objects.select_for_update().get(survey=survey)
         existing = PublishedResultRecord.objects.filter(publish_uuid=publish_uuid).first()
+        if existing is not None and existing.node_id != node.pk:
+            raise ResultConflict()  # another node's record: never touch its counter
         if existing is not None:
             if existing.content_hash == content_hash and existing.publish_sequence == publish_sequence:
                 status = "applied" if state.published_upload_uuid == publish_uuid else "stale"

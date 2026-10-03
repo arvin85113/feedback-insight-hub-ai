@@ -14,7 +14,7 @@
         {% if failed_results %}
         <ul>
             {% for row in failed_results %}
-            <li>{{ row.survey__title }} 發布 #{{ row.publish_sequence }}：{% if row.last_error == "not_found" %}雲端找不到這份問卷，可能已改連其他雲端或取消指派{% elif row.last_error == "too_large" %}結果內容超過上傳上限{% elif row.last_error == "conflict" %}雲端已有同編號但內容不同的結果{% else %}{{ row.last_error }}{% endif %}</li>
+            <li>{{ row.survey__title }} 發布 #{{ row.publish_sequence }}：{% if row.last_error == "not_found" %}雲端找不到這份問卷，可能已改連其他雲端或取消指派{% elif row.last_error == "too_large" %}結果內容超過上傳上限{% elif row.last_error == "conflict" %}雲端已有同編號但內容不同的結果{% elif row.last_error == "invalid" %}雲端認為結果內容格式不正確{% elif row.last_error == "bad_reply" %}雲端回應無法辨識{% else %}{{ row.last_error }}{% endif %}</li>
             {% endfor %}
         </ul>
         <form method="post" class="form-inline">{% csrf_token %}

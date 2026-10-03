@@ -95,6 +95,10 @@ class ResultEndToEndTests(TestCase):
             self.submit(f"回覆{index}")
         self.assertEqual(run_cycle(force=True), "ok")
         self.analyse()
+        # What a backup taken now (before the upload) would contain; settled uploads drop their content.
+        self.backup = dict(
+            ResultUpload.objects.filter(survey__uuid=self.survey_uuid).values_list("publish_sequence", "content")
+        )
         self.assertEqual(run_cycle(force=True), "ok")
 
     def test_reply_analysis_upload_and_display(self):
@@ -143,7 +147,10 @@ class ResultEndToEndTests(TestCase):
         self.analyse()
         run_cycle(force=True)
         self.assertEqual(self.cloud_payload()["node"]["publish_sequence"], 2)
-        ResultUpload.objects.filter(survey__uuid=self.survey_uuid, publish_sequence=1).update(status="pending")  # pre-restore copy resent
+        # Restored from the backup above: sequence 1 is pending again with its original content.
+        ResultUpload.objects.filter(survey__uuid=self.survey_uuid, publish_sequence=1).update(
+            status="pending", content=self.backup[1]
+        )
         run_cycle(force=True)
         self.assertEqual(ResultUpload.objects.get(survey__uuid=self.survey_uuid, publish_sequence=1).status, "stale")
         self.assertEqual(self.cloud_payload()["node"]["publish_sequence"], 2)
