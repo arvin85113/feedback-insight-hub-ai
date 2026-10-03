@@ -215,7 +215,9 @@ if IS_NODE:
             },
         }
     }
-    INSTALLED_APPS += ["allauth", "allauth.account", "organizations", "node"]
+    INSTALLED_APPS += ["allauth", "allauth.account", "organizations", "node", "cloudsync"]
+    # Bearer tokens go over HTTPS only; isolated end-to-end tests opt in to loopback HTTP.
+    CLOUD_SYNC_ALLOW_LOOPBACK_HTTP = os.getenv("CLOUD_SYNC_ALLOW_LOOPBACK_HTTP", "False").lower() == "true"
     MIDDLEWARE.append("allauth.account.middleware.AccountMiddleware")
     MIDDLEWARE.append("node.middleware.SetupRequiredMiddleware")
     AUTHENTICATION_BACKENDS = [

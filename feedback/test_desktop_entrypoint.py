@@ -137,7 +137,7 @@ class DesktopBuildScriptTests(unittest.TestCase):
         root = Path(__file__).resolve().parent.parent
         script = (root / "scripts" / "build_desktop.ps1").read_text(encoding="utf-8-sig")
         apps = sorted(path.parent.parent.name for path in root.glob("*/migrations/__init__.py"))
-        self.assertEqual(apps, ["accounts", "cloudapi", "feedback", "node", "organizations"])
+        self.assertEqual(apps, ["accounts", "cloudapi", "cloudsync", "feedback", "node", "organizations"])
         for app in apps:
             self.assertIn(f"--collect-submodules {app} ", script)
 
