@@ -1,6 +1,6 @@
 # 問卷建立工具改版：Google 表單式編輯與自動資料型態
 
-狀態：規格第二版，待審閱（2026-10-03；第一版經獨立審查後修訂）。相關規格：[雲端同步](2026-10-01-cloud-sync-design.md)。
+狀態：規格第三版（2026-10-03；經兩輪獨立審查後修訂，第二輪結論 APPROVE WITH CHANGES，本版已納入）。相關規格：[雲端同步](2026-10-01-cloud-sync-design.md)。
 
 ## 目標
 
@@ -60,6 +60,10 @@
 
 填答頁只顯示啟用選項，由另一個屬性 `active_choices` 提供。
 
+Worker 的分析經由 `background_analysis.descriptors` 以 `AnalysisField` 臨時重建未存檔的題目物件，再交給 `analyze_frame`。
+因此 **levels 必須隨 `AnalysisField` 傳遞**：`AnalysisField.options` 就是 `analysis_levels` 的結果，`descriptors` 與 `analyze_frame`
+直接使用這份清單（不從臨時題目的 `choices` 或刻度欄位重新推算，臨時物件上沒有這些值）。
+
 ### 2.2 選項代碼
 
 - 新增 `Question.choices`（JSON）：`[{"code": "c1", "label": "非常滿意", "active": true}, ...]`，取代 `options_text` 作為正本；
@@ -74,7 +78,10 @@
 |---|---|
 | `AnswerInput`（`feedback/analysis_adapters.py`） | 選擇題以 `choice_codes` 對應目前的選項文字；複選題以**清單**傳給統計，不再以「, 」串接 |
 | `analyze_frame`、`get_survey_pandas_stats`、`build_stats_payload`（`feedback/local_service.py`） | 只對複選題拆分，且接受清單輸入；不再以「是否含逗號」判斷 |
-| `background_analysis.descriptors`／有序對應 | 改讀 `analysis_levels` |
+| `background_analysis.descriptors`／有序對應（`feedback/background_analysis.py`） | 臨時題目不再推算 levels；`analyze_frame`／`encode_ordinal` 直接使用 `AnalysisField.options` 帶來的清單 |
+| 填答表單 `SurveyFormBuilder`（`feedback/forms.py`） | 選擇題用 `active_choices`、選項值為代碼；下拉選單用 `Select`；刻度依範圍產生按鈕並顯示標籤；數字依「允許小數」產生整數或小數欄位 |
+| 一般填答寫入 `submit_survey_payload`（`feedback/local_service.py`） | 寫入 `choice_codes`，`value` 存顯示用文字（複選以「, 」串接，僅供顯示） |
+| 收件匣送出 `accept_submission`（`cloudapi/inbox.py`）與 `encode_answers`（`cloudapi/envelope.py`） | 以代碼建立封套答案 |
 | AI Snapshot 指紋（`feedback/ai_snapshot_service.py`） | 指紋納入 `choices`、刻度範圍與標籤、`choice_codes` |
 | 匯入器（`feedback/importing/service.py`） | 以 `analysis_levels`／`active_choices` 驗證答案；與既有題目的相容比對改以新結構為準；寫入 `choice_codes` |
 | 顧客回饋紀錄預覽、範本 | 讀 `Answer.value`（顯示用），不受影響 |
@@ -104,23 +111,35 @@
   有回覆之後，每次定義變更遞增 `Survey.definition_version` 並保存 `SurveyDefinitionRevision`。
   指派給節點的問卷維持 C1 行為（每次變更都遞增並寫入變更序列）。
 - 一般填答流程送出時：先 `select_for_update` 鎖定問卷列，再寫入回覆與答案、標記 `has_received_answer`、
-  記錄 `FeedbackSubmission.definition_version`（新增欄位，可空）。第一筆回答若讓問卷從「無回覆」變為「有回覆」，同一交易內把版本設為至少 1 並保存 revision。
+  記錄 `FeedbackSubmission.definition_version`（新增欄位，可空）。第一筆回答若讓問卷從「無回覆」變為「有回覆」，同一交易內把版本設為至少 1 並保存 revision；
+  **此規則只適用沒有 `owner_node` 的問卷**——指派給節點的問卷在指派時版本已至少為 1，revision 只能經 C1 的寫入路徑產生，以免繞過變更序列。
 - **C1 定義 dict 改為 `schema_version: 2`**：題目加入 `choices`、`ordered`、`display`、`scale_min`、`scale_max`、`scale_labels`，保留 `enable_keyword_tracking`，移除 `options_text`。
-  `validate_definition` 同時接受 `schema_version` 1（舊 revision 不可修改），讀入時轉換為 v2 結構；語意鎖改用本節規則。
+  `validate_definition` 同時接受 `schema_version` 1（舊 revision 不可修改），讀入時以**固定、可重現**的規則轉換為 v2：
+  選項代碼依 `options_text` 行序產生 `c1..cn`（全部啟用）；`ordered` 取自 `data_type`；刻度題依第 5 節第 2 步的同一規則決定範圍。
+  雲端與本機用同一個轉換函式，兩端得到相同的代碼。語意鎖改用本節規則。
 
 ## 5. 舊資料：捨棄並重新模擬
 
 正式資料庫目前的問卷：飲料店（指令產生的模擬資料）、2026 Q1 跨部門（早期測試，已封存）、`123`（空白測試，已封存）、
 TripAdvisor（真實外部資料，答案只在本機 Parquet，Supabase 只有問卷與題目定義）。
 
-1. **部署前（需另行授權）**：備份 Supabase 並實際還原到隔離資料庫；確認後刪除飲料店、2026 Q1 跨部門、`123` 三份問卷及其回覆、分析結果與改善紀錄。
+1. **部署前（需另行授權）**：備份 Supabase 並實際還原到隔離資料庫；確認後以 `purge_survey` 指令刪除飲料店、2026 Q1 跨部門、`123` 三份問卷。
 2. **Migration**：新增欄位；轉換所有題目定義——`options_text` 逐行產生 `choices`；`ordered` 取自現有 `data_type`；
    刻度題的選項全是連續整數者設為刻度範圍（TripAdvisor 的六題評分 → 1–5），其他刻度設 1–5；`data_type` 依第 1 節重新推導；
    非文字題 `enable_keyword_tracking` 設為 `False`。
-3. **防呆**：migration 偵測到仍有選擇題答案（`Answer` 屬於單選或複選題）時中止並列出問卷，不轉換答案。舊問卷應已於步驟 1 刪除。
+3. **防呆**：migration 偵測到下列任一情況時中止並列出問卷，不轉換答案——仍有選擇題答案；或選項不是連續整數、且已有答案的刻度題。舊問卷應已於步驟 1 刪除。
 4. **TripAdvisor**：只轉換題目定義；本機 Parquet 分析依 mapping 執行，已發布結果不變。轉換後題目定義與 mapping 的相容比對必須通過。
 5. **重新模擬飲料店**：更新 `seed_demo_beverage` 使用新題型（滿意度題改為線性刻度 1–10、標籤由指令定義），
    填答者名稱維持「飲料店模擬填答」標示；在本機或隔離環境驗證後，經授權寫入正式資料庫並重新發布分析（AI 段落使用 Gemini 需另行授權）。
+
+### 5.1 問卷刪除政策與 `purge_survey`
+
+- 一般介面的「刪除問卷」維持封存；**有回覆的問卷不提供硬刪**（與不硬刪原則一致）。
+- 管理指令 `purge_survey --survey <slug> [--confirm]` 只用於清除測試或模擬資料：預設 dry-run，列出將刪除的筆數；
+  加 `--confirm` 才在一個交易內依序刪除：改善通知（`ImprovementNotice`，對改善紀錄為 `PROTECT`）→ 改善發送紀錄 → 改善紀錄
+  （`ImprovementUpdate.survey` 為 `SET_NULL`，不先刪會留下孤兒）→ 問卷定義 revision（對問卷為 `PROTECT`）→ 分析工作、Snapshot、AI Stage、分析狀態 → 回覆與答案 → 問卷。
+  指派給節點的問卷（`owner_node` 有值）拒絕執行。
+- `seed_demo_beverage --reset` 改為呼叫同一個刪除程序，不再直接 `delete()`。
 
 ## 6. 外部資料（TripAdvisor、Amazon Beauty）
 
@@ -137,12 +156,15 @@ NPS 分數計算、整數題的推論檢定、關鍵字建議與自動分類（�
 ## 測試
 
 - 題型：七種題型以預設值新增成功；`derive_data_type` 所有組合；表單送來的 `data_type`、非文字題的文字分析開關被忽略。
-- 有序清單：刻度範圍產生正確清單；停用選項的既有答案仍有效且順位正確；改選項文字後新舊答案統計合併。
+- 有序清單：刻度範圍產生正確清單；停用選項的既有答案仍有效且順位正確；改選項文字後新舊答案統計合併；
+  **Worker 路徑**上 1–10 刻度題與有序單選題的順序檢定（Mann-Whitney／Kruskal-Wallis／Spearman）都有產出。
+- 填答表單：停用選項不顯示；選項值為代碼；下拉、刻度範圍與標籤、整數與小數欄位正確；一般填答與收件匣都寫入 `choice_codes`。
+- 刪除：`purge_survey` dry-run 不寫入；`--confirm` 依序刪除且不留下孤兒改善紀錄；拒絕指派給節點的問卷；`seed_demo_beverage --reset` 在已有回覆與 revision 時仍可重建。
 - 統計輸入：選項含逗號的單選與複選題統計正確；只有複選題被拆分。
 - 錯誤顯示：不合法輸入時卡片內顯示錯誤、輸入保留；409 時重新載入並提示。
 - 版本保護：一般問卷已有回答時改題型、移除選項、改有序順序、改刻度範圍被拒；尚無回覆時修改不產生 revision；
   送出時鎖問卷列並記錄版本；第一筆回答與語意修改同時發生時序列化（PostgreSQL，沿用 C1 測試方式）。
-- C1：`schema_version` 1 的舊 revision 可讀入並轉換；雲端補發選項代碼、拒絕未知代碼。
+- C1：`schema_version` 1 的舊 revision 可讀入並轉換，雲端與本機轉換結果相同；雲端補發選項代碼、拒絕未知代碼；指派給節點的問卷在一般填答時不產生 revision。
 - C2：選擇題以代碼傳送，雜湊依新封套；`payload_version=1` 被隔離；本機寫入 `choice_codes` 與 `value`。
 - 文字分析：選擇題、數字題、刻度題不進入關鍵字與情緒分析；簡答預設不納入。
 - 外部資料：兩份 mapping 通過 `derive_data_type`；TripAdvisor 評分題遷移為 1–5 範圍；題目與 mapping 相容比對通過；Amazon 小型匯入寫入 `choice_codes`。
