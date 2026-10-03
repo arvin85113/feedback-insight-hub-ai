@@ -70,9 +70,15 @@ class DefinitionRoundTripTests(TestCase):
         self.survey.refresh_from_db()
         self.assertEqual(self.survey.category.name, "外送")
 
-    def test_invalid_question_is_rejected(self):
+    def test_posted_data_type_is_ignored_and_derived(self):
         definition = serialize_definition(self.survey)
         add_question(definition, {**QUESTION, "kind": "multiple_choice", "data_type": "ordinal"})
+        apply_definition(self.survey, definition, version=4)
+        self.assertEqual(Question.objects.get(survey=self.survey, title="滿意度").data_type, "nominal")
+
+    def test_invalid_question_is_rejected(self):
+        definition = serialize_definition(self.survey)
+        add_question(definition, {**QUESTION, "options_text": "好\n好"})
         with self.assertRaises(DefinitionError):
             apply_definition(self.survey, definition, version=4)
 
@@ -142,3 +148,108 @@ class EditHelperTests(TestCase):
         broken.pop("title")
         with self.assertRaises(DefinitionError):
             validate_definition(broken)
+
+
+import copy  # noqa: E402
+from unittest import mock  # noqa: E402
+
+from cloudapi.definition import SCHEMA_VERSION, definition_from_fields, delete_question, upgrade_v1  # noqa: E402
+from feedback.test_utils import published  # noqa: E402
+
+V1_FIXTURE = {
+    "survey_uuid": "22222222-2222-2222-2222-222222222222", "version": 3, "title": "舊版", "slug": "old",
+    "description": "", "is_active": True, "analysis_enabled": True, "thank_you_email_enabled": True,
+    "improvement_tracking_enabled": True, "category": None, "archived_at": None,
+    "questions": [
+        {"uuid": "33333333-3333-3333-3333-333333333331", "code": "q1", "title": "等候", "help_text": "",
+         "kind": "single_choice", "data_type": "ordinal", "options_text": "A\nB", "is_required": True,
+         "enable_keyword_tracking": False, "is_active": True, "order": 1},
+        {"uuid": "33333333-3333-3333-3333-333333333332", "code": "q2", "title": "滿意度", "help_text": "",
+         "kind": "scale", "data_type": "ordinal", "options_text": "1\n2\n3\n4\n5", "is_required": True,
+         "enable_keyword_tracking": False, "is_active": True, "order": 2},
+    ],
+}
+
+
+def survey_with_all_kinds():
+    survey = Survey.objects.create(title="全部題型", slug="all-kinds")
+    Question.objects.create(survey=survey, title="簡答", kind="short_text", order=1)
+    Question.objects.create(survey=survey, title="段落", kind="long_text", enable_keyword_tracking=True, order=2)
+    Question.objects.create(survey=survey, title="單選", kind="single_choice", display="dropdown", ordered=True,
+                            choices=[{"code": "", "label": "低"}, {"code": "", "label": "高"},
+                                     {"code": "", "label": "不適用", "excluded": True}], order=3)
+    Question.objects.create(survey=survey, title="複選", kind="multiple_choice",
+                            choices=[{"code": "", "label": "甲"}, {"code": "", "label": "乙"}], order=4)
+    Question.objects.create(survey=survey, title="刻度", kind="scale", scale_min=0, scale_max=10,
+                            scale_min_label="完全不會", scale_max_label="一定會", order=5)
+    Question.objects.create(survey=survey, title="整數", kind="integer", order=6)
+    Question.objects.create(survey=survey, title="小數", kind="decimal", order=7)
+    return published(survey)
+
+
+class DefinitionV2Tests(TestCase):
+    def test_serialize_round_trip_v2(self):
+        definition = serialize_definition(survey_with_all_kinds())
+        self.assertEqual((definition["schema_version"], SCHEMA_VERSION), (2, 2))
+        self.assertTrue(definition["published"])
+        self.assertNotIn("options_text", definition["questions"][0])
+        choice = definition["questions"][2]
+        self.assertEqual([(c["code"], c["score"]) for c in choice["choices"]], [("c1", 1), ("c2", 2), ("c3", None)])
+        self.assertEqual(validate_definition(definition), definition)
+
+    def test_definition_from_fields_matches_serialize(self):
+        survey = survey_with_all_kinds()
+        questions = list(survey.questions.order_by("order", "id"))
+        self.assertEqual(definition_from_fields(survey, questions, None), serialize_definition(survey))
+
+    def test_v1_upgrade_is_deterministic(self):
+        first, second = upgrade_v1(copy.deepcopy(V1_FIXTURE)), upgrade_v1(copy.deepcopy(V1_FIXTURE))
+        self.assertEqual(first, second)
+        self.assertEqual([c["code"] for c in first["questions"][0]["choices"]], ["c1", "c2"])
+        self.assertTrue(first["questions"][0]["ordered"])
+        self.assertEqual((first["questions"][1]["scale_min"], first["questions"][1]["scale_max"]), (1, 5))
+        self.assertEqual((first["published"], first["published_version"]), (True, 3))
+
+    def test_validate_returns_upgraded_copy(self):
+        v1 = copy.deepcopy(V1_FIXTURE)
+        upgraded = validate_definition(v1)
+        self.assertEqual((v1.get("schema_version"), upgraded["schema_version"]), (None, 2))
+        self.assertIn("options_text", v1["questions"][0])
+
+    def test_rejects_data_type_not_matching_kind(self):
+        definition = serialize_definition(survey_with_all_kinds())
+        definition["questions"][4]["data_type"] = "continuous"
+        with self.assertRaises(DefinitionError):
+            validate_definition(definition)
+
+    def test_rejects_invalid_question(self):
+        definition = serialize_definition(survey_with_all_kinds())
+        definition["questions"][4]["scale_max"] = 11
+        with self.assertRaisesMessage(DefinitionError, "刻度終點"):
+            validate_definition(definition)
+
+    def test_missing_question_deleted_on_draft_but_deactivated_when_published(self):
+        draft = Survey.objects.create(title="草稿", slug="draft")
+        gone = Question.objects.create(survey=draft, title="刪掉", kind="short_text")
+        definition = serialize_definition(draft)
+        delete_question(definition, str(gone.uuid))
+        apply_definition(draft, definition, version=1)
+        self.assertFalse(Question.objects.filter(pk=gone.pk).exists())
+
+        survey = survey_with_all_kinds()
+        first = survey.questions.order_by("order").first()
+        definition = serialize_definition(survey)
+        delete_question(definition, str(first.uuid))
+        apply_definition(survey, definition, version=survey.definition_version + 1)
+        first.refresh_from_db()
+        self.assertFalse(first.is_active)
+
+    def test_apply_saves_only_changed_rows(self):
+        survey = survey_with_all_kinds()
+        definition = serialize_definition(survey)
+        definition["is_active"] = False
+        with mock.patch("feedback.signals.schedule_survey_analysis") as schedule:
+            apply_definition(survey, definition, version=survey.definition_version + 1)
+        schedule.assert_not_called()
+        survey.refresh_from_db()
+        self.assertFalse(survey.is_active)

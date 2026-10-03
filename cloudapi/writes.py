@@ -53,7 +53,7 @@ def check_semantic_lock(survey, definition):
 
 @transaction.atomic
 def change_definition(survey_uuid, *, expected_version, definition):
-    validate_definition(definition)
+    definition = validate_definition(definition)
     survey = Survey.objects.select_for_update().get(uuid=survey_uuid)
     if survey.definition_version != expected_version:
         raise VersionConflict(survey.definition_version)
@@ -65,7 +65,7 @@ def change_definition(survey_uuid, *, expected_version, definition):
 
 @transaction.atomic
 def create_node_survey(node, definition):
-    validate_definition(definition)
+    definition = validate_definition(definition)
     existing = Survey.objects.select_for_update().filter(uuid=definition["survey_uuid"]).first()
     if existing is not None:
         if existing.owner_node_id != node.pk:

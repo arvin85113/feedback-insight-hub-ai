@@ -43,7 +43,7 @@ def _upsert_locked(definition, version):
 
 
 def upsert_definition(definition):
-    validate_definition(definition)
+    definition = validate_definition(definition)
     version = int(definition["version"])
     try:
         with transaction.atomic():

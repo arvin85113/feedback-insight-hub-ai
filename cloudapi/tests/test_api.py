@@ -72,7 +72,7 @@ class NodeApiTests(TestCase):
 
         Question.objects.filter(survey=survey).update(has_received_answer=True)
         definition = serialize_definition(Survey.objects.get(pk=survey.pk))
-        definition["questions"][0]["options_text"] = "A\nB"
+        definition["questions"][0]["choices"].append({"code": "", "label": "B", "excluded": False, "score": None})
         locked = self.call("put", f"surveys/{survey.uuid}/", {"expected_version": 2, "definition": definition})
         self.assertEqual(locked.status_code, 422)
 
