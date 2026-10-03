@@ -45,6 +45,15 @@
 4. **上傳回應遺失後重送、從備份還原後重送舊結果**：沿用原身分，前者回原狀態，後者成為過期歷史（Task 3、Task 5、Task 6）。
 5. **已指派但尚未有本機結果的問卷**：網站不顯示「符合目前資料版本」（Task 4）。
 
+## 第二輪審查待修（執行 Task 前先套用）
+
+1. N1：Task 1 交錯測試 (a) 拆成兩個：(a1) 插入不推進 W 的回覆（序號 3，W=1）→ 照常發布、水位 1、`response_count` 1；(a2) 插入連號回覆（序號 2）→ 本次不發布、已排入新工作，再跑一次 worker 後發布水位 2。規格 §13(a) 同步改寫。
+2. N2：測試輔助 `published_state` 改用 `SurveyAnalysisState.objects.update_or_create(survey=..., defaults=...)`（`upsert_definition` 已透過訊號建立 state）。
+3. N3：`apply_upload` 遇到衝突時在交易內只回傳衝突結果，離開 atomic 後以獨立更新 `F("conflict_count") + 1` 再拋 `ResultConflict`，避免計數被回滾。
+4. N4：同 uuid 重送時依目前關係回應：仍是 `published_upload_uuid` 才回 `"applied"`，否則回 `"stale"`；規格 §7 冪等條文同步修改；Task 6 測試 4 維持預期 `stale`。
+5. Important 7：`get_published_analysis_payload` 在 state 為 `None` 的提早 return 也附上 `node_result`。
+6. `is_cloud_synced` 攔下 `AnalysisSourceConfigurationError` 回 `False`；`build_content` 在沒有已發布 Snapshot 時水位、定義版本、`excluded`、`analyzed_unique` 取 0，指紋與實作版本取空字串；上傳 404 記 `last_error="not_found"` 並在頁面說明；規格 §1 表格「雲端保存已上傳的發布版本」改為只保存中繼資料。
+
 ---
 
 ### Task 1: 上傳範圍、水位綁定輸入與重新排程（node）
