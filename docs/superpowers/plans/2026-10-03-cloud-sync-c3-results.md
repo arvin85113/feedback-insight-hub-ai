@@ -2,80 +2,93 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 本機節點發布的分析結果以不可變身分上傳雲端；雲端保存全部歷史，只在序號、輸入水位、定義版本都不倒退時原子切換 `SurveyAnalysisState`，網站依「定義／輸入／管線」三項標示是否最新。
+**Goal:** 雲端同步問卷在本機發布的分析結果以不可變身分上傳雲端；雲端只保存歷史中繼資料，只在序號、輸入水位、定義版本都不倒退時原子切換 `SurveyAnalysisState`，網站依「定義／輸入／管線」三項標示是否最新。
 
-**Architecture:** 本機在既有 `publish_analysis_snapshot`／`publish_analysis_stages` 的同一交易內建立 `ResultUpload`（身分與內容當下凍結），同步週期上傳；雲端 `cloudapi.results.apply_upload` 在 `SurveyAnalysisState` 列鎖內寫歷史並比較後切換。網站對指派給節點的問卷改讀上傳內容與新鮮度，不再依賴本機才有的 Snapshot／Stage 外鍵。
+**Architecture:** 本機分析以「水位凍結＋版本作廢」綁定輸入（規格 §7，2026-10-03 修訂）。本機在既有發布函式的同一交易、同一列鎖內建立 `ResultUpload`（身分與內容當下凍結），同步週期以 UTF-8 標準 JSON 上傳；雲端 `apply_upload` 在 `SurveyAnalysisState` 列鎖內驗證、記錄歷史並比較後切換。網站對指派給節點的問卷一律以上傳內容與三項新鮮度呈現。
 
 **Tech Stack:** Django 6.0.8、requests 2.32.5、SQLite／PostgreSQL 17（併發測試）。
 
-**Spec:** [雲端同步規格](../specs/2026-10-01-cloud-sync-design.md)（本計畫涵蓋 §1 已分析／尚未分析／排除／雲端既有、§3 `PublishedResultRecord` 與 `SurveyAnalysisState` 擴充、§4 `results/` 與心跳的 `publish_sequence`、§5 `ResultUpload` 與補排、§7、§13 對應測試）。
+**Spec:** [雲端同步規格](../specs/2026-10-01-cloud-sync-design.md)（§1 已分析／尚未分析／排除／雲端既有、§3 `PublishedResultRecord` 與 `SurveyAnalysisState` 擴充、§4 `results/` 與心跳 `publish_sequence`、§5 `ResultUpload` 與補排、§7（含 2026-10-03 修訂）、§8 結果雜湊衝突、§13 對應測試）。
 
-**前置：** C1、C2 已合併於 `main`。分支 `feat/cloud-sync-c3`。
+**前置：** C1、C2 已合併於 `main`。分支 `feat/cloud-sync-c3`。審查紀錄：本計畫第一版經獨立審查（Opus 5.5），本版已納入其 Critical／Important 意見與部分 Minor。
 
-**設計決定（需審閱）——輸入擷取：** 規格 §7 要求「一致快照擷取 → 保存 → 運算」三段。現行本機分析的 `AnswerInput` 直接從資料庫串流，不另外物化。本計畫以兩個既有或小幅擴充的機制達到同一保證，不重寫分析輸入層：
-1. **水位凍結**：建立 adapter 時讀一次 `SurveySyncState.synced_through_sequence`（W），輸入只納入「非收件匣回覆」與「`response_sequence ≤ W` 的收件匣回覆」。依水位定義，≤ W 的收件匣回覆在擷取時已全部寫入或已放棄，之後不會再增加；擷取後同步進來的回覆序號必大於 W，不會進入本次輸入。W 寫入 Snapshot 的 `data_scope.analyzed_through_sequence`，並納入 adapter 版本字串（快取鍵）。
-2. **版本作廢**：運算期間題目、詞典或本機回覆變更，既有排程會遞增 `input_version`／`config_version`，發布時 `_versions_are_current` 不成立 → 該結果不發布、不產生 `ResultUpload`。
-因此「結果不混用不同時點的輸入、也不帶上較新的水位」成立；代價是快速連續變更時較多工作被作廢重跑（現行行為即如此）。
-
-**不在本計畫：** C4 搬移與 `migration_baseline` 標示；網站從上傳的 AI 結果匯入改善草稿（本機才有 Stage 列，雲端此階段只讀顯示）；加密；通知系統。
+**不在本計畫：** C4 搬移；網站從上傳的 AI 結果匯入改善草稿（雲端只讀顯示）；外部資料來源問卷的結果上傳（不符合版本作廢前提，規格 §7）；加密；通知系統。已知風險（不處理）：回覆持續流入時，每個同步週期都會遞增 `input_version`，執行較久的分析可能反覆作廢。
 
 ## Global Constraints
 
-- 只有 node 模式在發布時建立 `ResultUpload`；cloud 模式行為不變。
-- 發布身分：`publish_uuid`（uuid4）、`publish_sequence`、`content_hash` 在建立 `ResultUpload` 時決定，重送一律沿用，**不因任何拒絕改號**。
-- 取號：`publish_sequence = max(SurveySyncState.cloud_publish_sequence, SurveySyncState.local_publish_sequence) + 1`，同交易寫回 `local_publish_sequence`；`cloud_publish_sequence` 只由心跳更新。
-- `content_hash = cloudapi.envelope.sha256_hex(content)`。上傳內容（`content`）鍵固定：
-  `{"survey_uuid", "definition_version", "analyzed_through_sequence", "input_fingerprint", "published_at", "pipeline": {"input_version", "config_version", "pipeline_version", "implementation_version"}, "stages": {"statistics": bool, "text": bool, "ai": bool}, "display_payload": dict, "ai_payload": dict | None, "ai_source": dict, "coverage": {"analyzed_unique": int, "excluded": {"incomplete": int, "voided": int}}}`
-- 上傳上限 `CLOUD_RESULT_MAX_BYTES = 2 * 1024 * 1024`（`canonical_bytes(content)`）；超過回 400。
-- 雲端回應（HTTP 200，新建歷史時 201）`{"status": "applied" | "stale"}`；同 `publish_uuid` 不同 `content_hash` 回 409 `{"error": "content_conflict"}`；問卷不屬於節點 404；格式錯誤或雜湊與內容不符 400。
-- 本機 `ResultUpload.status`：`pending` → `uploaded`（applied）／`stale`（不再重送）／`failed`（409、400、404；`last_error` 記錄分類，不再自動重送）；暫時性錯誤保持 `pending`，`attempts` 加一並讓本次週期以該錯誤結束（沿用退避）。
-- 展示指標切換條件（全部成立才切換）：`publish_sequence > state.publish_sequence`、`analyzed_through_sequence >= state.analyzed_through_sequence`、`definition_version >= state.definition_version`。
-- 新鮮度（網站）：定義＝`state.definition_version == survey.definition_version`；輸入＝無 `response_sequence > state.analyzed_through_sequence` 且非 `abandoned` 的收據（N＝筆數）；管線＝本機申報，只呈現不驗證。
-- 使用者可見訊息（逐字）：「有 N 筆新回覆尚未分析」、「問卷已變更，結果為舊版本」、「雲端既有 N 筆未納入分析」、「管線版本由本機申報」、「本機發布 #N」。
-- log 不記錄答案正文；上傳內容只含既有的有限展示 JSON（與現行 `published_display_payload`／`published_ai_payload` 相同層級），不含逐筆回覆。
-- 測試指令同 C2（cloud／node 兩模式；雲端行為測試加 `cloud_only`）。commit／push／PR 依 AGENTS.md 取得授權。
+- **上傳範圍**：只在 node 模式，且 `cloudsync.scope.is_cloud_synced(survey)` 為真時建立、補排、上傳結果與套用水位過濾。判斷：本機有該問卷的 `SurveyDefinitionRevision`（由同步寫入）**且** `resolve_analysis_source(survey).kind == AnalysisJob.SourceKind.ANSWERS`。
+- **水位前進即排程**：`cloudsync.models.advance_and_schedule(survey) -> int` 在呼叫端交易內呼叫 `SurveySyncState.advance`，W 增加時（**不在** `suppress_analysis_scheduling` 範圍內）呼叫 `schedule_survey_analysis(survey.pk, change="input")`。C2 的 `intake` 與 runner 的放棄處理都改用它。
+- **發布身分**：`publish_uuid`、`publish_sequence`、`content_hash` 建立時決定，重送沿用，**不因任何拒絕改號**。取號在 `SurveyAnalysisState` 列鎖之後鎖定 `SurveySyncState`：`max(cloud_publish_sequence, local_publish_sequence) + 1`，同交易寫回 `local_publish_sequence`。
+- **內容**（`content` 先做 `json.loads(json.dumps(...))` 往返後再算 `content_hash = cloudapi.envelope.sha256_hex(content)`）鍵固定：
+  `{"survey_uuid", "definition_version", "analyzed_through_sequence", "input_fingerprint", "published_at", "pipeline": {"input_version", "config_version", "pipeline_version", "implementation_version"}, "stages": {"statistics": STAGE, "text": STAGE, "ai": STAGE}, "display_payload": dict, "ai_payload": dict | None, "ai_source": dict, "coverage": {"analyzed_unique": int, "excluded": {"voided": int, "incomplete": int}}}`
+  - `STAGE = {"current": bool, "input_version": int | None, "config_version": int | None, "pipeline_version": str | None}`，取自 `publication_manifest[段]`；`ai` 另含 `"model_name"`。
+  - `statistics`／`text` 的 `current`：manifest 該段存在且 `snapshot_id == state.published_snapshot_id`。
+  - `ai` 的 `current`：manifest `ai` 存在、`snapshot_id == state.published_snapshot_id`，且三個版本等於 `statistics` 段；否則 `current=False`、`ai_payload=None`、`ai_source={}`。
+  - `input_fingerprint`＝已發布 Snapshot 的 `data_fingerprint`；`implementation_version`＝其 `data_scope.pipeline_implementation_version`；水位、定義版本、`excluded` 取自其 `data_scope`；`analyzed_unique`＝其 `response_count`。
+  - `excluded`：已作廢優先計數，未作廢中再計未完成。
+- **傳輸**：本機以 `cloudapi.envelope.canonical_bytes(body)`（UTF-8、不轉義中文）送出；`CLOUD_RESULT_MAX_BYTES = 4 * 1024 * 1024`（兩端共用設定名）。本機超過上限時不送，標 `failed`、`last_error="too_large"`。雲端 results view 先看 `CONTENT_LENGTH`，再以 `request.read(CLOUD_RESULT_MAX_BYTES + 1)` 讀取（不經 `request.body`，避開 `DATA_UPLOAD_MAX_MEMORY_SIZE`），超過回 413。
+- **雲端回應**：HTTP 201（新建歷史）／200 `{"status": "applied" | "stale"}`；同 `publish_uuid` 而雜湊或序號不同 → 409 `{"error": "content_conflict"}` 並使該歷史列 `conflict_count += 1`；問卷不屬於節點 → 404；驗證失敗 → 400。
+- **雲端驗證**（不合格 400）：`publish_uuid`、`content.survey_uuid` 為合法 UUID；`publish_sequence ≥ 1` 且所有整數欄位是 `int` 而非 `bool`；`analyzed_through_sequence ≤ survey.response_sequence`；`definition_version ≤ survey.definition_version`；`published_at` 可解析；`display_payload`／`ai_payload` 經 `feedback.analysis_jobs._bounded_json`。
+- **歷史**：`PublishedResultRecord` 不存內容（身分、序號、雜湊、水位、定義版本、`applied`、`conflict_count`、`received_at`）。
+- **切換條件**（全部成立）：`publish_sequence > state.publish_sequence`、`analyzed_through_sequence >= state.analyzed_through_sequence`、`definition_version >= state.definition_version`。
+- **本機上傳狀態**：`pending` → `uploaded`（applied）／`stale`；`CONFLICT`、`CLIENT`、`GONE`、`SEMANTIC` → `failed`（`last_error` 記類別）；`TRANSIENT`、`UNAUTHORIZED` → 保持 `pending`、`attempts += 1` 並重新拋出（沿用 runner 的退避與停止）。主控台可把 `failed` 改回 `pending`（「重新上傳」）。上傳順序 `("publish_sequence", "pk")`。
+- **同步週期順序**：`sync_definitions` → `sync_inbox` → 心跳（套用 `abandoned_sequences`、`publish_sequence`、`inbox_status`）→ `backfill_publications` → `upload_results`。
+- **網站新鮮度**（只對 `survey.owner_node_id` 已設定的問卷）：定義＝`state.definition_version == survey.definition_version`；輸入＝無 `response_sequence > state.analyzed_through_sequence` 且狀態不是 `abandoned` 的收據（含 `quarantined`）；管線＝本機申報值。尚無上傳時 `is_latest=False`。
+- **使用者可見訊息（逐字）**：「本機發布 #N」、「尚無本機發布結果」、「問卷已變更，結果為舊版本」、「有 N 筆新回覆尚未分析」、「雲端既有 N 筆未納入分析」、「管線版本由本機申報」、「N 份結果上傳失敗」、「結果內容衝突 N 次」。
+- 測試指令同 C2；雲端行為測試加 `cloud_only`、本機行為測試在 node 模式執行。commit／push／PR 依 AGENTS.md 取得授權。
 
 ## Review Focus
 
-1. **兩份結果同時上傳**：依 `SurveyAnalysisState` 列鎖依序比較，較舊序號只進歷史（Task 3 PostgreSQL 測試）。
-2. **上傳回應遺失後重送**：同 `publish_uuid`、同雜湊回原狀態、不建第二筆歷史（Task 3 `test_resend_is_idempotent`、Task 6 端對端）。
-3. **本機從備份還原**：新發布接在心跳得知的雲端序號之後；還原前的舊結果重送沿用原身分並成為過期歷史（Task 2 `test_sequence_continues_after_cloud`、Task 3 `test_stale_upload_keeps_history_only`）。
-4. **分析期間又同步進新回覆**：新回覆不進本次輸入、結果水位為擷取時的 W（Task 1 `test_replies_beyond_the_watermark_are_excluded`）。
-5. **定義已變更或有新回覆時**：網站保留最後成功結果但不標為最新，並顯示原因與筆數（Task 4）。
+1. **兩份結果同時上傳**：以強制交錯的 PostgreSQL 測試驗證列鎖序列化（Task 3）。
+2. **新統計發布後仍帶舊 AI**：上傳內容 `stages.ai.current=False`、不附 AI 內容（Task 2）。
+3. **分析兩次讀取之間發生變更**：新回覆不入本次輸入；詞典或題目修改使結果不發布（Task 1）。
+4. **上傳回應遺失後重送、從備份還原後重送舊結果**：沿用原身分，前者回原狀態，後者成為過期歷史（Task 3、Task 5、Task 6）。
+5. **已指派但尚未有本機結果的問卷**：網站不顯示「符合目前資料版本」（Task 4）。
 
 ---
 
-### Task 1: 水位綁定的分析輸入（node）
+### Task 1: 上傳範圍、水位綁定輸入與重新排程（node）
 
 **Files:**
-- Modify: `feedback/analysis_adapters.py`（`AnswerInput.from_survey(..., extra_filter=None)`、`scan` 套用）、`feedback/analysis_worker.py`（`_build_adapter`、`build_result` 的 `data_scope`）
-- Create: `cloudsync/capture.py`
+- Create: `cloudsync/scope.py`、`cloudsync/capture.py`
+- Modify: `cloudsync/models.py`（`advance_and_schedule`）、`cloudsync/inbox.py`（`intake` 改用它、移除迴圈尾排程）、`cloudsync/runner.py`（`_apply_abandoned` 改用它）
+- Modify: `feedback/analysis_adapters.py`（`AnswerInput.from_survey(..., extra_filter=None)`，`scan` 兩條路徑都套用）、`feedback/analysis_worker.py`（`_build_adapter`、`build_result` 的 `data_scope`、`_persist_snapshot` 的 `source_latest_at`）
 - Test: `cloudsync/tests/test_capture.py`
 
 **Interfaces:**
-- Consumes: C2 `SurveySyncState`、`SyncedSubmissionSource`
+- Consumes: C2 `SurveySyncState`、`SyncedSubmissionSource`、`intake`
 - Produces:
-  - `AnswerInput.from_survey(survey, *, version, extra_filter=None)`：`extra_filter` 為 `django.db.models.Q`，套用在 `FeedbackSubmission` 查詢（含 `columns` 為空的計數路徑）
-  - `cloudsync.capture.capture_scope(survey) -> CaptureScope`（dataclass：`watermark: int`、`definition_version: int`、`submission_filter: Q`、`excluded: dict[str, int]`）
-    - `submission_filter = Q(synced_source__isnull=True) | Q(synced_source__response_sequence__lte=watermark)`
-    - `excluded = {"incomplete": n, "voided": n}`：在同一個 filter 範圍內計數 `is_complete=False`、`voided_at` 非空
-  - Snapshot `source_snapshot["data_scope"]` 在 node 模式多出：`analyzed_through_sequence`、`definition_version`、`excluded`
-  - adapter 版本字串在 node 模式加上 `:watermark:<W>`
-
-`_build_adapter`（answers 來源）在 `settings.IS_NODE` 時呼叫 `capture_scope(job.survey)`，把 filter 傳給 `from_survey`，並把 scope 掛在 adapter 上（`adapter.capture_scope`）供 `build_result` 寫入 `data_scope`。
+  - `cloudsync.scope.is_cloud_synced(survey) -> bool`
+  - `cloudsync.capture.capture_scope(survey) -> CaptureScope`（dataclass：`watermark`、`definition_version`、`submission_filter: Q`、`excluded: {"voided", "incomplete"}`）；`submission_filter = Q(synced_source__isnull=True) | Q(synced_source__response_sequence__lte=W)`
+  - `cloudsync.models.advance_and_schedule(survey) -> int`
+  - node 模式且 `is_cloud_synced` 時：adapter 版本字串加 `:watermark:<W>`、`adapter.capture_scope` 有值、Snapshot `data_scope` 加 `analyzed_through_sequence`、`definition_version`、`excluded`；`source_latest_at` 套用同一 filter。其餘情況行為不變。
 
 - [ ] **Step 1: 寫失敗測試**
 
 ```python
 # cloudsync/tests/test_capture.py
+import tempfile
+from unittest.mock import patch
+
+from django.core.management import call_command
 from django.test import TestCase
 
 from cloudsync.capture import capture_scope
 from cloudsync.definitions import upsert_definition
 from cloudsync.inbox import intake
+from cloudsync.models import SurveySyncState
+from cloudsync.runner import _apply_abandoned
+from cloudsync.scope import is_cloud_synced
 from cloudsync.tests.test_inbox import Q1, U1, U2, U3, FakeInboxClient, definition, envelope
 from feedback.analysis_adapters import AnswerInput
-from feedback.models import FeedbackSubmission, Survey
+from feedback.models import AnalysisJob, FeedbackSubmission, KeywordCategory, Question, Survey, SurveyAIReportSnapshot
+
+
+class ScopeTests(TestCase):
+    def test_only_synced_answer_surveys_are_in_scope(self):
+        synced, _ = upsert_definition(definition(1))
+        local = Survey.objects.create(title="L", slug="local")
+        self.assertEqual((is_cloud_synced(synced), is_cloud_synced(local)), (True, False))
 
 
 class CaptureTests(TestCase):
@@ -83,48 +96,104 @@ class CaptureTests(TestCase):
         self.survey, _ = upsert_definition(definition(1))
         intake(envelope(1, U1, {Q1: "a"}), FakeInboxClient([]))
         intake(envelope(3, U3, {Q1: "c"}), FakeInboxClient([]))  # gap at 2 keeps W at 1
-        FeedbackSubmission.objects.create(survey=self.survey, is_complete=False)  # local, not from the inbox
+        FeedbackSubmission.objects.create(survey=self.survey, is_complete=False)
+        voided = FeedbackSubmission.objects.create(survey=self.survey, is_complete=False)
+        FeedbackSubmission.objects.filter(pk=voided.pk).update(voided_at="2026-10-01T00:00:00+00:00")
 
-    def test_scope_freezes_the_watermark(self):
+    def test_scope_freezes_the_watermark_and_counts_exclusions_once(self):
         scope = capture_scope(self.survey)
         self.assertEqual((scope.watermark, scope.definition_version), (1, 1))
-        self.assertEqual(scope.excluded, {"incomplete": 1, "voided": 0})
+        self.assertEqual(scope.excluded, {"voided": 1, "incomplete": 1})
 
-    def test_replies_beyond_the_watermark_are_excluded(self):
+    def test_adapter_reads_only_up_to_the_frozen_watermark(self):
         scope = capture_scope(self.survey)
-        intake(envelope(2, U2, {Q1: "b"}), FakeInboxClient([]))  # arrives after capture; W would now be 3
+        intake(envelope(2, U2, {Q1: "b"}), FakeInboxClient([]))
         adapter = AnswerInput.from_survey(Survey.objects.get(pk=self.survey.pk), version="v",
                                           extra_filter=scope.submission_filter)
         name = next(iter(adapter.question_fields.values())).name
         self.assertEqual([row[name] for row in adapter.scan([name])], ["a"])
-        self.assertEqual(sum(1 for _ in adapter.scan([])), 1)
+
+    def test_watermark_advance_schedules_analysis(self):
+        AnalysisJob.objects.all().delete()
+        state = SurveySyncState.objects.get(survey=self.survey)
+        _apply_abandoned({"surveys": [{"survey_uuid": str(self.survey.uuid), "abandoned_sequences": [2]}]})
+        state.refresh_from_db()
+        self.assertEqual(state.synced_through_sequence, 3)
+        self.assertTrue(AnalysisJob.objects.filter(survey=self.survey, status="pending").exists())
+
+
+class InterleavingTests(TestCase):
+    """Mutations between the statistics and text reads of one worker run (spec §13 新鮮度)."""
+
+    def setUp(self):
+        self.survey, _ = upsert_definition(definition(1))
+        intake(envelope(1, U1, {Q1: "a"}), FakeInboxClient([]))
+        self.output = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(self.output.cleanup)
+
+    def run_worker_with(self, mutate):
+        from feedback import analysis_worker
+
+        original = analysis_worker.calculate_text
+
+        def text_with_mutation(*args, **kwargs):
+            mutate()
+            return original(*args, **kwargs)
+
+        with patch.object(analysis_worker, "calculate_text", text_with_mutation):
+            call_command("run_analysis_worker_once", worker_id="t", output=self.output.name)
+
+    def published_scope(self):
+        snapshot = SurveyAIReportSnapshot.objects.filter(survey=self.survey).order_by("-pk").first()
+        state = self.survey.analysis_state
+        state.refresh_from_db()
+        return state.published_snapshot_id == getattr(snapshot, "pk", None), snapshot
+
+    def test_new_reply_is_excluded_and_result_still_publishes(self):
+        self.run_worker_with(lambda: intake(envelope(2, U2, {Q1: "b"}), FakeInboxClient([])))
+        published, snapshot = self.published_scope()
+        self.assertTrue(published)
+        self.assertEqual((snapshot.response_count, snapshot.source_snapshot["data_scope"]["analyzed_through_sequence"]), (1, 1))
+
+    def test_dictionary_change_blocks_publication(self):
+        self.run_worker_with(lambda: KeywordCategory.objects.create(survey=self.survey, keyword="甜", category="口味"))
+        self.assertFalse(self.published_scope()[0])
+
+    def test_question_change_blocks_publication(self):
+        def rename():
+            question = Question.objects.get(uuid=Q1)
+            question.title = "新題名"
+            question.save()  # post_save signal bumps the version in the same transaction
+
+        self.run_worker_with(rename)
+        self.assertFalse(self.published_scope()[0])
 ```
 
-在 `feedback/test_analysis_worker.py`（node 模式才跑的類別，加 `skipUnless(settings.IS_NODE)`）加入 `test_node_snapshot_records_watermark_and_definition_version`：建一份收件匣回覆（W=1），執行 `execute_deterministic_job`（沿用該檔既有的 claim／output_root 輔助），斷言 Snapshot `source_snapshot["data_scope"]` 的 `analyzed_through_sequence == 1`、`definition_version == 1`、`excluded == {"incomplete": 0, "voided": 0}`。
+（`run_analysis_worker_once` 已確認可在 `TestCase` 內執行；如需外部輸入參數，沿用 `feedback/test_analysis_worker.py` 的呼叫方式。）
 
 - [ ] **Step 2: 執行確認失敗** — Run（node）：`manage.py test cloudsync.tests.test_capture`；Expected: FAIL（`No module named 'cloudsync.capture'`）
-- [ ] **Step 3: 實作**（見 Interfaces；cloud 模式 `_build_adapter` 行為與版本字串完全不變）
+- [ ] **Step 3: 實作**（見 Interfaces 與 Global Constraints「水位前進即排程」；`intake` 改為 `with transaction.atomic():` 內先 `with suppress_analysis_scheduling():` 寫入，離開 suppress 後在同一交易呼叫 `advance_and_schedule`）
 - [ ] **Step 4: 執行確認通過與回歸** — Run（node）：`manage.py test cloudsync feedback.test_analysis_worker`；cloud：`manage.py test feedback.test_analysis_worker`；Expected: PASS
-- [ ] **Step 5: Commit** — `git add cloudsync feedback/analysis_adapters.py feedback/analysis_worker.py feedback/test_analysis_worker.py`；`feat(cloudsync): bind node analysis input to the reply watermark`
+- [ ] **Step 5: Commit** — `feat(cloudsync): bind node analysis input to the reply watermark and reschedule on advance`
 
 ---
 
-### Task 2: 本機發布紀錄與取號（node）
+### Task 2: 本機發布紀錄、內容與取號（node）
 
 **Files:**
 - Modify: `cloudsync/models.py`（`ResultUpload`；`SurveySyncState.cloud_publish_sequence`、`local_publish_sequence`）、migration `cloudsync/0004`
 - Create: `cloudsync/results.py`
-- Modify: `feedback/analysis_jobs.py`（`publish_analysis_snapshot`、`publish_analysis_stages` 在 `state.save(...)` 之後、同一交易內呼叫 `record_publication(state)`，只在 `settings.IS_NODE`）
+- Modify: `feedback/analysis_jobs.py`（`publish_analysis_snapshot`、`publish_analysis_stages` 在 `state.save(...)` 後、同一交易與列鎖內：`if settings.IS_NODE: from cloudsync.results import record_publication; record_publication(state)`）
 - Test: `cloudsync/tests/test_results_local.py`
 
 **Interfaces:**
-- Consumes: Task 1 `data_scope`；C2 `SurveySyncState`
+- Consumes: Task 1 `is_cloud_synced`、Snapshot `data_scope`
 - Produces:
-  - `ResultUpload`：`publish_uuid`（`UUIDField(unique=True, default=uuid4)`）、`survey`（FK）、`publish_sequence`、`content_hash`、`content`（JSON）、`published_at`（取自 `state.published_at`）、`status`（`pending`／`uploaded`／`stale`／`failed`）、`attempts`、`last_error`（`CharField(64, blank=True)`）、`created_at`
-  - `SurveySyncState.cloud_publish_sequence`、`local_publish_sequence`（`PositiveBigIntegerField(default=0)`）
-  - `cloudsync.results.build_content(state) -> dict`（鍵見 Global Constraints；`display_payload`＝`state.published_display_payload`、`ai_payload`＝`state.published_ai_payload or None`、`ai_source` 取自已發布 AI Stage 的 Snapshot：`response_count`、`analysis_coverage`、`source_latest_at`、`model_name`；水位、定義版本、`excluded` 取自已發布 Snapshot 的 `data_scope`，缺少時 0；`analyzed_unique`＝Snapshot `response_count`）
-  - `cloudsync.results.record_publication(state) -> ResultUpload`（取號、凍結內容與雜湊；呼叫端須在交易內）
-  - `cloudsync.results.backfill_publications() -> int`：對每份有 `published_at` 的問卷，若沒有 `published_at` 相同的 `ResultUpload` 就補建一筆
+  - `ResultUpload`：`publish_uuid`（`UUIDField(unique=True, default=uuid4)`）、`survey`、`publish_sequence`、`content_hash`、`content`、`published_at`、`status`（`pending`／`uploaded`／`stale`／`failed`）、`attempts`、`last_error`（`CharField(32, blank=True)`）、`created_at`
+  - `SurveySyncState.cloud_publish_sequence`、`local_publish_sequence`
+  - `cloudsync.results.build_content(state) -> dict`（規則見 Global Constraints）
+  - `cloudsync.results.record_publication(state) -> ResultUpload | None`（不在範圍內回 `None`；呼叫端須已鎖 `state`）
+  - `cloudsync.results.backfill_publications() -> int`：逐問卷在交易內 `select_for_update` 取得 state，鎖內確認 `published_at` 且沒有相同 `published_at` 的 `ResultUpload` 才建立
 
 - [ ] **Step 1: 寫失敗測試**
 
@@ -136,68 +205,83 @@ from django.utils import timezone
 from cloudapi.envelope import sha256_hex
 from cloudsync.definitions import upsert_definition
 from cloudsync.models import ResultUpload, SurveySyncState
-from cloudsync.results import backfill_publications, record_publication
+from cloudsync.results import backfill_publications, build_content, record_publication
 from cloudsync.tests.test_inbox import definition
-from feedback.models import SurveyAnalysisState
+from feedback.models import Survey, SurveyAnalysisState
+
+
+def published_state(survey, *, ai_snapshot_id=None, snapshot_id=None):
+    manifest = {"statistics": {"snapshot_id": snapshot_id, "input_version": 1, "config_version": 1, "pipeline_version": "p"},
+                "text": {"snapshot_id": snapshot_id, "input_version": 1, "config_version": 1, "pipeline_version": "p"}}
+    if ai_snapshot_id is not None:
+        manifest["ai"] = {"snapshot_id": ai_snapshot_id, "input_version": 1, "config_version": 1,
+                          "pipeline_version": "p", "model_name": "m"}
+    return SurveyAnalysisState.objects.create(
+        survey=survey, published_at=timezone.now(), publication_manifest=manifest,
+        published_display_payload={"statistics": {"charts": []}, "text_analysis": {}},
+        published_ai_payload={"summary": "舊的 AI"} if ai_snapshot_id is not None else {},
+    )
 
 
 class RecordPublicationTests(TestCase):
     def setUp(self):
         self.survey, _ = upsert_definition(definition(1))
-        self.state = SurveyAnalysisState.objects.create(
-            survey=self.survey, published_at=timezone.now(),
-            published_display_payload={"statistics": {"charts": []}, "text_analysis": {}},
-        )
 
     def test_identity_and_content_are_frozen_at_creation(self):
-        upload = record_publication(self.state)
+        state = published_state(self.survey)
+        upload = record_publication(state)
         self.assertEqual((upload.status, upload.publish_sequence), ("pending", 1))
         self.assertEqual(upload.content_hash, sha256_hex(upload.content))
-        self.assertEqual(upload.content["display_payload"], {"statistics": {"charts": []}, "text_analysis": {}})
-        self.assertEqual(upload.content["survey_uuid"], str(self.survey.uuid))
-        SurveyAnalysisState.objects.filter(pk=self.state.pk).update(published_display_payload={"changed": True})
+        SurveyAnalysisState.objects.filter(pk=state.pk).update(published_display_payload={"changed": True})
         upload.refresh_from_db()
-        self.assertEqual(upload.content_hash, sha256_hex(upload.content))  # unchanged copy
+        self.assertEqual(upload.content_hash, sha256_hex(upload.content))
+
+    def test_old_ai_is_not_sent_with_new_statistics(self):
+        state = published_state(self.survey, snapshot_id=None, ai_snapshot_id=999)  # AI from another snapshot
+        content = build_content(state)
+        self.assertEqual((content["stages"]["ai"]["current"], content["ai_payload"], content["ai_source"]), (False, None, {}))
 
     def test_sequence_continues_after_cloud(self):
-        record_publication(self.state)  # local 1
+        record_publication(published_state(self.survey))
         SurveySyncState.objects.filter(survey=self.survey).update(cloud_publish_sequence=7)
-        self.assertEqual(record_publication(self.state).publish_sequence, 8)
+        state = SurveyAnalysisState.objects.get(survey=self.survey)
+        self.assertEqual(record_publication(state).publish_sequence, 8)
+
+    def test_out_of_scope_surveys_create_nothing(self):
+        local = Survey.objects.create(title="L", slug="local")
+        self.assertIsNone(record_publication(published_state(local)))
 
     def test_backfill_creates_missing_upload_once(self):
-        self.assertEqual(backfill_publications(), 1)
-        self.assertEqual(backfill_publications(), 0)
+        published_state(self.survey)
+        self.assertEqual((backfill_publications(), backfill_publications()), (1, 0))
         self.assertEqual(ResultUpload.objects.count(), 1)
 ```
 
-在 `feedback/test_analysis_jobs.py` 加 node 模式限定測試 `test_node_publish_creates_result_upload_in_the_same_transaction`：以既有輔助走一次 `publish_analysis_snapshot` 成功路徑，斷言 `ResultUpload` 一筆、`status="pending"`；再走一次被判定 stale 的發布，斷言沒有新增。
+在 `feedback/test_analysis_jobs.py` 加 node 限定（`skipUnless(settings.IS_NODE, ...)`）測試 `test_node_publish_creates_result_upload_in_the_same_transaction`：同步問卷走一次 `publish_analysis_snapshot` 成功路徑 → `ResultUpload` 一筆 `pending`；被判定 stale 的發布不新增。
 
 - [ ] **Step 2: 執行確認失敗** — Run（node）：`manage.py test cloudsync.tests.test_results_local`；Expected: FAIL（`ResultUpload` 不存在）
-- [ ] **Step 3: 實作模型、migration、`cloudsync/results.py` 與兩個發布函式的呼叫點**（`from cloudsync.results import record_publication` 放在函式內，避免 cloud 模式載入）
-- [ ] **Step 4: 執行確認通過** — Run（node）：`manage.py test cloudsync feedback.test_analysis_jobs`；cloud：`manage.py test feedback.test_analysis_jobs`；Expected: PASS；node `makemigrations --check` 無變更
-- [ ] **Step 5: Commit** — `git add cloudsync feedback/analysis_jobs.py feedback/test_analysis_jobs.py`；`feat(cloudsync): freeze each node publication as a result upload`
+- [ ] **Step 3: 實作**
+- [ ] **Step 4: 執行確認通過** — Run（node）：`manage.py test cloudsync feedback.test_analysis_jobs`；cloud：`manage.py test feedback.test_analysis_jobs`；node `makemigrations --check` 無變更
+- [ ] **Step 5: Commit** — `feat(cloudsync): freeze each node publication as a result upload`
 
 ---
 
-### Task 3: 雲端結果歷史與原子切換
+### Task 3: 雲端結果歷史、驗證與原子切換
 
 **Files:**
-- Modify: `cloudapi/models.py`（`PublishedResultRecord`）、`feedback/models.py`（`SurveyAnalysisState` 四個欄位）、migrations（`feedback/0022`、`cloudapi/0003`）
+- Modify: `cloudapi/models.py`（`PublishedResultRecord`）、`feedback/models.py`（`SurveyAnalysisState` 四欄位）、migrations `feedback/0022`、`cloudapi/0003`
 - Create: `cloudapi/results.py`
 - Modify: `cloudapi/views.py`、`cloudapi/urls.py`（`results/`）、`cloudapi/inbox.py`（`survey_sequences` 加 `publish_sequence`）、`config/settings.py`（`CLOUD_RESULT_MAX_BYTES`）
-- Test: `cloudapi/tests/test_results.py`、`cloudapi/test_postgres.py`（加一個類別）
+- Test: `cloudapi/tests/test_results.py`、`cloudapi/test_postgres.py`
 
 **Interfaces:**
-- Consumes: C1 `node_api`；Task 2 內容格式
 - Produces:
-  - `SurveyAnalysisState.publish_sequence`、`analyzed_through_sequence`、`definition_version`（`PositiveBigIntegerField(default=0)`）、`published_upload_uuid`（`UUIDField(null=True, blank=True)`）
-  - `PublishedResultRecord`：`publish_uuid`（唯一）、`node`、`survey`（`PROTECT`）、`publish_sequence`、`content_hash`、`content`、`definition_version`、`analyzed_through_sequence`、`applied`（bool）、`received_at`
-  - `cloudapi.results.apply_upload(node, *, publish_uuid, publish_sequence, content_hash, content) -> tuple[str, bool]`（`(status, created)`；`status` 為 `"applied"`／`"stale"`；拋 `ResultConflict`、`ResultInvalid`、`PermissionError`）
-  - `POST results/` body `{"publish_uuid", "publish_sequence", "content_hash", "content"}`；回應見 Global Constraints
-  - 心跳 `surveys[]` 每項加 `"publish_sequence": state.publish_sequence`（無 state 為 0）
+  - `SurveyAnalysisState.publish_sequence`、`analyzed_through_sequence`、`definition_version`（預設 0）、`published_upload_uuid`（可空）
+  - `PublishedResultRecord`：`publish_uuid`（唯一）、`node`、`survey`（`PROTECT`）、`publish_sequence`、`content_hash`、`definition_version`、`analyzed_through_sequence`、`applied`、`conflict_count`、`received_at`
+  - `cloudapi.results.apply_upload(node, *, publish_uuid, publish_sequence, content_hash, content) -> tuple[str, bool]`；例外 `ResultConflict`、`ResultInvalid(message)`、`PermissionError`
+  - `POST results/`、心跳 `surveys[].publish_sequence`
 
-`apply_upload` 順序（一個交易）：驗證 `sha256_hex(content) == content_hash` 與大小 → 問卷 `uuid=content["survey_uuid"]` 且 `owner_node=node` → `SurveyAnalysisState.objects.get_or_create(survey=...)` 後 `select_for_update()` 重新取得 → 已有同 `publish_uuid`：雜湊同回 `("applied" if record.applied else "stale", False)`，不同拋 `ResultConflict` → 建歷史 → **在鎖內**比較三條件 → 成立則寫：
-`published_display_payload`、`published_ai_payload`（`None` 轉 `{}`）、`publication_manifest = {"source": "node", "publish_uuid", "stages", "pipeline", "coverage", "ai_source", "input_fingerprint"}`、`published_at = content["published_at"]`、`published_snapshot = None`、`published_ai_stage = None`、四個新欄位；`record.applied = True`。
+`apply_upload` 順序（一個交易）：驗證（Global Constraints；問卷以合法 UUID 查 `owner_node=node`）→ `get_or_create` 後 `select_for_update` 鎖 `SurveyAnalysisState` → 同 `publish_uuid` 已存在：雜湊與序號都同回 `("applied" if applied else "stale", False)`，否則 `conflict_count += 1` 並拋 `ResultConflict` → 建歷史 → 鎖內比較三條件 → 成立則寫 `published_display_payload`、`published_ai_payload`（`None` → `{}`）、`publication_manifest = {"source": "node", "publish_uuid", "stages", "pipeline", "coverage", "ai_source", "input_fingerprint"}`、`published_at`、`published_snapshot=None`、`published_ai_stage=None`、四個新欄位，`record.applied=True`。
 
 - [ ] **Step 1: 寫失敗測試**
 
@@ -208,21 +292,23 @@ import uuid
 
 from django.test import TestCase, override_settings
 
-from cloudapi.envelope import sha256_hex
+from cloudapi.envelope import canonical_bytes, sha256_hex
 from cloudapi.models import NodeDevice, PublishedResultRecord
-from cloudapi.results import ResultConflict, apply_upload
+from cloudapi.results import ResultConflict, ResultInvalid, apply_upload
 from cloudapi.writes import assign_survey_to_node
 from feedback.models import Survey, SurveyAnalysisState
 from feedback.test_utils import cloud_only
+
+STAGE = {"current": True, "input_version": 1, "config_version": 1, "pipeline_version": "p"}
 
 
 def content(survey, *, watermark=1, version=1, title="v"):
     return {"survey_uuid": str(survey.uuid), "definition_version": version, "analyzed_through_sequence": watermark,
             "input_fingerprint": "f", "published_at": "2026-10-03T00:00:00+00:00",
             "pipeline": {"input_version": 1, "config_version": 1, "pipeline_version": "p", "implementation_version": "i"},
-            "stages": {"statistics": True, "text": True, "ai": False},
+            "stages": {"statistics": STAGE, "text": STAGE, "ai": {**STAGE, "current": False, "model_name": None}},
             "display_payload": {"statistics": {"title": title}, "text_analysis": {}}, "ai_payload": None,
-            "ai_source": {}, "coverage": {"analyzed_unique": 3, "excluded": {"incomplete": 0, "voided": 0}}}
+            "ai_source": {}, "coverage": {"analyzed_unique": 3, "excluded": {"voided": 0, "incomplete": 0}}}
 
 
 @cloud_only
@@ -230,9 +316,10 @@ class ApplyUploadTests(TestCase):
     def setUp(self):
         self.node, self.token = NodeDevice.issue("office")
         self.survey = assign_survey_to_node(Survey.objects.create(title="S", slug="s"), self.node).survey
+        Survey.objects.filter(pk=self.survey.pk).update(response_sequence=5)
 
     def upload(self, sequence, body, publish_uuid=None):
-        return apply_upload(self.node, publish_uuid=publish_uuid or uuid.uuid4(), publish_sequence=sequence,
+        return apply_upload(self.node, publish_uuid=str(publish_uuid or uuid.uuid4()), publish_sequence=sequence,
                             content_hash=sha256_hex(body), content=body)
 
     def test_newer_upload_switches_the_display(self):
@@ -248,130 +335,193 @@ class ApplyUploadTests(TestCase):
                                (7, content(self.survey, title="older definition", version=0))):
             with self.subTest(sequence):
                 self.assertEqual(self.upload(sequence, body)[0], "stale")
-        state = SurveyAnalysisState.objects.get(survey=self.survey)
-        self.assertEqual(state.published_display_payload["statistics"]["title"], "five")
+        self.assertEqual(SurveyAnalysisState.objects.get(survey=self.survey).published_display_payload["statistics"]["title"], "five")
         self.assertEqual(PublishedResultRecord.objects.count(), 4)
 
-    def test_resend_is_idempotent(self):
+    def test_resend_is_idempotent_and_mismatch_conflicts(self):
         publish_uuid = uuid.uuid4()
         body = content(self.survey)
         self.upload(1, body, publish_uuid)
         self.assertEqual(self.upload(1, body, publish_uuid), ("applied", False))
-        self.assertEqual(PublishedResultRecord.objects.count(), 1)
-        with self.assertRaises(ResultConflict):
-            self.upload(1, content(self.survey, title="other"), publish_uuid)
+        for sequence, other in ((1, content(self.survey, title="other")), (2, body)):
+            with self.subTest(sequence), self.assertRaises(ResultConflict):
+                self.upload(sequence, other, publish_uuid)
+        self.assertEqual(PublishedResultRecord.objects.get().conflict_count, 2)
+
+    def test_impossible_values_are_rejected(self):
+        for body in (content(self.survey, watermark=6), content(self.survey, version=2),
+                     {**content(self.survey), "analyzed_through_sequence": True},
+                     {**content(self.survey), "survey_uuid": "not-a-uuid"}):
+            with self.subTest(body.get("analyzed_through_sequence")), self.assertRaises(ResultInvalid):
+                self.upload(1, body)
 
     @override_settings(CLOUD_SYNC_PROTOTYPE_ENABLED=True)
-    def test_api_status_codes_and_heartbeat_sequence(self):
+    def test_api_status_codes_utf8_body_and_heartbeat_sequence(self):
         def post(body):
-            return self.client.post("/api/node/v1/results/", data=json.dumps(body), content_type="application/json",
+            return self.client.post("/api/node/v1/results/", data=canonical_bytes(body),
+                                    content_type="application/json; charset=utf-8",
                                     HTTP_AUTHORIZATION=f"Bearer {self.token}")
-        body = content(self.survey)
+        body = content(self.survey, title="中文標題")
         good = {"publish_uuid": str(uuid.uuid4()), "publish_sequence": 1, "content_hash": sha256_hex(body), "content": body}
         self.assertEqual((post(good).status_code, post(good).status_code), (201, 200))
-        self.assertEqual(post({**good, "content_hash": "0" * 64}).status_code, 400)
-        other, _ = NodeDevice.issue("other")
-        Survey.objects.filter(pk=self.survey.pk).update(owner_node=other)
-        self.assertEqual(post({**good, "publish_uuid": str(uuid.uuid4())}).status_code, 404)
-        Survey.objects.filter(pk=self.survey.pk).update(owner_node=self.node)
+        self.assertEqual(post({**good, "publish_uuid": str(uuid.uuid4()), "content_hash": "0" * 64}).status_code, 400)
+        with override_settings(CLOUD_RESULT_MAX_BYTES=100):
+            self.assertEqual(post({**good, "publish_uuid": str(uuid.uuid4())}).status_code, 413)
         beat = self.client.post("/api/node/v1/heartbeat/", data="{}", content_type="application/json",
                                 HTTP_AUTHORIZATION=f"Bearer {self.token}").json()
         self.assertEqual(beat["surveys"][0]["publish_sequence"], 1)
 ```
 
-在 `cloudapi/test_postgres.py` 加 `ConcurrentResultPostgreSQLTests.test_concurrent_uploads_never_regress`：兩執行緒以 `threading.Barrier(2)` 同時 `apply_upload` 序號 11 與 12；斷言最終 `state.publish_sequence == 12`、展示內容為 12 的內容、兩筆歷史都在、11 的 `applied` 為 False 或其 `applied` 為 True 但已被 12 覆蓋（以 `state.published_upload_uuid == uuid12` 為準）。
+`cloudapi/test_postgres.py` 加 `ConcurrentResultPostgreSQLTests.test_concurrent_uploads_are_serialized`（強制交錯）：patch `PublishedResultRecord.objects.create` 的包裝，讓執行緒 A（序號 12）建立歷史後在 `threading.Event` 上等待（此時持有 state 列鎖）；啟動執行緒 B（序號 11），`time.sleep(0.5)` 後斷言 B 仍在執行（被鎖住）；放行 A；兩者結束後斷言 `state.publish_sequence == 12`、`published_upload_uuid` 為 A 的 uuid、B 的歷史 `applied` 為 False。
 
 - [ ] **Step 2: 執行確認失敗** — Run：`manage.py test cloudapi.tests.test_results`；Expected: FAIL（`No module named 'cloudapi.results'`）
-- [ ] **Step 3: 實作模型、migration、`apply_upload`、API 與心跳欄位**
-- [ ] **Step 4: 執行確認通過** — Run：`manage.py test cloudapi feedback.test_analysis_jobs`；Expected: PASS；cloud／node `makemigrations --check` 無變更
-- [ ] **Step 5: Commit** — `git add cloudapi feedback/models.py feedback/migrations config/settings.py`；`feat(cloudapi): result history and atomic display switch for node uploads`
+- [ ] **Step 3: 實作**
+- [ ] **Step 4: 執行確認通過** — Run：`manage.py test cloudapi feedback.test_analysis_jobs`；cloud／node `makemigrations --check` 無變更
+- [ ] **Step 5: Commit** — `feat(cloudapi): validated result uploads with metadata history and atomic display switch`
 
 ---
 
-### Task 4: 網站顯示上傳結果與新鮮度
+### Task 4: 網站顯示、新鮮度與計數
 
 **Files:**
-- Modify: `feedback/published_analysis.py`（`get_published_analysis_payload`、`get_published_ai_pipeline_status`）、`templates/feedback/_analysis_publication_status.html`
 - Create: `cloudapi/freshness.py`
+- Modify: `feedback/published_analysis.py`（`get_published_analysis_payload`、`get_published_ai_pipeline_status`）、`feedback/views.py`（`analysis_report_surveys`、`_survey_catalog_rows`）、`templates/feedback/_analysis_publication_status.html`、`cloudapi/manage_views.py`／`templates/cloudapi/inbox_manage.html`（結果衝突次數）
 - Test: `cloudapi/tests/test_result_display.py`
 
 **Interfaces:**
 - Consumes: Task 3 欄位；C2 `SubmissionReceipt`
 - Produces:
-  - `cloudapi.freshness.node_freshness(state) -> dict`：`{"definition_current": bool, "pending_new": int, "legacy_unmigrated": int, "pipeline_declared": dict, "coverage": dict, "publish_sequence": int, "is_latest": bool}`；`legacy_unmigrated`＝該問卷雲端 `FeedbackSubmission` 筆數；`is_latest = definition_current and pending_new == 0`
-  - `get_published_analysis_payload` 在 `state.published_upload_uuid` 有值時：`available = bool(display)`、`snapshot_id = None`、`node_result = node_freshness(state)`、`freshness` 各段＝`is_latest and manifest["stages"][段]`、`ai_source = manifest["ai_source"]`；其他問卷維持現行
-  - `get_published_ai_pipeline_status` 對上傳結果的改善草稿狀態一律空（`_published_draft_states` 回 `{}`）
+  - `cloudapi.freshness.node_freshness(survey, state) -> dict`：`{"has_result", "publish_sequence", "definition_current", "pending_new", "legacy_unmigrated", "is_latest", "coverage", "pipeline_declared"}`；`state` 可為 `None`
+  - `get_published_analysis_payload`：`survey.owner_node_id` 已設定時一律附 `node_result`；`freshness` 各段＝`is_latest and manifest["stages"][段]["current"]`（無上傳時全為 False）；`available = bool(display)`；`ai_source = manifest["ai_source"]`
+  - `get_published_ai_pipeline_status`：node 問卷的草稿狀態一律 `{}`
+  - `analysis_report_surveys` 的 `valid_response_count` 與 `_survey_catalog_rows` 的 `response_count`：上傳結果改讀 `publication_manifest.coverage.analyzed_unique`（`KT("publication_manifest__coverage__analyzed_unique")` 轉整數），順序為 Snapshot 計數 → 上傳 coverage → 原本的回退
 
-範本：`node_result` 存在時，標題列改顯示「本機發布 #N」，並依序列出：最新／「問卷已變更，結果為舊版本」／「有 N 筆新回覆尚未分析」／「雲端既有 N 筆未納入分析」（N>0 才顯示）、已分析與排除筆數（`coverage`）、「管線版本由本機申報」與 `pipeline_version`。
+範本：`node_result` 存在時，有結果顯示「本機發布 #N」，否則「尚無本機發布結果」；依序顯示「問卷已變更，結果為舊版本」、「有 N 筆新回覆尚未分析」、「雲端既有 N 筆未納入分析」（N>0）、已分析與排除筆數、「管線版本由本機申報」與版本。收件匣管理頁每節點顯示「結果內容衝突 N 次」（N>0）。
 
 - [ ] **Step 1: 寫失敗測試**
 
 ```python
-# cloudapi/tests/test_result_display.py — setUp 同 Task 3 ApplyUploadTests，並 apply 一份 watermark=1、version=1 的內容
+# cloudapi/tests/test_result_display.py
+import uuid
+
+from django.contrib.auth import get_user_model
+from django.test import TestCase
+from django.urls import reverse
+from django.utils import timezone
+
+from cloudapi.envelope import sha256_hex
+from cloudapi.models import NodeDevice, SubmissionReceipt
+from cloudapi.results import apply_upload
+from cloudapi.tests.test_results import content
+from cloudapi.writes import assign_survey_to_node
+from feedback.models import FeedbackSubmission, Survey
+from feedback.published_analysis import get_published_analysis_payload
+from feedback.test_utils import cloud_only
+
+
+def make_receipt(survey, sequence, status="received"):
+    return SubmissionReceipt.objects.create(
+        submission_uuid=uuid.uuid4(), node=survey.owner_node, survey=survey, submitted_at=timezone.now(),
+        definition_version=1, response_sequence=sequence, payload_hash="0" * 64, status=status)
+
+
 @cloud_only
 class ResultDisplayTests(TestCase):
+    def setUp(self):
+        self.node, _ = NodeDevice.issue("office")
+        self.survey = assign_survey_to_node(Survey.objects.create(title="S", slug="s"), self.node).survey
+        Survey.objects.filter(pk=self.survey.pk).update(response_sequence=1)
+        make_receipt(self.survey, 1, status="synced")
+        body = content(self.survey)
+        apply_upload(self.node, publish_uuid=str(uuid.uuid4()), publish_sequence=1,
+                     content_hash=sha256_hex(body), content=body)
+        manager = get_user_model().objects.create_user(username="m", password="x", role="manager")
+        self.client.force_login(manager)
+
+    def payload(self):
+        return get_published_analysis_payload(Survey.objects.get(pk=self.survey.pk))
+
     def test_uploaded_result_is_available_and_latest(self):
-        payload = get_published_analysis_payload(self.survey)
+        payload = self.payload()
         self.assertTrue(payload["available"])
         self.assertTrue(payload["node_result"]["is_latest"])
-        self.assertTrue(payload["freshness"]["statistics"])
-        self.assertFalse(payload["freshness"]["ai"])  # stages.ai is False
+        self.assertEqual((payload["freshness"]["statistics"], payload["freshness"]["ai"]), (True, False))
 
-    def test_new_reply_and_definition_change_mark_it_old(self):
-        make_receipt(self.survey, response_sequence=2)        # helper: SubmissionReceipt status=received
-        make_receipt(self.survey, response_sequence=3, status="abandoned")
-        payload = get_published_analysis_payload(self.survey)
-        self.assertEqual((payload["node_result"]["pending_new"], payload["node_result"]["is_latest"]), (1, False))
+    def test_new_quarantined_and_abandoned_replies(self):
+        make_receipt(self.survey, 2, status="quarantined")
+        make_receipt(self.survey, 3, status="abandoned")
+        result = self.payload()["node_result"]
+        self.assertEqual((result["pending_new"], result["is_latest"]), (1, False))
         Survey.objects.filter(pk=self.survey.pk).update(definition_version=9)
-        self.assertFalse(get_published_analysis_payload(Survey.objects.get(pk=self.survey.pk))["node_result"]["definition_current"])
+        self.assertFalse(self.payload()["node_result"]["definition_current"])
 
-    def test_page_shows_reasons(self):
-        make_receipt(self.survey, response_sequence=2)
-        FeedbackSubmission.objects.create(survey=self.survey)   # legacy cloud reply
-        page = self.client.get(reverse("feedback:stats-overview") + f"?survey={self.survey.slug}")  # manager logged in
-        self.assertContains(page, "本機發布 #1")
-        self.assertContains(page, "有 1 筆新回覆尚未分析")
-        self.assertContains(page, "雲端既有 1 筆未納入分析")
-        self.assertContains(page, "管線版本由本機申報")
+    def test_assigned_survey_without_upload_is_not_latest(self):
+        other = assign_survey_to_node(Survey.objects.create(title="O", slug="o"), self.node).survey
+        result = get_published_analysis_payload(other)["node_result"]
+        self.assertEqual((result["has_result"], result["is_latest"]), (False, False))
+
+    def test_page_shows_reasons_and_counts(self):
+        make_receipt(self.survey, 2)
+        FeedbackSubmission.objects.create(survey=self.survey)
+        page = self.client.get(reverse("feedback:stats-overview") + "?survey=s")
+        for text in ("本機發布 #1", "有 1 筆新回覆尚未分析", "雲端既有 1 筆未納入分析", "管線版本由本機申報"):
+            self.assertContains(page, text)
+
+    def test_catalog_counts_use_uploaded_coverage(self):
+        from feedback.views import _survey_catalog_rows
+
+        row = _survey_catalog_rows(Survey.objects.filter(pk=self.survey.pk))[0]
+        self.assertEqual(row.response_count, 3)  # coverage.analyzed_unique from the upload
 
     def test_unassigned_surveys_keep_the_old_payload(self):
-        plain = Survey.objects.create(title="P", slug="p")
-        self.assertNotIn("node_result", get_published_analysis_payload(plain))
+        self.assertNotIn("node_result", get_published_analysis_payload(Survey.objects.create(title="P", slug="p")))
 ```
 
-（`make_receipt` 寫在本檔：建立 `SubmissionReceipt`，`node`、`survey`、`submitted_at=timezone.now()`、`definition_version=1`、`payload_hash="0"*64`、隨機 `submission_uuid`。統計頁的 survey 參數名稱以 `feedback/views.py` 中 `StatsOverviewView` 實際讀取的為準。）
-
-- [ ] **Step 2: 執行確認失敗** — Run：`manage.py test cloudapi.tests.test_result_display`；Expected: FAIL（`node_result` 不存在）
+- [ ] **Step 2: 執行確認失敗** — Run：`manage.py test cloudapi.tests.test_result_display`；Expected: FAIL
 - [ ] **Step 3: 實作**
 - [ ] **Step 4: 執行確認通過與回歸** — Run：`manage.py test cloudapi feedback`；Expected: PASS
-- [ ] **Step 5: Commit** — `git add cloudapi feedback/published_analysis.py templates/feedback`；`feat(cloudapi): show node results with definition, input and pipeline freshness`
+- [ ] **Step 5: Commit** — `feat(cloudapi): show node results with definition, input and pipeline freshness`
 
 ---
 
-### Task 5: 同步週期上傳結果（node）
+### Task 5: 同步週期上傳與主控台（node）
 
 **Files:**
-- Modify: `cloudsync/results.py`（`upload_results`）、`cloudsync/runner.py`、`node/status.py`、`templates/cloudsync/connection.html`、`cloudsync/views.py`
-- Test: `cloudsync/tests/test_results_upload.py`、`cloudsync/tests/test_runner.py`
+- Modify: `cloudsync/client.py`（`CloudClient.post_raw(path, data: bytes) -> dict`）、`cloudsync/results.py`（`upload_results`、`retry_failed`）、`cloudsync/runner.py`、`node/status.py`、`node/views.py`、`cloudsync/views.py`、`templates/cloudsync/connection.html`
+- Test: `cloudsync/tests/test_results_upload.py`、`cloudsync/tests/test_runner.py`、`node/tests/test_status.py`、`cloudsync/tests/test_client.py`
 
 **Interfaces:**
-- Consumes: Task 2、Task 3 HTTP 契約；C2 心跳
+- Consumes: Task 2、Task 3 HTTP 契約
 - Produces:
-  - `cloudsync.results.upload_results(client) -> dict`（`{"uploaded", "stale", "failed"}` 計數）：依 `created_at` 上傳 `pending`；狀態轉換見 Global Constraints；`CloudError(TRANSIENT)` 時 `attempts += 1` 後重新拋出
-  - `run_cycle` 順序：`sync_definitions` → `sync_inbox` → `backfill_publications` → `upload_results` → 心跳；心跳的 `publish_sequence` 寫入對應問卷的 `SurveySyncState.cloud_publish_sequence`（只增不減）
-  - `node.status.inbox_status` 之外新增 `results_status(link=None) -> StatusItem`（key `"results"`）：有 `failed` → `warn`「N 份結果上傳失敗」；否則 `ok`「待上傳 N 份」；未連結 `off`；`PENDING_MESSAGES["results"] = "結果上傳需要處理：請到「雲端連線」查看。"`；總覽 items 加入
+  - `CloudClient.post_raw`：與 `request` 相同的錯誤分類，送 `data` 與 `Content-Type: application/json; charset=utf-8`
+  - `cloudsync.results.upload_results(client) -> dict`（`uploaded`、`stale`、`failed` 計數）、`retry_failed() -> int`
+  - `run_cycle` 順序見 Global Constraints；心跳的 `publish_sequence` 只增不減寫入 `cloud_publish_sequence`
+  - `node.status.results_status(link=None) -> StatusItem`（key `"results"`）：未連結 `off`；有 `failed` → `warn`「N 份結果上傳失敗」；否則 `ok`，摘要「已分析 A 筆 · 尚未分析 B 筆 · 待上傳 C 份」（A＝已發布 Snapshot `response_count`；B＝本機同步回覆中 `response_sequence` 大於已發布 Snapshot 水位者）；`PENDING_MESSAGES["results"] = "結果上傳需要處理：請到「雲端連線」查看。"`
+  - 雲端連線頁顯示待上傳／失敗份數與失敗原因，「重新上傳」按鈕（`action=retry-results`）
 
 - [ ] **Step 1: 寫失敗測試**
 
 ```python
 # cloudsync/tests/test_results_upload.py
+from django.test import TestCase
+
+from cloudsync.client import CLIENT, CONFLICT, TRANSIENT, UNAUTHORIZED, CloudError
+from cloudsync.definitions import upsert_definition
+from cloudsync.models import ResultUpload
+from cloudsync.results import record_publication, retry_failed, upload_results
+from cloudsync.tests.test_inbox import definition
+from cloudsync.tests.test_results_local import published_state
+
+
 class FakeResultClient:
     def __init__(self, responses):
-        self.responses, self.bodies = list(responses), []
+        self.responses, self.sent = list(responses), []
 
-    def post(self, path, body=None):
+    def post_raw(self, path, data):
+        import json
+
         assert path == "results/"
-        self.bodies.append(body)
+        self.sent.append(json.loads(data))
         response = self.responses.pop(0)
         if isinstance(response, Exception):
             raise response
@@ -379,34 +529,50 @@ class FakeResultClient:
 
 
 class UploadResultsTests(TestCase):
-    # setUp: survey via upsert_definition(definition(1)); SurveyAnalysisState with published_at; two record_publication() calls
+    def setUp(self):
+        survey, _ = upsert_definition(definition(1))
+        state = published_state(survey)
+        record_publication(state)
+        record_publication(state)
 
-    def test_statuses_follow_the_cloud_reply_and_identity_is_reused(self):
+    def test_identity_is_reused_and_statuses_follow_replies(self):
         client = FakeResultClient([CloudError(TRANSIENT), {"status": "applied"}, {"status": "stale"}])
         with self.assertRaises(CloudError):
             upload_results(client)
-        first = ResultUpload.objects.order_by("created_at").first()
+        first = ResultUpload.objects.order_by("publish_sequence").first()
         self.assertEqual((first.status, first.attempts), ("pending", 1))
         upload_results(client)
-        self.assertEqual(list(ResultUpload.objects.order_by("created_at").values_list("status", flat=True)),
+        self.assertEqual(list(ResultUpload.objects.order_by("publish_sequence").values_list("status", flat=True)),
                          ["uploaded", "stale"])
-        self.assertEqual(client.bodies[0]["publish_uuid"], client.bodies[1]["publish_uuid"])  # resend keeps identity
-        self.assertEqual(client.bodies[0]["content_hash"], client.bodies[1]["content_hash"])
+        self.assertEqual(client.sent[0]["publish_uuid"], client.sent[1]["publish_uuid"])
+        self.assertEqual(client.sent[0]["content_hash"], client.sent[1]["content_hash"])
 
-    def test_conflict_fails_without_retry(self):
+    def test_unauthorized_stays_pending_and_conflicts_fail_until_retried(self):
+        with self.assertRaises(CloudError):
+            upload_results(FakeResultClient([CloudError(UNAUTHORIZED)]))
+        self.assertEqual(set(ResultUpload.objects.values_list("status", flat=True)), {"pending"})
         upload_results(FakeResultClient([CloudError(CONFLICT), CloudError(CLIENT)]))
-        self.assertEqual(set(ResultUpload.objects.values_list("status", flat=True)), {"failed"})
-        upload_results(FakeResultClient([]))  # nothing pending: no request
+        self.assertEqual(set(ResultUpload.objects.values_list("last_error", flat=True)), {"conflict", "client"})
+        upload_results(FakeResultClient([]))  # failed items are not retried automatically
+        self.assertEqual(retry_failed(), 2)
+        self.assertEqual(set(ResultUpload.objects.values_list("status", flat=True)), {"pending"})
+
+    def test_oversized_content_fails_without_sending(self):
+        from django.test import override_settings
+
+        with override_settings(CLOUD_RESULT_MAX_BYTES=10):
+            client = FakeResultClient([])
+            upload_results(client)
+        self.assertEqual((client.sent, set(ResultUpload.objects.values_list("last_error", flat=True))), ([], {"too_large"}))
 ```
 
-在 `cloudsync/tests/test_runner.py` 的 `InboxCycleTests` 加 `test_cycle_uploads_results_and_records_cloud_sequence`：patch `sync_definitions`、`sync_inbox`、`upload_results`，心跳回 `{"surveys": [{"survey_uuid": ..., "publish_sequence": 7, ...}]}`；斷言 `upload_results` 被呼叫一次、`SurveySyncState.cloud_publish_sequence == 7`；第二次心跳回 5 時仍為 7。
+`cloudsync/tests/test_runner.py` 加 `test_cycle_order_and_cloud_sequence_only_increases`：以 `MagicMock` 記錄呼叫順序 patch `sync_definitions`、`sync_inbox`、`backfill_publications`、`upload_results`，心跳回 `publish_sequence` 7 再回 5；斷言順序為 definitions、inbox、heartbeat、backfill、upload，`cloud_publish_sequence` 兩次後皆為 7。既有 runner 測試輔助一併 patch 新增的兩個函式。
+`cloudsync/tests/test_client.py` 加 `test_post_raw_sends_utf8_bytes`。`node/tests/test_status.py` 加 `test_results_status_counts_and_failures`。
 
-`node/tests/test_status.py` 加 `test_results_status_warns_on_failed_upload`。
-
-- [ ] **Step 2: 執行確認失敗** — Run（node）：`manage.py test cloudsync.tests.test_results_upload cloudsync.tests.test_runner node.tests.test_status`；Expected: FAIL
-- [ ] **Step 3: 實作**（既有 runner 測試的輔助一併 patch `upload_results` 與 `backfill_publications`）
+- [ ] **Step 2: 執行確認失敗** — Run（node）：`manage.py test cloudsync node`；Expected: FAIL
+- [ ] **Step 3: 實作**
 - [ ] **Step 4: 執行確認通過** — Run（node）：`manage.py test cloudsync node`；Expected: PASS
-- [ ] **Step 5: Commit** — `git add cloudsync node templates/cloudsync`；`feat(cloudsync): upload node results in the sync cycle with stable identity`
+- [ ] **Step 5: Commit** — `feat(cloudsync): upload node results in the sync cycle with stable identity`
 
 ---
 
@@ -414,24 +580,17 @@ class UploadResultsTests(TestCase):
 
 **Files:**
 - Create: `cloudsync/tests/test_e2e_results.py`
-- Modify: `docs/architecture.md`、`docs/next-actions.md`、`README.md`
+- Modify: `docs/architecture.md`、`docs/next-actions.md`
 
-**Interfaces:**
-- Consumes: 全部前述任務、C2 端對端輔助（`SEED`／`SUBMIT` 寫法）
-- Produces: 無
+**Interfaces:** Consumes 全部前述任務與 C2 端對端寫法（`CloudServer(inbox=True)`、`SEED`、`SUBMIT`、`cloud.shell`）。
 
-- [ ] **Step 1: 寫失敗測試**
-
-`cloudsync/tests/test_e2e_results.py`（結構同 C2 `test_e2e_inbox`，`CloudServer(inbox=True)`），三個測試：
-1. `test_reply_analysis_upload_and_display`：雲端送出兩筆 → `run_cycle(force=True)` → 本機 `call_command("run_analysis_worker_once", worker_id="e2e", output=<temp>)` → `run_cycle(force=True)`；雲端 `shell` 讀 `get_published_analysis_payload(survey)`：`available` 為真、`node_result.is_latest` 為真、`coverage.analyzed_unique == 2`、`publish_sequence == 1`。
-2. `test_new_reply_marks_the_result_old`：接續上一流程再送出一筆並 `run_cycle`（不重跑分析）；雲端 `node_result.pending_new == 1`、`is_latest` 為假、展示內容仍是序號 1。
-3. `test_lost_upload_reply_is_resent_with_the_same_identity`：patch `CloudClient.post`，第一次 `results/` 在雲端已處理後拋 `CloudError(TRANSIENT)`（先呼叫原函式再拋出）；第二次 `run_cycle` 後本機 `ResultUpload.status == "uploaded"`，雲端 `PublishedResultRecord` 只有一筆。
-
-- [ ] **Step 2: 執行確認失敗** — Run（node）：`manage.py test cloudsync.tests.test_e2e_results`；Expected: FAIL（尚未建立或斷言失敗）
-- [ ] **Step 3: 補齊實作缺口**（若端對端暴露問題，回到對應任務修正並補單元測試）
-- [ ] **Step 4: 兩模式全套件** — cloud：`manage.py test feedback accounts config cloudapi` PASS；node：`manage.py test feedback accounts config node organizations cloudapi cloudsync` PASS
-- [ ] **Step 5: 文件（只寫現況）**
-  - `docs/architecture.md` 同步段落補：結果上傳（`ResultUpload` 凍結身分、`PublishedResultRecord` 歷史、`SurveyAnalysisState` 原子切換三條件、網站三項新鮮度與「本機發布 #N」）、水位綁定的分析輸入。
-  - `docs/next-actions.md`：雲端同步改為「C1–C3 已完成；接續 C4 搬移，之後處理通知系統」。
-  - `README.md`：無新指令，不需修改。
-- [ ] **Step 6: Commit** — `git add cloudsync docs`；`test(cloudsync): end-to-end result upload, freshness and lost reply resend`
+- [ ] **Step 1: 寫失敗測試**（四個測試；雲端狀態以 `cloud.shell` 執行 `get_published_analysis_payload` 並印出 JSON 讀取）
+  1. `test_reply_analysis_upload_and_display`：雲端送出兩筆 → `run_cycle(force=True)` → 本機 `run_analysis_worker_once` → `run_cycle(force=True)` → 雲端 `available` 真、`node_result.is_latest` 真、`coverage.analyzed_unique == 2`、`publish_sequence == 1`。
+  2. `test_new_reply_and_definition_change_mark_the_result_old`：接著再送一筆並 `run_cycle`（不重跑分析）→ `pending_new == 1`、`is_latest` 假；雲端改題目標題後 → `definition_current` 假；展示內容仍為序號 1。
+  3. `test_lost_upload_reply_is_resent_with_the_same_identity`：patch `CloudClient.post_raw`，第一次 `results/` 先呼叫原函式再拋 `CloudError(TRANSIENT)`；下一輪後本機 `ResultUpload.status == "uploaded"`、雲端 `PublishedResultRecord` 只有一筆。
+  4. `test_restored_node_resends_old_result_as_stale`：完成一次上傳（序號 1）後再發布並上傳（序號 2）；把序號 1 的本機紀錄改回 `pending` 模擬還原前資料重送 → 下一輪後該筆 `stale`，雲端展示仍為序號 2。
+- [ ] **Step 2: 執行確認失敗** — Run（node）：`manage.py test cloudsync.tests.test_e2e_results`
+- [ ] **Step 3: 補齊實作缺口**（暴露的問題回到對應任務修正並補單元測試）
+- [ ] **Step 4: 兩模式全套件** — cloud：`manage.py test feedback accounts config cloudapi`；node：`manage.py test feedback accounts config node organizations cloudapi cloudsync`；Expected: 兩者 PASS
+- [ ] **Step 5: 文件（只寫現況）** — `docs/architecture.md` 同步段落補結果上傳（範圍限定、凍結身分、歷史只存中繼資料、三條件切換、三項新鮮度、水位綁定輸入與前提）；`docs/next-actions.md` 改為「C1–C3 已完成；接續 C4 搬移，之後處理通知系統」。
+- [ ] **Step 6: Commit** — `test(cloudsync): end-to-end result upload, freshness and resend`
