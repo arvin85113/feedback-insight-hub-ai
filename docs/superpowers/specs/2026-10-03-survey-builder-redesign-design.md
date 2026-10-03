@@ -1,7 +1,7 @@
 # 問卷建立工具改版：Google 表單式編輯、草稿與發布、自動資料型態
 
 狀態：規格第四版之二（2026-10-03）。第三版經兩輪獨立審查；第四版依產品決策改為「草稿可編輯、發布後定義固定」，
-並依真實問卷反推加入選項分數與「不納入分析」選項；4.1 納入第四版獨立審查的 12 項修正；4.2 依實作計畫審查新增第 7 節「流程與合約」，並調整白名單新鮮度、文字刻度轉換、初始版本與節點草稿刪除。
+並依真實問卷反推加入選項分數與「不納入分析」選項；4.1 納入第四版獨立審查的 12 項修正；4.2 依實作計畫審查新增第 7 節「流程與合約」，並調整白名單新鮮度、文字刻度轉換、初始版本與節點草稿刪除；4.2 第二輪補上受控寫入入口、填答版本核對與重送順序、節點分析版本、收件匣容量與本機副本辨識。
 相關文件：[雲端同步](2026-10-01-cloud-sync-design.md)、[真實問卷反推的題目與統計需求](../../survey-instrument-requirements.md)。
 
 ## 目標
@@ -99,7 +99,7 @@
 | 一般填答寫入 `submit_survey_payload`（`feedback/local_service.py`）與 `SurveyDetailView` | 只接受已發布且收件中的問卷；寫入 `choice_codes` 與 `definition_version`（＝發布版本）；`value` 存顯示用文字 |
 | 收件匣送出 `accept_submission`（`cloudapi/inbox.py`）與 `encode_answers`（`cloudapi/envelope.py`） | 在問卷列鎖內再核對「已發布且收件中」；表單版本與 `published_version` 比對；以代碼建立封套答案 |
 | C2 封套與本機寫入（`cloudapi/envelope.py`、`cloudsync/inbox.py`） | 封套新增 `answers_format: 2`（選擇題答案為代碼：單選字串、複選陣列），納入雜湊；本機寫入時產生 `choice_codes` 與顯示用 `value`。缺少或不是 2 者隔離，`QUARANTINE_REASONS` 新增 `answers_format`。`payload_version` 維持 1（保留給加密） |
-| 結果新鮮度 `node_freshness`（`cloudapi/freshness.py`） | 「定義是否最新」改比對 `published_version`；`legacy_unmigrated` 與網站的「雲端既有 N 筆未納入分析」移除（不搬移，見雲端同步規格第 10 節） |
+| 結果新鮮度 `node_freshness`（`cloudapi/freshness.py`） | 「定義是否最新」改比對 `analysis_definition_version`（第 7.2 節）；`legacy_unmigrated` 與網站的「雲端既有 N 筆未納入分析」移除（不搬移，見雲端同步規格第 10 節） |
 | C1 定義與寫入（`cloudapi/definition.py`、`cloudapi/writes.py`、`cloudapi/views.py`） | 見第 4 節；`check_semantic_lock` 與 `SEMANTIC_FIELDS` 移除；`Question.has_received_answer` 欄位保留（收件時照舊標記，不再用於鎖定） |
 | 種子與測試資料：`seed_demo_beverage.py`、`seed_random_responses.py`、`seed_demo.py`、`scripts/seed_demo_data.py` | 以新欄位建立題目並寫入 `choice_codes`；建立後發布 |
 | 匯入器（`feedback/importing/service.py`） | 以 `analysis_levels` 驗證答案；與既有題目的相容比對改以新結構為準；寫入 `choice_codes`；建立的問卷直接為已發布 |
@@ -136,8 +136,9 @@
   - `definition_version`：**任何**定義變更都遞增（草稿編輯、發布、發布後的白名單變更），**每個版本都保存 `SurveyDefinitionRevision`**
     （所有問卷皆然；儲存是手動按鈕，不會產生大量版本）。節點問卷另照 C1 寫入 `SurveyChange`，同步沿用現有機制。
   - `published_version`：發布時設為當下的 `definition_version`，之後不再改變。填答表單核對、`FeedbackSubmission.definition_version`、
-    收件封套的 `definition_version`、節點結果的新鮮度判斷都使用它，因此白名單變更不會讓已開啟的表單被拒；分析是否需要重算依第 7.2 節。
+    收件封套的 `definition_version` 都使用它，因此白名單變更不會讓已開啟的表單被拒；分析是否需要重算依第 7.2 節。
   - 新建立（含複製、匯入）的問卷即為版本 1，並保存 revision；不存在沒有 revision 的版本。
+  - `analysis_definition_version`（新增欄位）：最後一次**影響分析**的定義版本——發布時設為發布版本，`analysis_enabled` 或 `archived_at` 變更時設為新的 `definition_version`，其他白名單變更不改。隨定義 dict 同步到節點；節點上傳結果時申報它，雲端以它判定節點結果的定義是否最新（第 7.2 節）。
 - **草稿編輯**：請求帶上載入時的 `definition_version`，不符回 409。
 - **發布**：在交易內 `select_for_update` 鎖定問卷列，核對請求版本等於目前版本（拒絕發布未看過的修改），驗證完整性
   （至少一題；選擇題選項數符合第 2.1 節），遞增 `definition_version` 並保存 revision，設定 `published_version` 與 `published_at`。
@@ -214,13 +215,23 @@ TripAdvisor（真實外部資料，答案只在本機 Parquet，Supabase 只有�
 
 ### 7.1 狀態轉換（單一寫入路徑）
 
-**所有問卷定義的寫入只經過 `cloudapi.writes.change_definition`**（雲端在問卷列鎖內核對 `expected_version`、套用、`record_version`）。
-網站的建立工具一律先編輯定義 dict，再交給 `feedback.survey_lifecycle.commit`：雲端模式直接呼叫 `change_definition`；本機模式經 API `PUT` 送到雲端，成功後以回傳的定義更新本機副本。
-例外只有兩個，且都在單一交易內自行 `record_version`：外部資料匯入建立問卷（版本 1、直接發布）、資料轉換 migration（第 5 節）。
+**問卷定義只能經由下列受控入口寫入**，全部位於 `cloudapi/writes.py`，共用同一個內部程序 `_locked_write`：在交易內鎖問卷列 → 核對版本與狀態 → `apply_definition` → `record_version`。
+
+| 受控入口 | 用途 |
+|---|---|
+| `change_definition(survey_uuid, *, expected_version, definition)` | 草稿編輯、發布、白名單變更、封存 |
+| `create_survey(definition)` | 雲端網站建立草稿、雲端複製 |
+| `create_node_survey(node, definition)` | 本機建立草稿、本機複製（雲端指派給該節點） |
+| `assign_survey_to_node(survey, node)` | 草稿指派節點 |
+| `create_imported_survey(definition)` | 外部資料匯入建立問卷（版本 1、直接發布） |
+
+網站的建立工具一律先編輯定義 dict，再交給 `feedback.survey_lifecycle`：雲端模式直接呼叫上表入口；本機模式經 API 送到雲端，成功後以回傳的定義更新本機副本。
+種子指令也經由 `feedback.survey_lifecycle` 建立與發布；問卷已存在時，未加 `--reset` 一律拒絕，不直接修改既有題目。
+唯一不經由上表的寫入是資料轉換 migration（第 5 節），它在單一交易內以歷史模型自行建立 revision。
 
 | 動作 | 入口 | 前置條件 | 結果版本 | revision／SurveyChange |
 |---|---|---|---|---|
-| 建立草稿 | 雲端網頁、本機網頁（API `POST`）、種子指令 | — | `definition_version=1`、未發布 | 建立／節點問卷另建 |
+| 建立草稿 | 雲端網頁、本機網頁（API `POST`）、種子指令（經 `survey_lifecycle`） | — | `definition_version=1`、未發布 | 建立／節點問卷另建 |
 | 儲存題目或設定 | 雲端網頁、本機網頁（API `PUT`） | 草稿；版本相符（否則 409） | ＋1 | 建立／節點問卷另建 |
 | 發布 | 同上（dict `published` 由假變真） | 草稿；版本相符；至少一題；有節點時收件匣已開 | ＋1、`published_version`＝新版本、有節點時設 `inbox_since` | 建立／節點問卷另建 |
 | 白名單變更 | 同上；刪除分類時自動清空 | 已發布；只改白名單欄位（否則 `published_locked`） | ＋1、`published_version` 不變 | 建立／節點問卷另建 |
@@ -228,7 +239,7 @@ TripAdvisor（真實外部資料，答案只在本機 Parquet，Supabase 只有�
 | 刪除 | 刪除按鈕（未指派節點的草稿） | 鎖內重新確認仍為未指派節點的草稿、版本相符 | 問卷消失 | 依第 7.4 節刪除 |
 | 複製為新草稿 | 雲端網頁、本機網頁（API `POST`） | 任何狀態 | 新問卷版本 1、未發布 | 建立（本機複製由雲端指派給該節點） |
 | 指派節點 | 管理指令 `assign_survey_node` | 草稿 | ＋1 | 建立＋SurveyChange |
-| 填答 | 網站表單、收件匣 | 鎖內確認已發布且收件中；表單版本＝`published_version` | 不變 | 無 |
+| 填答 | 網站表單、收件匣（兩者的表單都帶發布版本） | 鎖內依序：①同一回覆 ID 已成功者直接回傳先前結果（沿用重送合約，即使之後已停收或封存）；②已發布且收件中；③表單版本＝`published_version`，缺少或不符時拒絕、不建立回覆 | 不變 | 無 |
 | 清除 | 管理指令 `purge_survey` | 未指派節點 | 問卷消失 | 依第 7.4 節 |
 
 `enable_survey_inbox` 不再使用（發布時設定 `inbox_since`），對任何問卷都拒絕並提示改用發布。雲端 API 的 `POST`／`PUT` 只接受 `schema_version` 2；`schema_version` 1 只在讀取既有 revision 時自動轉換（第 4.3 節）。
@@ -243,12 +254,12 @@ TripAdvisor（真實外部資料，答案只在本機 Parquet，Supabase 只有�
 | 新回覆、作廢回覆、答案變動 | 輸入 |
 | 草稿的任何編輯、發布 | 不重算（草稿沒有回覆，不排程分析） |
 | 白名單：`is_active`、`category`、`thank_you_email_enabled`、`improvement_tracking_enabled` | 不重算 |
-| 白名單：`analysis_enabled`、`archived_at` | 設定（沿用現行規則） |
+| 白名單：`analysis_enabled`、`archived_at` | 設定（沿用現行規則）；並更新 `analysis_definition_version` |
 | 關鍵字規則 | 設定（沿用現行規則） |
 | 資料轉換 migration | 不重算（只用 queryset `update()`／`bulk_update()`，不送出模型訊號） |
 
 AI Snapshot 指紋（`calculate_data_fingerprint`）屬於內部重用判斷，白名單變更可能改變它，但不影響網站顯示的「最新」判定；
-網站以 `feedback/published_analysis.py` 的版本比對與節點的 `published_version` 判定為準。
+網站以 `feedback/published_analysis.py` 的版本比對為準；節點問卷由雲端比對上傳結果申報的定義版本與 `analysis_definition_version`，因此 `analysis_enabled`／`archived_at` 變更後，舊結果（含延遲上傳者）不再標為最新，其他四個白名單欄位不影響。
 
 ### 7.3 回答合約
 
@@ -273,12 +284,13 @@ ORM 與 Worker 兩條統計路徑的母體一致：以該問卷完成且未作�
 | `ImprovementNotice.improvement`（`PROTECT`）、`ImprovementUpdate.survey`（`SET_NULL`，會留下孤兒） | 先刪該問卷改善紀錄的通知，再刪改善紀錄（發送紀錄、狀態歷史隨之 CASCADE） |
 | `ImportedSubmissionSource.batch`（`PROTECT`） | 先刪該問卷匯入批次的來源紀錄 |
 | `SurveyAnalysisSource.active_external_version`（`PROTECT`，與 `ExternalDatasetVersion.source` 互相指向） | 先清空指標 |
-| `cloudapi`：`InboxSubmission`、`SubmissionReceipt`、`PublishedResultRecord`、`SurveyChange`、`SurveyDefinitionRevision`（皆 `PROTECT`） | 逐一刪除；刪除待處理的 `InboxSubmission` 時退回 `InboxCounter` 的占用筆數與位元組 |
+| `cloudapi`：`InboxSubmission`、`SubmissionReceipt`、`PublishedResultRecord`、`SurveyChange`、`SurveyDefinitionRevision`（皆 `PROTECT`） | 逐一刪除；每刪除一筆 `InboxSubmission`（pending 與 quarantined 都占容量）就依其 `size_bytes` 退回該節點 `InboxCounter` 一次 |
 | `cloudsync.PendingAck`（無外鍵，以回覆 uuid 對應） | 依該問卷回覆的 `idempotency_key` 刪除 |
 | 其餘（題目、回覆、答案、匯入批次、關鍵字、Snapshot、AI Stage、分析狀態與來源、分析工作、同步狀態、結果上傳） | 刪除問卷時 CASCADE |
 | 其他問卷的改善發送紀錄指向本問卷回覆、改善紀錄指向本問卷 AI Stage（`SET_NULL`） | 保留，指標清空 |
 
-- 全部在一個交易內，先鎖問卷列。雲端拒絕 `owner_node` 有值的問卷；本機模式拒絕由雲端同步而來的問卷（有 `SurveySyncState`），本機資料庫的測試資料改以整個重建處理（需授權）。
+- 全部在一個交易內，先鎖問卷列，並在 `suppress_analysis_scheduling()` 內執行（刪除不得排程任何分析工作）。
+- 雲端拒絕 `owner_node` 有值的問卷。本機以 `SurveySyncState` 辨識雲端副本：**本機套用雲端定義（`upsert_definition`）建立問卷時，在同一交易內建立 `SurveySyncState`**，因此建立或複製後尚未經過同步循環也能辨識；本機拒絕清除雲端副本，刪除按鈕改走雲端（第 7.1 節）。本機資料庫的測試資料改以整個重建處理（需授權）。
 - **dry-run**：在同一個交易內實際執行刪除、記錄各模型筆數後回滾，列出的筆數即實際會刪除的量；不得以 `Collector.collect()` 預估（遇到 `PROTECT` 會直接失敗）。
 - 不為了方便刪除而把任何 `PROTECT` 改成 `CASCADE`。
 

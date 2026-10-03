@@ -15,6 +15,7 @@ dry-run 以「實際刪除後回滾」計數。本計畫不含任何 schema 變�
 
 - 只用現有模型欄位；**不得新增 migration**（`makemigrations --check` 必須通過）。
 - 不得把任何 `PROTECT` 改成 `CASCADE`。
+- 整個刪除程序（含 dry-run）在 `feedback.analysis_jobs.suppress_analysis_scheduling()` 內執行，不得排程分析工作。
 - `cloudsync` 只在本機模式安裝（`config/settings.py:227`）；用到 `PendingAck`、`SurveySyncState` 時以 `django.apps.apps.is_installed("cloudsync")` 判斷。
 - 拒絕條件（`PurgeRefused`，指令轉為 `CommandError`）：雲端 `owner_node` 有值 →「指派給節點的問卷不能清除」；本機模式且問卷有 `SurveySyncState` →「由雲端同步的問卷不能在本機清除」。
 - 找不到 slug：`CommandError("找不到問卷：<slug>")`。
@@ -25,7 +26,7 @@ dry-run 以「實際刪除後回滾」計數。本計畫不含任何 schema 變�
 ## Review Focus
 
 1. 問卷有已寄出的改善通知、匯入來源、外部資料來源指標、revision、SurveyChange、收件匣項目、收據、結果上傳紀錄：清除成功、無殘留。
-2. 刪除待處理收件匣項目：`InboxCounter` 的占用筆數與位元組依項目大小退回，不會變負數。
+2. 刪除收件匣項目（pending 與 quarantined 都占容量）：`InboxCounter` 依每筆 `size_bytes` 退回一次，其他問卷的占用不受影響。
 3. 刪除中途失敗：整個交易回滾，問卷、回覆、答案、通知都還在。
 4. dry-run 之後資料庫完全不變（筆數、`InboxCounter`），且回報筆數與之後 `--confirm` 的實際筆數相同。
 5. 其他問卷的改善發送紀錄指向本問卷回覆：保留且指標清空；`survey=NULL` 的舊改善紀錄不被刪除。
@@ -49,7 +50,7 @@ dry-run 以「實際刪除後回滾」計數。本計畫不含任何 schema 變�
   `DatasetImportBatch`＋`ImportedSubmissionSource`、`SurveyAnalysisSource`（`kind=external`）＋`ExternalDatasetVersion` 並設為 `active_external_version`、
   `SurveyAIReportSnapshot`＋`SurveyAIAnalysisStage`、`SurveyAnalysisState`、`AnalysisJob`、`SurveyDefinitionRevision`（version 1）＋`SurveyChange`（seq 1）。
   另有 `make_inbox_history(survey)`：建立 `NodeDevice`、pending `InboxSubmission`（`size_bytes=100`）、`SubmissionReceipt`、`PublishedResultRecord`，
-  並把 `InboxCounter` 設為 `occupied_count=1, occupied_bytes=100`（模擬曾指派後解除：最後把 `owner_node` 設回 `None`）。
+  與 quarantined `InboxSubmission`（`size_bytes=50`）、另一問卷的 pending 項目（`size_bytes=30`），並把 `InboxCounter` 設為 `occupied_count=3, occupied_bytes=180`（模擬曾指派後解除：最後把本問卷的 `owner_node` 設回 `None`）。
 
 ```python
 def test_dry_run_reports_real_counts_and_writes_nothing(self):
@@ -70,7 +71,15 @@ def test_purge_leaves_nothing_and_releases_inbox_capacity(self):
                   SurveyDefinitionRevision, SurveyChange, InboxSubmission, SubmissionReceipt, PublishedResultRecord):
         self.assertEqual(model.objects.count(), 0, model.__name__)
     counter = InboxCounter.objects.get()
-    self.assertEqual((counter.occupied_count, counter.occupied_bytes), (0, 0))
+    self.assertEqual((counter.occupied_count, counter.occupied_bytes), (1, 30))   # 只剩另一問卷的項目
+
+def test_purge_schedules_no_analysis(self):
+    survey = make_full_survey()            # 含外部資料來源與作用中版本、回覆與答案
+    with mock.patch("feedback.analysis_jobs.schedule_survey_analysis") as schedule:
+        purge_survey(survey, dry_run=True)
+        purge_survey(Survey.objects.get(pk=survey.pk))
+    schedule.assert_not_called()
+    self.assertEqual(AnalysisJob.objects.count(), 0)
 
 def test_other_surveys_dispatch_and_null_improvement_survive(self):
     survey = make_full_survey()
@@ -100,8 +109,8 @@ def test_failure_rolls_back_everything(self):
   seed：`test_seed_reset_works_with_revision_change_and_notice`（先 seed，再補 revision、`SurveyChange`、已寄出通知，`seed_demo_beverage --reset --yes` 成功重建）。
 
 - [ ] **Step 2: 執行確認失敗** → ImportError（`feedback.survey_purge` 不存在）。
-- [ ] **Step 3: 實作 `feedback/survey_purge.py`**：`transaction.atomic()` 內 `select_for_update` 鎖問卷 → 拒絕條件 → 依規格 §7.4 表格順序：
-  通知 → 改善紀錄 → 匯入來源 → 清空 `active_external_version` → 待處理 `InboxSubmission`（逐筆以 `F()` 退回 `InboxCounter`）與其他收件匣項目 → `SubmissionReceipt` → `PublishedResultRecord`
+- [ ] **Step 3: 實作 `feedback/survey_purge.py`**：`suppress_analysis_scheduling()` 與 `transaction.atomic()` 內 `select_for_update` 鎖問卷 → 拒絕條件 → 依規格 §7.4 表格順序：
+  通知 → 改善紀錄 → 匯入來源 → 清空 `active_external_version` → 該問卷全部 `InboxSubmission`（依節點彙總筆數與 `size_bytes`，以一次 `F()` 更新退回 `InboxCounter`） → `SubmissionReceipt` → `PublishedResultRecord`
   → `SurveyChange` → `SurveyDefinitionRevision` → （本機）`PendingAck` → `_delete_survey_row(survey)`。每一步把 `QuerySet.delete()` 回傳的明細累加進結果。
   `dry_run=True` 時最後 `transaction.set_rollback(True)`。
 - [ ] **Step 4: 實作指令** `purge_survey --survey <slug> [--confirm]`（無 `--confirm` 即 `dry_run=True`），印出各模型筆數。
