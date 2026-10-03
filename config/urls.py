@@ -20,7 +20,11 @@ if settings.IS_NODE:
         path("auth/", include("allauth.urls")),
         # The node has no public landing page; "/" opens the console.
         path("", RedirectView.as_view(pattern_name="node:overview", permanent=False)),
+        path("node/cloud/", include("cloudsync.urls")),
         path("node/", include("node.urls")),
     ]
+
+if not settings.IS_NODE:
+    urlpatterns += [path("api/node/v1/", include("cloudapi.urls"))]
 
 urlpatterns += [path("", include("feedback.urls"))]

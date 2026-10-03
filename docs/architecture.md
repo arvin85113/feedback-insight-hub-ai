@@ -58,6 +58,12 @@ Shared DB:
 設計與範圍見 [架構總覽](superpowers/specs/2026-09-30-local-node-architecture-design.md)、
 [主控台與登入](superpowers/specs/2026-09-30-local-node-console-and-auth-design.md)。
 
+問卷定義同步（原型，第一階段 C1）：雲端 `cloudapi`（兩種模式都安裝；`/api/node/v1/` 只在 cloud 模式掛載）以裝置權杖認證，
+提供問卷 snapshot／變更序列／版本化寫入；本機 `cloudsync`（只在 node 模式）每 5 分鐘拉取定義，本機編輯問卷一律經 API 寫入雲端，
+未連結或離線時問卷唯讀。指派給節點的問卷有版本號、語意鎖（已有回覆的題目不能改題型與選項），題目只停用不硬刪。
+原型閘門 `CLOUD_SYNC_PROTOTYPE_ENABLED` 預設關閉：關閉時 API 回 503、`assign_survey_node` 拒絕執行；正式網站不開啟。
+回覆收件、結果上傳與資料搬移尚未實作（C2–C4）。規格見 [雲端同步](superpowers/specs/2026-10-01-cloud-sync-design.md)。
+
 網站與本機工作台共用 Django models、工作協調與分析輸入契約，不維護第二套 HTTP domain service 或 ORM 鏡像。
 
 ---

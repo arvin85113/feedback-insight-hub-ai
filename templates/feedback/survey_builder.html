@@ -39,7 +39,7 @@
     {# ── 問卷設定 panel ── #}
     <div id="panel-settings" style="display:none">
         <form method="post" class="form-stack">
-            {% csrf_token %}
+            {% csrf_token %}{% include "feedback/_definition_version_field.html" %}
             <input type="hidden" name="action" value="update-survey">
             <div class="field-block">
                 {{ survey_edit_form.title.label_tag }}
@@ -130,9 +130,9 @@
                             <span class="pill">文字分析</span>
                         {% endif %}
                         <form method="post" class="question-move-group" style="display:inline-flex;gap:2px">
-                            {% csrf_token %}
+                            {% csrf_token %}{% include "feedback/_definition_version_field.html" %}
                             <input type="hidden" name="action" value="move-question">
-                            <input type="hidden" name="question_id" value="{{ question.id }}">
+                            <input type="hidden" name="question_id" value="{{ question.id }}"><input type="hidden" name="question_uuid" value="{{ question.uuid }}">
                             <button type="submit" name="direction" value="up" class="button button-ghost button-icon" title="上移">↑</button>
                             <button type="submit" name="direction" value="down" class="button button-ghost button-icon" title="下移">↓</button>
                         </form>
@@ -140,16 +140,16 @@
                                 data-question-id="{{ question.id }}">編輯</button>
                         {% if question.is_active %}
                             <form method="post" style="display:inline">
-                                {% csrf_token %}
+                                {% csrf_token %}{% include "feedback/_definition_version_field.html" %}
                                 <input type="hidden" name="action" value="delete-question">
-                                <input type="hidden" name="question_id" value="{{ question.id }}">
+                                <input type="hidden" name="question_id" value="{{ question.id }}"><input type="hidden" name="question_uuid" value="{{ question.uuid }}">
                                 <button type="submit" class="button button-danger button-small">刪除／停用</button>
                             </form>
                         {% else %}
                             <form method="post" style="display:inline">
-                                {% csrf_token %}
+                                {% csrf_token %}{% include "feedback/_definition_version_field.html" %}
                                 <input type="hidden" name="action" value="restore-question">
-                                <input type="hidden" name="question_id" value="{{ question.id }}">
+                                <input type="hidden" name="question_id" value="{{ question.id }}"><input type="hidden" name="question_uuid" value="{{ question.uuid }}">
                                 <button type="submit" class="button button-ghost button-small">恢復</button>
                             </form>
                         {% endif %}
@@ -201,9 +201,9 @@
                 </div>
                 <div class="inline-edit-panel" id="edit-panel-{{ question.id }}" style="display:none">
                     <form method="post" class="form-stack inline-edit-form">
-                        {% csrf_token %}
+                        {% csrf_token %}{% include "feedback/_definition_version_field.html" %}
                         <input type="hidden" name="action" value="edit-question">
-                        <input type="hidden" name="question_id" value="{{ question.id }}">
+                        <input type="hidden" name="question_id" value="{{ question.id }}"><input type="hidden" name="question_uuid" value="{{ question.uuid }}">
                         <div class="field-block">
                             <label>題目名稱</label>
                             <input type="text" name="title" value="{{ question.title }}" required>
@@ -272,7 +272,7 @@
         <div id="add-question-panel" style="display:none">
             <div class="google-form-card">
                 <form id="question-form" method="post">
-                    {% csrf_token %}
+                    {% csrf_token %}{% include "feedback/_definition_version_field.html" %}
 
                     <input type="hidden" name="data_type" id="id_data_type" value="text">
                     <input type="hidden" name="order" value="{{ question_form.order.value|default:0 }}">

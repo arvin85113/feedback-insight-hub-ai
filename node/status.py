@@ -78,14 +78,27 @@ def lan_status():
     return StatusItem("lan", "區域網路", "off", "未開放（僅限本機）")
 
 
-def cloud_status():
-    return StatusItem("cloud", "雲端連線", "off", "未連線")
+def cloud_status(link=None):
+    from cloudsync.models import CloudLink
+
+    link = CloudLink.load() if link is None else link
+    if not link.is_linked:
+        return StatusItem("cloud", "雲端連線", "off", "未連線")
+    if link.last_error_kind == "unauthorized":
+        return StatusItem("cloud", "雲端連線", "warn", "雲端連線已撤銷，請重新連結")
+    if link.last_error_kind:
+        return StatusItem("cloud", "雲端連線", "warn", f"無法同步（{link.last_error_kind}）")
+    if link.last_success_at is None:
+        return StatusItem("cloud", "雲端連線", "off", "已連結，尚未同步")
+    minutes = int((time.time() - link.last_success_at.timestamp()) // 60)
+    return StatusItem("cloud", "雲端連線", "ok", f"已連線 · 上次同步 {minutes} 分鐘前")
 
 
 PENDING_MESSAGES = {
     "worker": "分析 Worker 需要處理：請從系統匣結束並重新開啟程式，再查看日誌。",
     "disk": "磁碟剩餘空間不足 2 GB，分析產物可能無法寫入。",
     "database": "資料庫無法連線，請查看日誌。",
+    "cloud": "雲端同步需要處理：請到「雲端連線」查看。",
 }
 
 

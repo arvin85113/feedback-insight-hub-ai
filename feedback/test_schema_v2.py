@@ -8,6 +8,7 @@ from django.urls import reverse
 from .analysis_adapters import AnswerInput
 from .local_service import submit_survey_payload
 from .models import Answer, FeedbackSubmission, Question, Survey
+from .test_utils import cloud_only
 
 
 class FeedbackSchemaV2Tests(TestCase):
@@ -74,6 +75,7 @@ class FeedbackSchemaV2Tests(TestCase):
         with self.assertRaises(ValidationError):
             invalid.full_clean()
 
+    @cloud_only
     def test_manager_delete_archives_instead_of_cascading_history(self):
         manager = get_user_model().objects.create_user(
             username="schema-manager",

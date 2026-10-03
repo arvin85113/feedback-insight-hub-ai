@@ -40,6 +40,8 @@ AI_REPORT_REQUEST_INTERVAL_SECONDS = float(os.getenv("AI_REPORT_REQUEST_INTERVAL
 RENDER_EXTERNAL_HOSTNAME = os.getenv("RENDER_EXTERNAL_HOSTNAME", "").strip()
 _IS_RENDER_RUNTIME = bool(RENDER_EXTERNAL_HOSTNAME) or os.getenv("RENDER", "").lower() == "true"
 ANALYSIS_AUTO_AI_ENABLED = os.getenv("ANALYSIS_AUTO_AI_ENABLED", "False").lower() == "true"
+# Cloud sync phase 1 is an isolated prototype (spec §12); production keeps this off.
+CLOUD_SYNC_PROTOTYPE_ENABLED = os.getenv("CLOUD_SYNC_PROTOTYPE_ENABLED", "False").lower() == "true"
 
 # Local development defaults to DEBUG; a deployed runtime must opt in explicitly.
 DEBUG = os.getenv("DEBUG", "False" if (_IS_RENDER_RUNTIME or IS_NODE) else "True").lower() == "true"
@@ -87,6 +89,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "accounts",
     "feedback",
+    "cloudapi",
 ]
 
 MIDDLEWARE = [
@@ -212,7 +215,9 @@ if IS_NODE:
             },
         }
     }
-    INSTALLED_APPS += ["allauth", "allauth.account", "organizations", "node"]
+    INSTALLED_APPS += ["allauth", "allauth.account", "organizations", "node", "cloudsync"]
+    # Bearer tokens go over HTTPS only; isolated end-to-end tests opt in to loopback HTTP.
+    CLOUD_SYNC_ALLOW_LOOPBACK_HTTP = os.getenv("CLOUD_SYNC_ALLOW_LOOPBACK_HTTP", "False").lower() == "true"
     MIDDLEWARE.append("allauth.account.middleware.AccountMiddleware")
     MIDDLEWARE.append("node.middleware.SetupRequiredMiddleware")
     AUTHENTICATION_BACKENDS = [

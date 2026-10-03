@@ -3,6 +3,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from .models import SurveyCategory
+from .test_utils import cloud_only
 
 
 class ManagerShellTests(TestCase):
@@ -15,6 +16,7 @@ class ManagerShellTests(TestCase):
         self.assertContains(response, '<h1>統計分析</h1>', html=True)
         self.assertContains(response, 'aria-current="page"')
 
+    @cloud_only
     def test_manager_pages_render_flash_messages(self):
         response = self.client.post(reverse("feedback:category-create"), {"name": "門市"}, follow=True)
         rendered = [str(message) for message in response.context["messages"]]

@@ -59,6 +59,8 @@ try {
         --hidden-import cheroot.wsgi `
         --collect-submodules whitenoise `
         --collect-submodules accounts `
+        --collect-submodules cloudapi `
+        --collect-submodules cloudsync `
         --collect-submodules config `
         --collect-submodules desktop_app `
         --collect-submodules feedback `

@@ -29,7 +29,7 @@ jobs:
       - name: Django system check
         run: python manage.py check --settings=config.settings_test
       - name: Tests (isolated in-memory SQLite, mocked Gemini)
-        run: python manage.py test feedback accounts config --settings=config.settings_test
+        run: python manage.py test feedback accounts config cloudapi --settings=config.settings_test
 
   node-mode:
     name: Django tests (local node mode)
@@ -43,13 +43,13 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
-      - run: python -m pip install -r requirements.txt
+      - run: python -m pip install -r requirements.txt -r requirements-node.txt
       - name: Check for missing migrations
         run: python manage.py makemigrations --check --dry-run --settings=config.settings_test
       - name: Django system check
         run: python manage.py check --settings=config.settings_test
       - name: Tests (node mode, isolated in-memory SQLite)
-        run: python manage.py test feedback accounts config node organizations --settings=config.settings_test
+        run: python manage.py test feedback accounts config node organizations cloudapi cloudsync --settings=config.settings_test
 
   postgres-concurrency:
     name: PostgreSQL 17 queue concurrency
@@ -74,4 +74,4 @@ jobs:
           python-version: "3.13"
           cache: pip
       - run: python -m pip install -r requirements.txt
-      - run: python manage.py test feedback.test_analysis_jobs_postgres --settings=config.settings_postgres_test
+      - run: python manage.py test feedback.test_analysis_jobs_postgres cloudapi.test_postgres --settings=config.settings_postgres_test

@@ -160,6 +160,8 @@ py -3.13 -m venv .venv
 本機節點資料都在 `%LOCALAPPDATA%\FeedbackInsightHub\`（`data\node.sqlite3`、`secrets\`、`run\`、`logs\node.log`、`logs\worker.log`）；試跑時可用 `FEEDBACK_HUB_NODE_HOME` 指到隔離資料夾。
 本機節點只讀 `NODE_DATABASE_URL`（預設本機 SQLite），不讀 `DATABASE_URL`，不會連到 Supabase。首次啟動會開啟一次性設定頁建立擁有者；
 之後以本機帳號登入（allauth，閒置 4 小時登出）。設計見 [本機節點規格](docs/superpowers/specs/2026-09-30-local-node-console-and-auth-design.md)。
+問卷定義同步（原型）：在主控台「雲端連線」輸入雲端網址與裝置權杖；權杖在雲端以 `manage.py create_node_device --name <名稱>` 產生，只顯示一次。
+雲端須設定 `CLOUD_SYNC_PROTOTYPE_ENABLED=True` 才開放節點 API，正式網站維持關閉。
 
 Dear PyGui 工作台（`--legacy-workbench`）提供「開啟時檢查」、「開啟後自動更新」與「第一階段完成後執行 Gemini」選項。網站問卷從 Supabase Answer 串流分析；大型外部問卷則依資料庫登錄的不可變資料版本讀取本機 Parquet。兩種來源共用同一套工作、Snapshot 與發布流程；不會依問卷 slug 或資料夾名稱猜測來源。Gemini 預設關閉，勾選後才會使用本機 API 額度。
 

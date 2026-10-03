@@ -185,7 +185,7 @@ class CustomerRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
 
 
 NODE_CONSOLE_NAV = [("node:overview", "節點總覽", "server")]
-NODE_CONSOLE_NAV_TAIL = [("node:settings", "設定", "gear")]
+NODE_CONSOLE_NAV_TAIL = [("cloudsync:connection", "雲端連線", "cloud"), ("node:settings", "設定", "gear")]
 
 
 class DashboardBaseMixin(ManagerRequiredMixin):
@@ -416,6 +416,9 @@ class SurveyManagerView(DashboardBaseMixin, TemplateView):
 
 class SurveyCategoryCreateView(ManagerRequiredMixin, View):
     def post(self, request):
+        if settings.IS_NODE:
+            messages.info(request, "分類由雲端管理；請在雲端網站新增或刪除分類。")
+            return redirect("feedback:survey-manager")
         name = request.POST.get("name", "").strip()
         if not name:
             messages.error(request, "分類名稱不能空白。")
@@ -430,8 +433,24 @@ class SurveyCategoryCreateView(ManagerRequiredMixin, View):
 
 class SurveyCategoryDeleteView(ManagerRequiredMixin, View):
     def post(self, request, pk):
+        if settings.IS_NODE:
+            messages.info(request, "分類由雲端管理；請在雲端網站新增或刪除分類。")
+            return redirect("feedback:survey-manager")
         category = get_object_or_404(SurveyCategory, pk=pk)
         name = category.name
+        node_surveys = list(category.surveys.filter(owner_node__isnull=False))
+        if node_surveys:
+            from cloudapi.definition import serialize_definition, update_survey
+            from cloudapi.writes import change_definition
+
+            with transaction.atomic():
+                for survey in node_surveys:
+                    definition = serialize_definition(survey)
+                    update_survey(definition, {"category": None})
+                    change_definition(survey.uuid, expected_version=survey.definition_version, definition=definition)
+                category.delete()
+            messages.success(request, f"分類「{name}」已刪除。")
+            return redirect("feedback:survey-manager")
         category.delete()
         messages.success(request, f"分類「{name}」已刪除。")
         return redirect("feedback:survey-manager")
@@ -445,9 +464,41 @@ class SurveyCreateView(DashboardBaseMixin, CreateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context.update(self.get_dashboard_base_context())
+        if settings.IS_NODE:
+            import uuid as uuid_module
+
+            posted = self.request.POST.get("survey_uuid", "") if self.request.method == "POST" else ""
+            context["pending_survey_uuid"] = posted or str(uuid_module.uuid4())
         return context
 
     def form_valid(self, form):
+        if settings.IS_NODE:
+            import uuid as uuid_module
+
+            from cloudapi.errors import DefinitionCommitError
+            from cloudsync.survey_write import create_survey
+
+            try:
+                survey_uuid = str(uuid_module.UUID(self.request.POST.get("survey_uuid", "")))
+            except ValueError:
+                messages.error(self.request, "表單已過期，請重新開啟建立問卷頁。")
+                return self.form_invalid(form)
+            data = form.cleaned_data
+            definition = {
+                "survey_uuid": survey_uuid, "version": 0, "title": data["title"], "slug": "",
+                "description": data.get("description", ""), "is_active": data.get("is_active", True),
+                "analysis_enabled": data.get("analysis_enabled", True),
+                "thank_you_email_enabled": data.get("thank_you_email_enabled", True),
+                "improvement_tracking_enabled": True,
+                "category": data["category"].name if data.get("category") else None,
+                "archived_at": None, "questions": [],
+            }
+            try:
+                self.object = create_survey(definition)
+            except DefinitionCommitError as exc:
+                messages.error(self.request, exc.user_message)
+                return self.form_invalid(form)
+            return HttpResponseRedirect(self.get_success_url())
         form.instance.improvement_tracking_enabled = True
         self.object = form.save()
         base_slug = slugify(form.cleaned_data["title"]) or f"survey-{self.object.pk}"
@@ -492,6 +543,15 @@ class SurveyBuilderView(DashboardBaseMixin, DetailView):
 
     def post(self, request, *args, **kwargs):
         self.object = self.get_object()
+        if not settings.IS_NODE and self.object.owner_node_id:
+            from cloudapi.builder import builder_post, cloud_commit
+
+            return builder_post(self, request, cloud_commit)
+        if settings.IS_NODE:
+            from cloudapi.builder import builder_post
+            from cloudsync.survey_write import node_commit
+
+            return builder_post(self, request, node_commit)
         action = request.POST.get("action")
 
         if action == "move-question":
@@ -581,6 +641,17 @@ class SurveyDeleteView(DashboardBaseMixin, DeleteView):
 
     def form_valid(self, form):
         survey = self.get_object()
+        if not settings.IS_NODE and survey.owner_node_id:
+            from cloudapi.builder import archive_post, cloud_commit
+
+            archive_post(self.request, survey, cloud_commit)
+            return HttpResponseRedirect(self.get_success_url())
+        if settings.IS_NODE:
+            from cloudapi.builder import archive_post
+            from cloudsync.survey_write import node_commit
+
+            archive_post(self.request, survey, node_commit)
+            return HttpResponseRedirect(self.get_success_url())
         survey.is_active = False
         survey.analysis_enabled = False
         survey.archived_at = timezone.now()
