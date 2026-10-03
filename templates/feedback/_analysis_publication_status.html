@@ -1,6 +1,25 @@
 {% if analysis_publication %}
 <section class="analysis-publication-status" aria-live="polite">
-    {% if analysis_publication.available %}
+    {% with node=analysis_publication.node_result %}
+    {% if node %}
+        <div>
+            {% if node.has_result %}
+                <strong>本機發布 #{{ node.publish_sequence }}</strong>
+            {% else %}
+                <strong>尚無本機發布結果</strong>
+            {% endif %}
+            {% if node.coverage %}<span>已分析 {{ node.coverage.analyzed_unique|default:0 }} 筆{% if node.coverage.excluded %} · 排除 {{ node.coverage.excluded.voided|add:node.coverage.excluded.incomplete }} 筆{% endif %}</span>{% endif %}
+        </div>
+        {% if node.is_latest %}
+            <span class="analysis-publication-pill analysis-publication-pill-current">符合目前資料版本</span>
+        {% else %}
+            <span class="analysis-publication-pill analysis-publication-pill-waiting">顯示上一版，等待新版分析</span>
+        {% endif %}
+        {% if node.has_result and not node.definition_current %}<span class="analysis-publication-note">問卷已變更，結果為舊版本</span>{% endif %}
+        {% if node.pending_new %}<span class="analysis-publication-note">有 {{ node.pending_new }} 筆新回覆尚未分析</span>{% endif %}
+        {% if node.legacy_unmigrated %}<span class="analysis-publication-note">雲端既有 {{ node.legacy_unmigrated }} 筆未納入分析</span>{% endif %}
+        {% if node.has_result %}<span class="analysis-publication-note">管線版本由本機申報{% if node.pipeline_declared.pipeline_version %}：{{ node.pipeline_declared.pipeline_version }}{% endif %}</span>{% endif %}
+    {% elif analysis_publication.available %}
         <div>
             <strong>已發布結果</strong>
             <span>Snapshot #{{ analysis_publication.snapshot_id }}</span>
@@ -19,5 +38,6 @@
             <span>背景分析完成後會自動顯示；重新整理不會在網站上重算。</span>
         </div>
     {% endif %}
+    {% endwith %}
 </section>
 {% endif %}

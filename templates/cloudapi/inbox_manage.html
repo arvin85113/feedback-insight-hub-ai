@@ -14,6 +14,7 @@
     <p>待收 {{ row.summary.pending_count }} 筆 · 衝突 {{ row.summary.quarantined_count }} 筆 · 已同步 {{ row.synced_count }} 筆 · 已放棄 {{ row.abandoned_count }} 筆</p>
     <p>占用 {{ row.summary.occupied_count }} / {{ row.summary.max_count }} 筆，{{ row.summary.occupied_bytes|filesizeformat }} / {{ row.summary.max_bytes|filesizeformat }}</p>
     {% if row.summary.oldest_pending_at %}<p>最舊待收：{{ row.summary.oldest_pending_at }}</p>{% endif %}
+    {% if row.result_conflicts %}<p class="flash-message flash-error">結果內容衝突 {{ row.result_conflicts }} 次</p>{% endif %}
     {% if row.summary.deadline_state == "critical" %}
         <p class="flash-message flash-error">最舊待收已超過 30 天，請盡快讓本機節點同步。</p>
     {% elif row.summary.deadline_state == "warn" %}
