@@ -23,4 +23,7 @@ if settings.IS_NODE:
         path("node/", include("node.urls")),
     ]
 
+if not settings.IS_NODE:
+    urlpatterns += [path("api/node/v1/", include("cloudapi.urls"))]
+
 urlpatterns += [path("", include("feedback.urls"))]
