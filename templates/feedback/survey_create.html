@@ -17,6 +17,7 @@
     </div>
     <form method="post" class="form-stack">
         {% csrf_token %}
+        {% if is_node %}<input type="hidden" name="survey_uuid" value="{{ pending_survey_uuid }}">{% endif %}
         <div class="field-block">
             {{ form.title.label_tag }}
             {{ form.title }}

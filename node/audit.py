@@ -6,12 +6,16 @@ SETUP_COMPLETED = "setup.completed"
 LOGIN_SUCCEEDED = "login.succeeded"
 LOGIN_FAILED = "login.failed"
 ORGANIZATION_RENAMED = "organization.renamed"
+CLOUD_LINKED = "cloud.linked"
+CLOUD_UNLINKED = "cloud.unlinked"
 
 ACTION_LABELS = {
     SETUP_COMPLETED: "完成首次設定",
     LOGIN_SUCCEEDED: "登入成功",
     LOGIN_FAILED: "登入失敗",
     ORGANIZATION_RENAMED: "變更組織名稱",
+    CLOUD_LINKED: "連結雲端",
+    CLOUD_UNLINKED: "中斷雲端連線",
 }
 
 

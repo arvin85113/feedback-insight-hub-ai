@@ -1,0 +1,27 @@
+{% extends "feedback/dashboard_base.html" %}
+{% block title %}雲端連線 | FeedBack IQ{% endblock %}
+{% block dashboard_content %}
+<section class="manager-panel">
+    <h2>目前狀態</h2>
+    {% if link.is_linked %}
+        <p>已連結 <code>{{ link.api_url }}</code>（節點 {{ link.node_uuid }}）</p>
+        <p>上次成功同步：{{ link.last_success_at|date:"Y/m/d H:i"|default:"尚未同步" }}</p>
+        {% if link.last_error_kind %}<p class="flash-message flash-error">最近錯誤：{{ link.last_error_kind }}　{{ link.last_error_message }}</p>{% endif %}
+        <form method="post" class="form-inline">{% csrf_token %}
+            <button type="submit" name="action" value="sync-now" class="button button-primary">立即同步</button>
+            <button type="submit" name="action" value="disconnect" class="button button-danger"
+                    onclick="return confirm('確定中斷雲端連線？')">中斷連線</button>
+        </form>
+    {% else %}
+        <p>尚未連結雲端；問卷在本機為唯讀。</p>
+    {% endif %}
+</section>
+<section class="manager-panel">
+    <h2>{% if link.is_linked %}重新連結{% else %}連結雲端{% endif %}</h2>
+    <form method="post" class="form-stack">{% csrf_token %}
+        {{ form.non_field_errors }}
+        {% for field in form %}<label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{{ field.errors }}{% endfor %}
+        <button type="submit" name="action" value="connect" class="button button-primary">測試並儲存</button>
+    </form>
+</section>
+{% endblock %}
