@@ -53,6 +53,8 @@ class Survey(models.Model):
         blank=True,
         related_name="surveys",
     )
+    inbox_since = models.DateTimeField(null=True, blank=True)
+    response_sequence = models.PositiveBigIntegerField(default=0)
 
     class Meta:
         ordering = ["title"]
@@ -155,7 +157,9 @@ class FeedbackSubmission(models.Model):
     respondent_email = models.EmailField(blank=True)
     consent_follow_up = models.BooleanField(default=False)
     idempotency_key = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
-    submitted_at = models.DateTimeField(auto_now_add=True)
+    submitted_at = models.DateTimeField(default=timezone.now)
+    # Opaque cloud customer reference for replies synced from the inbox; never a local User key.
+    respondent_ref = models.CharField(max_length=128, blank=True)
     ingested_at = models.DateTimeField(auto_now_add=True)
     is_complete = models.BooleanField(default=True)
     voided_at = models.DateTimeField(null=True, blank=True)
