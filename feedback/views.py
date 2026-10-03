@@ -432,6 +432,19 @@ class SurveyCategoryDeleteView(ManagerRequiredMixin, View):
     def post(self, request, pk):
         category = get_object_or_404(SurveyCategory, pk=pk)
         name = category.name
+        node_surveys = list(category.surveys.filter(owner_node__isnull=False))
+        if node_surveys:
+            from cloudapi.definition import serialize_definition, update_survey
+            from cloudapi.writes import change_definition
+
+            with transaction.atomic():
+                for survey in node_surveys:
+                    definition = serialize_definition(survey)
+                    update_survey(definition, {"category": None})
+                    change_definition(survey.uuid, expected_version=survey.definition_version, definition=definition)
+                category.delete()
+            messages.success(request, f"分類「{name}」已刪除。")
+            return redirect("feedback:survey-manager")
         category.delete()
         messages.success(request, f"分類「{name}」已刪除。")
         return redirect("feedback:survey-manager")
@@ -492,6 +505,10 @@ class SurveyBuilderView(DashboardBaseMixin, DetailView):
 
     def post(self, request, *args, **kwargs):
         self.object = self.get_object()
+        if not settings.IS_NODE and self.object.owner_node_id:
+            from cloudapi.builder import builder_post, cloud_commit
+
+            return builder_post(self, request, cloud_commit)
         action = request.POST.get("action")
 
         if action == "move-question":
@@ -581,6 +598,11 @@ class SurveyDeleteView(DashboardBaseMixin, DeleteView):
 
     def form_valid(self, form):
         survey = self.get_object()
+        if not settings.IS_NODE and survey.owner_node_id:
+            from cloudapi.builder import archive_post, cloud_commit
+
+            archive_post(self.request, survey, cloud_commit)
+            return HttpResponseRedirect(self.get_success_url())
         survey.is_active = False
         survey.analysis_enabled = False
         survey.archived_at = timezone.now()

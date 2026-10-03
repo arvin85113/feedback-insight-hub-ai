@@ -139,7 +139,7 @@
                     </div>
                     <form method="post" action="{% url 'feedback:survey-delete' survey.slug %}"
                           onsubmit="return confirm('確定要刪除「{{ survey.title }}」？此操作無法復原。')">
-                        {% csrf_token %}
+                        {% csrf_token %}{% include "feedback/_definition_version_field.html" %}
                         <button type="submit" class="button button-danger button-small">刪除</button>
                     </form>
                     {% endif %}
