@@ -216,3 +216,15 @@ def existing_console(paths, *, probe=http_probe):
         return None
     url = console_url(port)
     return url if probe(f"{url}healthz/") else None
+
+
+def run_periodically(stop, interval, func):
+    """Call `func` every `interval` seconds until `stop` is set; one failure never ends the loop."""
+
+    while not stop.is_set():
+        try:
+            func()
+        except Exception:  # noqa: BLE001 - background loop must survive
+            logger.exception("periodic task failed")
+        if stop.wait(interval):
+            return

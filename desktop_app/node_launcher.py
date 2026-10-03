@@ -11,6 +11,7 @@ logger = logging.getLogger("desktop_app.node")
 
 SUPERVISE_INTERVAL_SECONDS = 5
 STARTUP_WAIT_SECONDS = 60
+CLOUD_SYNC_INTERVAL_SECONDS = 300
 
 
 def run_worker(parent_pid=None):
@@ -57,6 +58,7 @@ def run_launcher():
         bind_server,
         console_url,
         existing_console,
+        run_periodically,
         setup_url,
         start_worker_process,
     )
@@ -112,6 +114,16 @@ def run_launcher():
 
     threading.Thread(target=server.serve, name="console-server", daemon=True).start()
     threading.Thread(target=supervise, name="worker-supervisor", daemon=True).start()
+
+    def sync_cycle():
+        from cloudsync.runner import run_cycle
+
+        close_old_connections()
+        run_cycle()
+
+    threading.Thread(
+        target=run_periodically, args=(stop, CLOUD_SYNC_INTERVAL_SECONDS, sync_cycle), name="cloud-sync", daemon=True
+    ).start()
     open_console()
     try:
         run_tray(

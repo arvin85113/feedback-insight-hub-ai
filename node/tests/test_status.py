@@ -4,6 +4,7 @@ from pathlib import Path
 
 from django.test import SimpleTestCase, TestCase
 
+from cloudsync.models import CloudLink
 from config.node_paths import NodePaths
 from feedback.worker_heartbeat import write_heartbeat
 from node.status import cloud_status, database_status, disk_status, lan_status, pending_items, worker_status
@@ -57,7 +58,21 @@ class DiskAndFixedStatusTests(SimpleTestCase):
 
     def test_lan_and_cloud_are_off_in_this_release(self):
         self.assertEqual(lan_status().summary, "未開放（僅限本機）")
-        self.assertEqual(cloud_status().summary, "未連線")
+        self.assertEqual(cloud_status(CloudLink()).summary, "未連線")
+
+    def test_cloud_status_reflects_link(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        linked = CloudLink(api_url="https://c", node_uuid="99999999-9999-9999-9999-999999999999",
+                           last_success_at=timezone.now() - timedelta(minutes=3))
+        self.assertEqual(cloud_status(linked).state, "ok")
+        failing = CloudLink(api_url="https://c", node_uuid="99999999-9999-9999-9999-999999999999",
+                            last_error_kind="unauthorized", last_error_message="revoked")
+        item = cloud_status(failing)
+        self.assertEqual(item.state, "warn")
+        self.assertIn("雲端連線已撤銷，請重新連結", item.summary)
 
     def test_pending_items_come_from_warnings(self):
         paths = NodePaths(Path("."))

@@ -224,3 +224,23 @@ class ParentWatchTests(SimpleTestCase):
             worker_command(executable="C:/app/FIH.exe", frozen=True, parent_pid=42),
             ["C:/app/FIH.exe", "--worker", "--parent-pid", "42"],
         )
+
+
+class RunPeriodicallyTests(SimpleTestCase):
+    def test_runs_until_stopped_and_survives_errors(self):
+        import threading
+
+        from desktop_app.node_runtime import run_periodically
+
+        stop = threading.Event()
+        calls = []
+
+        def work():
+            calls.append(1)
+            if len(calls) == 1:
+                raise RuntimeError("boom")
+            if len(calls) == 3:
+                stop.set()
+
+        run_periodically(stop, 0.01, work)
+        self.assertEqual(len(calls), 3)
