@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from feedback.models import Question
+from feedback.question_schema import derive_data_type
 
 
 ALLOWED_NORMALIZERS = {
@@ -204,16 +205,8 @@ def _question_spec(value, index):
         raise MappingConfigError(f"{path}.kind 不受支援：{kind}")
     if data_type not in Question.DataType.values:
         raise MappingConfigError(f"{path}.data_type 不受支援：{data_type}")
-    allowed_types = {
-        Question.Kind.SHORT_TEXT: {Question.DataType.TEXT},
-        Question.Kind.LONG_TEXT: {Question.DataType.TEXT},
-        Question.Kind.SINGLE_CHOICE: {Question.DataType.NOMINAL, Question.DataType.ORDINAL},
-        Question.Kind.MULTIPLE_CHOICE: {Question.DataType.NOMINAL},
-        Question.Kind.INTEGER: {Question.DataType.DISCRETE},
-        Question.Kind.DECIMAL: {Question.DataType.CONTINUOUS},
-        Question.Kind.SCALE: {Question.DataType.ORDINAL},
-    }
-    if data_type not in allowed_types[kind]:
+    # The same rule as the builder: the data type follows from the kind (builder spec §1, §6).
+    if data_type != derive_data_type(kind, ordered=data_type == Question.DataType.ORDINAL):
         raise MappingConfigError(f"{path} 的 kind 與 data_type 不相容")
     normalizers_value = value.get("normalizers", [])
     if not isinstance(normalizers_value, list):

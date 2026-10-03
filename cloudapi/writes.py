@@ -128,6 +128,18 @@ def create_survey(definition):
 
 
 @transaction.atomic
+def create_imported_survey(definition):
+    """Dataset import: a survey created already published at version 1 (builder spec §6, §7.1)."""
+
+    definition = validate_definition(definition)
+    survey = Survey(uuid=definition["survey_uuid"], slug=definition["slug"])
+    now = timezone.now().isoformat()
+    published = {**definition, "published": True, "published_version": 1, "published_at": now,
+                 "analysis_definition_version": 1}
+    return _locked_write(survey, expected_version=None, definition=published)
+
+
+@transaction.atomic
 def create_node_survey(node, definition):
     definition = validate_definition(definition)
     existing = Survey.objects.select_for_update().filter(uuid=definition["survey_uuid"]).first()
