@@ -8,7 +8,7 @@ UI_LABELS = dict(UI_TYPE_LABELS)
 
 def _base(position):
     return {
-        "uuid": "", "position": position, "ui_type": "short_text", "title": "", "help_text": "", "is_required": True,
+        "uuid": "", "position": position, "ui_type": "", "title": "", "help_text": "", "is_required": True,
         "enable_keyword_tracking": False, "ordered": False, "score_start": 1, "allow_decimal": False,
         "scale_min": 1, "scale_max": 5, "scale_min_label": "", "scale_max_label": "", "rows": [],
         "errors": {}, "non_field_errors": [], "is_open": False, "is_active": True,
@@ -37,7 +37,7 @@ def card_from_form(form, position):
     data = form.data
     card = _base(position)
     card.update(
-        uuid=data.get("question_uuid", ""), ui_type=data.get("ui_type", "short_text"), title=data.get("title", ""),
+        uuid=data.get("question_uuid", ""), ui_type=data.get("ui_type", ""), title=data.get("title", ""),
         help_text=data.get("help_text", ""), is_required=bool(data.get("is_required")),
         enable_keyword_tracking=bool(data.get("enable_keyword_tracking")), ordered=bool(data.get("ordered")),
         score_start=data.get("score_start", 1), allow_decimal=bool(data.get("allow_decimal")),
@@ -64,5 +64,5 @@ def build_cards(survey, card_form=None):
         else:
             cards[match] = card_from_form(card_form, match + 1)
     for card in [*cards, new_card]:
-        card["type_label"] = UI_LABELS.get(card["ui_type"], card["ui_type"])
+        card["type_label"] = UI_LABELS.get(card["ui_type"], "")
     return cards, new_card

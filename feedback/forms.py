@@ -9,6 +9,7 @@ from .question_schema import kind_display_for, normalize_question, question_erro
 
 class SurveyFormBuilder(forms.Form):
     def __init__(self, *args, survey: Survey, **kwargs):
+        kwargs.setdefault("label_suffix", "")  # question titles end with their own punctuation
         super().__init__(*args, **kwargs)
         self.survey = survey
         for question in survey.questions.filter(is_active=True):
@@ -163,7 +164,6 @@ class SurveyCreateForm(forms.ModelForm):
             "category",
             "description",
             "thank_you_email_enabled",
-            "is_active",
             "analysis_enabled",
         )
         labels = {
@@ -171,8 +171,7 @@ class SurveyCreateForm(forms.ModelForm):
             "category": "問卷分類",
             "description": "問卷說明",
             "thank_you_email_enabled": "完成後寄送確認信",
-            "is_active": "立即啟用問卷",
-            "analysis_enabled": "納入分析",
+            "analysis_enabled": "自動分析",
         }
         widgets = {
             "description": forms.Textarea(attrs={"rows": 4}),
@@ -180,11 +179,11 @@ class SurveyCreateForm(forms.ModelForm):
 
 
 UI_TYPE_LABELS = (
-    ("short_text", "簡答"),
-    ("long_text", "段落"),
+    ("short_text", "單行文字"),
+    ("long_text", "多行文字"),
     ("radio", "選擇題"),
-    ("dropdown", "下拉選單"),
     ("checkbox", "核取方塊"),
+    ("dropdown", "下拉選單"),
     ("scale", "線性刻度"),
     ("number", "數字"),
 )
@@ -195,7 +194,7 @@ class QuestionCardForm(forms.Form):
     """One question card of the builder (spec §3); the server derives kind, display and data type."""
 
     question_uuid = forms.CharField(required=False, widget=forms.HiddenInput)
-    ui_type = forms.ChoiceField(choices=UI_TYPE_LABELS, label="題型")
+    ui_type = forms.ChoiceField(choices=UI_TYPE_LABELS, label="題型", error_messages={"required": "請選擇題型"})
     title = forms.CharField(max_length=255, label="題目")
     help_text = forms.CharField(max_length=255, required=False, label="說明")
     is_required = forms.BooleanField(required=False, label="必填")
@@ -292,8 +291,8 @@ class SurveyEditForm(forms.ModelForm):
             "title": "問卷名稱",
             "category": "問卷分類",
             "description": "問卷說明",
-            "is_active": "立即啟用問卷",
-            "analysis_enabled": "納入分析",
+            "is_active": "收件中",
+            "analysis_enabled": "自動分析",
             "thank_you_email_enabled": "完成後寄送確認信",
         }
         widgets = {

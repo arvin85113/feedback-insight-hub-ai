@@ -507,7 +507,7 @@ class SurveyCreateView(DashboardBaseMixin, CreateView):
         try:
             self.object = create_draft({
                 "survey_uuid": survey_uuid, "title": data["title"], "description": data.get("description", ""),
-                "is_active": data.get("is_active", True), "analysis_enabled": data.get("analysis_enabled", True),
+                "is_active": True, "analysis_enabled": data.get("analysis_enabled", True),
                 "thank_you_email_enabled": data.get("thank_you_email_enabled", True),
                 "category": data["category"].name if data.get("category") else None,
             })

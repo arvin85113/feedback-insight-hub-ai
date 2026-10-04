@@ -75,7 +75,7 @@ Shared DB:
 - 導向登入 / 註冊
 
 ### 2. 問卷管理 (`/dashboard/forms/`)
-- 建立問卷：Google 表單式卡片，七種題型 — 簡答、段落、選擇題、下拉選單、核取方塊、線性刻度（起點 0／1、終點 2–10、兩端標籤）、數字（可允許小數）
+- 建立問卷：Google 表單式卡片，七種題型 — 單行文字、多行文字、選擇題、核取方塊、下拉選單、線性刻度（起點 0／1、終點 2–10、兩端標籤）、數字（可允許小數）
 - 資料型態由題型推得（`feedback/question_schema.py` 的 `derive_data_type`）：文字＝`text`、選擇題＝`nominal`（勾「有高低順序」為 `ordinal`）、核取方塊＝`nominal`、刻度＝`ordinal`、整數＝`discrete`、小數＝`continuous`；管理者看不到統計術語
 - 選項以代碼保存（`Question.choices`、`Answer.choice_codes`），有序題有分數，單選可標「不納入分析」（不參與檢定、另計 `excluded_n`）
 - 生命週期：草稿可編輯 → 發布後題目固定（只能改收件狀態、封存、分類、分析開關、感謝信、改善追蹤）→ 改版請「複製為新草稿」；所有問卷定義只經 `cloudapi.writes` 的受控入口寫入，每個版本都存 revision

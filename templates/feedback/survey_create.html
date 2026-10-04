@@ -35,25 +35,16 @@
         </div>
 
         <div class="setting-block">
-            <div class="setting-block-header">發佈設定</div>
-            <label class="toggle-label">
-                <div class="toggle-wrapper">
-                    {{ form.is_active }}
-                    <span class="toggle-track"><span class="toggle-thumb"></span></span>
-                </div>
-                <div class="toggle-text">
-                    <span class="toggle-title">立即啟用問卷</span>
-                    <span class="toggle-desc">未開啟則儲存為草稿，可稍後從問卷管理頁啟用</span>
-                </div>
-            </label>
+            <div class="setting-block-header">發布設定</div>
+            <p class="toggle-desc">建立後是草稿，可隨時修改題目；按「發布」後定稿並開始收件。</p>
             <label class="toggle-label">
                 <div class="toggle-wrapper">
                     {{ form.analysis_enabled }}
                     <span class="toggle-track"><span class="toggle-thumb"></span></span>
                 </div>
                 <div class="toggle-text">
-                    <span class="toggle-title">納入分析</span>
-                    <span class="toggle-desc">關閉時仍保留問卷與歷史結果，但不安排新的背景分析</span>
+                    <span class="toggle-title">自動分析</span>
+                    <span class="toggle-desc">關閉後不再排程統計、文字與 AI 分析；已發布結果保留</span>
                 </div>
             </label>
         </div>
@@ -67,14 +58,6 @@
                     <span class="checkbox-desc">填答者提交後將收到一封回覆確認信</span>
                 </div>
             </label>
-        </div>
-
-        <div class="info-callout">
-            <span class="info-callout-icon">💡</span>
-            <div>
-                <div class="info-callout-title">智能分析已就緒</div>
-                <div class="info-callout-desc">本問卷將自動啟用數據追蹤，收集完成後即可直接進行趨勢分析與統計推論。</div>
-            </div>
         </div>
 
         <button type="submit" class="button button-primary">建立並開始設計題目</button>
