@@ -16,6 +16,8 @@
     const nextBtn   = document.getElementById('surveyNext');
     const submitBtn = document.getElementById('surveySubmit');
     const fallback  = document.getElementById('surveyFallbackSubmit');
+    // The builder preview renders the questions without navigation; leave them all visible.
+    if (!nav || !fallback) return;
 
     // Activate step mode
     strip.style.display    = '';

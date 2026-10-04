@@ -121,6 +121,16 @@ class BuilderCardTests(TestCase):
         questions = {q.title: q.enable_keyword_tracking for q in self.refreshed().questions.all()}
         self.assertEqual(questions, {"建議": True, "姓名": False})
 
+    def test_new_card_has_no_question_type_until_chosen(self):
+        response = self.client.get(builder_url(self.survey))
+        self.assertContains(response, '<option value="" selected disabled>請選擇題型</option>', html=True)
+
+    def test_new_card_without_type_shows_error_and_saves_nothing(self):
+        response = self.post_card(ui_type="", title="還沒選題型")
+        self.assertContains(response, "請選擇題型", status_code=200)
+        self.assertContains(response, 'value="還沒選題型"', status_code=200)
+        self.assertFalse(self.refreshed().questions.exists())
+
     def test_move_announces_new_position(self):
         self.post_card(ui_type="short_text", title="A")
         self.post_card(ui_type="short_text", title="B")
@@ -129,3 +139,33 @@ class BuilderCardTests(TestCase):
             "action": "move-question", "direction": "up", "question_uuid": str(b.uuid),
             "definition_version": self.refreshed().definition_version}, follow=True)
         self.assertContains(response, "已移到第 1 題")
+
+
+@cloud_only
+class SurveyCreatePageTests(TestCase):
+    def setUp(self):
+        manager = get_user_model().objects.create_user(username="m", password="x", role="manager")
+        self.client.force_login(manager)
+
+    def test_create_page_has_no_activation_toggle_or_promo(self):
+        response = self.client.get(reverse("feedback:survey-create"))
+        self.assertNotContains(response, "立即啟用問卷")
+        self.assertNotContains(response, "智能分析已就緒")
+        self.assertNotContains(response, "發佈")
+        self.assertContains(response, "自動分析")
+
+    def test_created_survey_is_an_accepting_draft(self):
+        response = self.client.post(reverse("feedback:survey-create"), {
+            "title": "咖啡店", "description": "", "analysis_enabled": "on", "thank_you_email_enabled": "on"})
+        self.assertEqual(response.status_code, 302)
+        survey = Survey.objects.get(title="咖啡店")
+        self.assertTrue(survey.is_active)
+        self.assertIsNone(survey.published_version)
+
+    def test_settings_panel_uses_current_wording(self):
+        survey = survey_lifecycle.create_draft({"title": "咖啡店"})
+        response = self.client.get(builder_url(survey))
+        self.assertContains(response, "收件中")
+        self.assertContains(response, "自動分析")
+        self.assertNotContains(response, "發佈")
+        self.assertNotContains(response, "立即啟用問卷")

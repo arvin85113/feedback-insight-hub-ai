@@ -163,7 +163,6 @@ class SurveyCreateForm(forms.ModelForm):
             "category",
             "description",
             "thank_you_email_enabled",
-            "is_active",
             "analysis_enabled",
         )
         labels = {
@@ -171,8 +170,7 @@ class SurveyCreateForm(forms.ModelForm):
             "category": "問卷分類",
             "description": "問卷說明",
             "thank_you_email_enabled": "完成後寄送確認信",
-            "is_active": "立即啟用問卷",
-            "analysis_enabled": "納入分析",
+            "analysis_enabled": "自動分析",
         }
         widgets = {
             "description": forms.Textarea(attrs={"rows": 4}),
@@ -195,7 +193,7 @@ class QuestionCardForm(forms.Form):
     """One question card of the builder (spec §3); the server derives kind, display and data type."""
 
     question_uuid = forms.CharField(required=False, widget=forms.HiddenInput)
-    ui_type = forms.ChoiceField(choices=UI_TYPE_LABELS, label="題型")
+    ui_type = forms.ChoiceField(choices=UI_TYPE_LABELS, label="題型", error_messages={"required": "請選擇題型"})
     title = forms.CharField(max_length=255, label="題目")
     help_text = forms.CharField(max_length=255, required=False, label="說明")
     is_required = forms.BooleanField(required=False, label="必填")
@@ -292,8 +290,8 @@ class SurveyEditForm(forms.ModelForm):
             "title": "問卷名稱",
             "category": "問卷分類",
             "description": "問卷說明",
-            "is_active": "立即啟用問卷",
-            "analysis_enabled": "納入分析",
+            "is_active": "收件中",
+            "analysis_enabled": "自動分析",
             "thank_you_email_enabled": "完成後寄送確認信",
         }
         widgets = {
