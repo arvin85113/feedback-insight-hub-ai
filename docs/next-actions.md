@@ -3,10 +3,13 @@
 只記錄**目前**狀態與未完成事項；完成的項目直接刪除，不保留歷史（歷史看 Git log）。
 實際程式、資料庫與驗證證據優先於本文件；標示「待確認」者不可當成事實。
 
-## 目前狀態（2026-09-29 查證）
+## 目前狀態（2026-10-04 查證）
 
 **部署**
-- `main` 由 GitHub Actions CI 驗證（Python 3.13 全套測試＋PostgreSQL 17 併發測試），合併後 Render 自動部署。
+- `main` 由 GitHub Actions CI 驗證（Python 3.13 全套測試＋本機節點模式＋PostgreSQL 17 併發測試）。
+  Render 設定為 CI 通過後自動部署，Build Command 為 `bash build.sh`（含 `migrate`）；
+  **合併含 migration 的 PR 就等於對正式資料庫套用 migration**，需要先處理資料的 migration 要等處理完再合併。
+  Render 服務不是 Blueprint 建立的，`render.yaml` 不會套用，實際設定以 Dashboard 為準（見 [除錯筆記](debugging-notes.md)）。
   目前 Live 的 commit 以 Render Dashboard 為準。
 - 網站（本機與 Render）分析頁只讀已發布結果；`/healthz/`、`/healthz/db/` 健康檢查；資料庫無法連線時回 503 提示頁。
 - `.github/workflows/keepalive.yml` 每三天呼叫 `/healthz/db/`，避免 Supabase 因閒置暫停。
@@ -20,11 +23,17 @@
 **分析與 Gemini**
 - `GEMINI_MODEL=gemini-3.6-flash`（Vertex／Agent Platform express mode）；gemini-2.5-flash 預定 2026-10 停用。
 - Prompt 為 evidence-grounded：AI 文字中的數字須能對應所引用 evidence（`feedback/ai_grounding.py`）。
-- TripAdvisor（201,295 筆，現行管線）與飲料店問卷的三段 Gemini 結果皆為 gemini-3.6-flash、綜合解析 prompt `4-29b4625aa1`。
-  「2026 Q1 跨部門…」（46 筆）仍是前一版綜合解析 prompt（`4-e242379872`），桌面工作台會顯示「待更新」。
+- 正式站只有兩份展示問卷：TripAdvisor（201,295 筆，現行管線）與飲料店（`seed_demo_beverage` 模擬 100 筆，種子 7）。
+  兩者的三段 Gemini 結果皆為 gemini-3.6-flash、綜合解析 prompt `4-29b4625aa1`。
 - 驗證規則：綜合解析與其他兩段一致，單一不合格的發現或改善草稿只捨棄該項（原因記於 `discarded_finding_reasons`）；
   未對應 evidence 的數字記於 `ungrounded_numbers`／`discarded_ungrounded_numbers`（只存數字）。負值 evidence 可引用其絕對值。
 - TripAdvisor 來源：本機 clean Parquet 201,295 筆，已登錄為外部分析來源。
+
+**問卷與同步**
+- **雲端同步**（規格 `2026-10-01-cloud-sync-design.md`）：C1 問卷定義同步、C2 收件匣、C3 結果上傳已完成（原型，閘門預設關閉）；
+  C4 搬移擱置（收件節點在發布時決定，不搬移既有回覆）。本機節點計畫 B 仍暫停。
+- **問卷建立工具**（規格 `2026-10-03-survey-builder-redesign-design.md`）已部署，介面為 Google 表單式卡片；
+  之後處理通知系統。
 
 **桌面工作台／EXE**
 - `dist/FeedbackInsightHub/` 為單一 windowed 版；錯誤寫入 `%LOCALAPPDATA%\FeedbackInsightHub\logs\desktop.log`。
@@ -33,20 +42,8 @@
 
 ## 待辦（依優先順序）
 
-0. **AI 評估下一輪**：依 [AI 輸出評估](ai-eval.md) 的發現，在引用代號寫法加上「句中代號也計入 4 筆引用上限」的規則並重跑評估（付費，需授權）；
+1. **AI 評估下一輪**：依 [AI 輸出評估](ai-eval.md) 的發現，在引用代號寫法加上「句中代號也計入 4 筆引用上限」的規則並重跑評估（付費，需授權）；
    若穩定優於現行寫法，再規劃改進正式綜合解析。案例說明見 [case-study](case-study.md)。
-1. **重跑 Gemini**（付費，需授權）：「2026 Q1 跨部門…」問卷的綜合解析改用目前 prompt；該問卷將在建立工具改版部署時清除，屆時此項取消。
-- **雲端同步**（規格 `2026-10-01-cloud-sync-design.md`）：C1 問卷定義同步、C2 收件匣、C3 結果上傳已完成（原型，閘門預設關閉）；
-  C4 搬移擱置（收件節點在發布時決定，不搬移既有回覆）。本機節點計畫 B 仍暫停。
-- **問卷建立工具改版**（規格 `2026-10-03-survey-builder-redesign-design.md`）：程式已完成，尚未部署。部署依規格 §7.5，**每一步都需另行授權**：
-  1. `purge_survey` 已合併；確認 Render 已部署該版本。
-  2. 備份 Supabase，還原到隔離資料庫；在隔離資料庫上依序：`purge_survey --survey <slug> --confirm` 清除飲料店、2026 Q1 跨部門、`123` 三份問卷
-     → `migrate` → `survey_conversion_report`（唯讀）確認每份問卷已發布、revision 齊全、題目已轉換、TripAdvisor 已發布結果仍為最新。
-  3. 正式資料庫執行同樣的 `purge_survey` 三份舊問卷，再部署改版（`build.sh` 套用 migration 0023／0024）。
-  4. 若資料轉換中止：部署失敗、舊程式繼續執行（0023 只新增欄位，不影響舊程式），依中止訊息處理後重新部署；轉換後發現資料錯誤則以第 2 步的備份還原。
-  5. `seed_demo_beverage --reset --yes` 重新模擬飲料店並發布分析；AI 段落使用 Gemini 另行授權。
-  6. 本機節點資料庫（只有測試資料）整個重建。
-  之後處理通知系統。
 2. **機器學習**：先決定目標（展示或實用）、運算資源（CPU／GPU）、EXE 大小容忍度；建議起點為關鍵驅動因子分析與
    TF-IDF＋邏輯迴歸文字分類，使用依日期的固定切分，並與現行詞典方法比較。
 3. **為 ML 調整 schema**（需 migration 與授權）：`Answer` 加數值欄位、選項表（穩定 key）、題目版本、
