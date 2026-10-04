@@ -5499,6 +5499,61 @@ input[type="checkbox"] {
     font-weight: 500;
 }
 
+/* ── Linear scale on the fill page: one row of numbered options between the end labels ──
+   (customer pages and the manager's builder preview both render survey_detail) */
+.survey-card .scale-field {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.survey-card .scale-end-label {
+    font-size: 14px;
+    color: var(--c-ink-500);
+}
+
+.survey-card .scale-buttons > div[id] {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.survey-card .scale-buttons > div[id] > div > label {
+    display: flex;
+    flex-direction: column-reverse;
+    align-items: center;
+    gap: 6px;
+    min-width: 44px;
+    padding: 8px 10px;
+    border: 1px solid var(--c-line);
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    user-select: none;
+}
+
+.survey-card .scale-buttons > div[id] > div > label:hover {
+    border-color: #9a9590;
+}
+
+.survey-card .scale-buttons input[type="radio"] {
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    margin: 0;
+    flex: none;
+    accent-color: var(--c-brand-700);
+    cursor: pointer;
+}
+
+.survey-card .scale-buttons > div[id] > div > label:has(input:checked) {
+    border-color: var(--c-brand-700);
+    background: var(--c-brand-50);
+    color: var(--c-brand-900);
+}
+
 .customer-workspace-body .site-header {
     background: rgba(244, 241, 234, 0.94);
     border-bottom: 1px solid var(--c-line);

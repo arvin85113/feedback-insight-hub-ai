@@ -9,6 +9,7 @@ from .question_schema import kind_display_for, normalize_question, question_erro
 
 class SurveyFormBuilder(forms.Form):
     def __init__(self, *args, survey: Survey, **kwargs):
+        kwargs.setdefault("label_suffix", "")  # question titles end with their own punctuation
         super().__init__(*args, **kwargs)
         self.survey = survey
         for question in survey.questions.filter(is_active=True):
