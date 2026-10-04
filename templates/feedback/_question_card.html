@@ -26,8 +26,8 @@
                     </ul>
                 {% elif card.ui_type == "scale" %}
                     <p class="q-preview-line">{{ card.scale_min }}{% if card.scale_min_label %}（{{ card.scale_min_label }}）{% endif %} – {{ card.scale_max }}{% if card.scale_max_label %}（{{ card.scale_max_label }}）{% endif %}</p>
-                {% elif card.ui_type == "short_text" %}<p class="q-preview-line">簡答文字</p>
-                {% elif card.ui_type == "long_text" %}<p class="q-preview-line">段落文字</p>
+                {% elif card.ui_type == "short_text" %}<p class="q-preview-line">單行文字回答</p>
+                {% elif card.ui_type == "long_text" %}<p class="q-preview-line">多行文字回答</p>
                 {% elif card.ui_type == "number" %}<p class="q-preview-line">{% if card.allow_decimal %}數字（可含小數）{% else %}整數{% endif %}</p>
                 {% endif %}
             </div>
@@ -159,8 +159,8 @@
                 <p class="hint-text">允許小數的數字題可做平均數比較與相關分析；整數題提供描述統計。</p>
             </div>
 
-            <div class="q-card-section" data-section="short_text"><p class="q-answer-preview">簡答文字</p></div>
-            <div class="q-card-section" data-section="long_text"><p class="q-answer-preview q-answer-preview-long">段落文字</p></div>
+            <div class="q-card-section" data-section="short_text"><p class="q-answer-preview">單行文字回答</p></div>
+            <div class="q-card-section" data-section="long_text"><p class="q-answer-preview q-answer-preview-long">多行文字回答</p></div>
             <div class="q-card-section" data-section="short_text long_text">
                 <label class="checkbox-label"><input type="checkbox" name="enable_keyword_tracking" data-tracking {% if card.enable_keyword_tracking %}checked{% endif %}> 納入文字分析</label>
                 <p class="hint-text">開啟後，答案會進入斷詞、關鍵字、情緒與 AI 文字分析。</p>

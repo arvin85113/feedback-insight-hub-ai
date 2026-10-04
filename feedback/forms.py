@@ -179,11 +179,11 @@ class SurveyCreateForm(forms.ModelForm):
 
 
 UI_TYPE_LABELS = (
-    ("short_text", "簡答"),
-    ("long_text", "段落"),
+    ("short_text", "單行文字"),
+    ("long_text", "多行文字"),
     ("radio", "選擇題"),
-    ("dropdown", "下拉選單"),
     ("checkbox", "核取方塊"),
+    ("dropdown", "下拉選單"),
     ("scale", "線性刻度"),
     ("number", "數字"),
 )

@@ -66,6 +66,7 @@
             section.hidden = !visible;
             section.querySelectorAll('input, select').forEach(input => { input.disabled = !visible; });
         });
+        if (select.renderPicker) select.renderPicker();
         const pill = card.querySelector('[data-type-pill]');
         if (pill) pill.textContent = select.selectedIndex >= 0 && type ? select.options[select.selectedIndex].text : '';
         const rows = card.querySelector('[data-choice-rows]');
@@ -170,6 +171,101 @@
         });
     }
 
+    // ── Question type menu with icons and groups, like Google Forms. The native select stays
+    //    in the form (and stays visible if this script fails); the menu only drives it. ──
+    const svg = body => `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+    const TYPE_ICONS = {
+        short_text: svg('<path d="M4 9h16M4 15h10"/>'),
+        long_text: svg('<path d="M4 6h16M4 10h16M4 14h16M4 18h10"/>'),
+        radio: svg('<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5" fill="currentColor"/>'),
+        checkbox: svg('<rect x="4" y="4" width="16" height="16" rx="2.5"/><path d="M8 12.5l3 3 5-6"/>'),
+        dropdown: svg('<circle cx="12" cy="12" r="8"/><path d="M8.5 10.5 12 14l3.5-3.5"/>'),
+        scale: svg('<path d="M4 12h16"/><circle cx="6" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="18" cy="12" r="1.6" fill="currentColor"/>'),
+        number: svg('<path d="M9 4 7 20M17 4l-2 16M4.5 9h15M3.5 15h15"/>'),
+    };
+    const GROUP_ENDS = ['long_text', 'dropdown'];  // a divider follows these, as in Google Forms
+
+    function buildTypePicker(card) {
+        const select = card.querySelector('[data-ui-type]');
+        if (!select) return;
+        const picker = document.createElement('div');
+        picker.className = 'type-picker';
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'type-picker-button';
+        button.setAttribute('aria-haspopup', 'listbox');
+        button.setAttribute('aria-expanded', 'false');
+        const menu = document.createElement('ul');
+        menu.className = 'type-picker-menu';
+        menu.setAttribute('role', 'listbox');
+        menu.hidden = true;
+        Array.from(select.options).filter(option => option.value).forEach(option => {
+            const item = document.createElement('li');
+            item.setAttribute('role', 'option');
+            item.tabIndex = -1;
+            item.dataset.value = option.value;
+            item.innerHTML = `${TYPE_ICONS[option.value] || ''}<span></span>`;
+            item.querySelector('span').textContent = option.text;
+            menu.appendChild(item);
+            if (GROUP_ENDS.includes(option.value)) {
+                const divider = document.createElement('li');
+                divider.className = 'type-picker-divider';
+                divider.setAttribute('role', 'separator');
+                menu.appendChild(divider);
+            }
+        });
+        picker.append(button, menu);
+        select.after(picker);
+        select.classList.add('type-picker-native');
+
+        const items = () => Array.from(menu.querySelectorAll('[role="option"]'));
+        const render = () => {
+            const value = select.value;
+            button.innerHTML = `${TYPE_ICONS[value] || ''}<span></span><span class="type-picker-caret" aria-hidden="true">▾</span>`;
+            button.querySelector('span').textContent = value ? select.options[select.selectedIndex].text : '請選擇題型';
+            button.classList.toggle('is-empty', !value);
+            items().forEach(item => item.setAttribute('aria-selected', item.dataset.value === value ? 'true' : 'false'));
+        };
+        const close = () => { menu.hidden = true; button.setAttribute('aria-expanded', 'false'); };
+        const open = () => {
+            menu.hidden = false;
+            button.setAttribute('aria-expanded', 'true');
+            (items().find(item => item.dataset.value === select.value) || items()[0]).focus();
+        };
+        const choose = value => {
+            close();
+            button.focus();
+            if (select.value === value) return;
+            select.value = value;
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+        };
+        button.addEventListener('click', () => (menu.hidden ? open() : close()));
+        menu.addEventListener('click', event => {
+            const item = event.target.closest('[role="option"]');
+            if (item) choose(item.dataset.value);
+        });
+        menu.addEventListener('keydown', event => {
+            const list = items();
+            const index = list.indexOf(document.activeElement);
+            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                event.preventDefault();
+                const step = event.key === 'ArrowDown' ? 1 : -1;
+                list[(index + step + list.length) % list.length].focus();
+            } else if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                if (index >= 0) choose(list[index].dataset.value);
+            } else if (event.key === 'Escape') {
+                event.preventDefault();
+                close();
+                button.focus();
+            }
+        });
+        document.addEventListener('click', event => { if (!picker.contains(event.target)) close(); });
+        select.addEventListener('change', render);
+        select.renderPicker = render;  // form.reset() changes the select without a change event
+        render();
+    }
+
     function toggleCard(card) {
         const form = formOf(card);
         if (!form) return;
@@ -210,6 +306,7 @@
             });
         }
         enableDrag(card);
+        buildTypePicker(card);
 
         form.addEventListener('input', () => refresh(card));
         form.addEventListener('change', () => refresh(card));
