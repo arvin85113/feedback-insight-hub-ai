@@ -10,6 +10,15 @@
   若在某個資料庫的 `django_migrations` 看到 `0010_remove_answer_analysis_text_and_more` 或
   `0011_improvementdispatch_is_read`，代表該資料庫曾被錯誤操作，需先比對實際欄位再處理，不可直接 `migrate`。
 
+## 部署
+
+- Render 服務是在 Dashboard 手動建立的，不是 Blueprint，`render.yaml` 的設定不會套用。
+  Build Command 曾經只有 `pip install -r requirements.txt`，導致新程式上線但正式資料庫沒套用 migration，
+  管理頁出現 500（例如 `column feedback_survey.uuid does not exist`）。現在 Dashboard 已改為 `bash build.sh`。
+- 判斷正式站跑哪一版：比對正式站 `/static/...` 檔案與 `git show <commit>:static/...` 的雜湊。
+  登入頁使用 `public_base.html`，其樣式版本參數不一定隨每次發版更新，不能單獨拿來判斷版本。
+- 本機 `.env` 的 `DATABASE_URL` 指向正式 Supabase；未加 `--settings=config.settings_test` 的 `manage.py` 指令都會作用在正式資料庫。
+
 ## 帳號與郵件
 
 - 新註冊的顧客必須驗證 Email 才能登入（`User.is_email_verified`）；管理者與 superuser 不受限。
