@@ -16,6 +16,17 @@ class AnalysisSourceConfigurationError(RuntimeError):
     """The survey's configured input cannot safely be used by a worker."""
 
 
+def external_version_identity(version):
+    """Bounded public provenance; never includes local paths, rows or user identifiers."""
+
+    return {
+        "kind": AnalysisJob.SourceKind.EXTERNAL,
+        **{key: getattr(version, key) for key in (
+            "source_ref", "source_version", "content_sha256", "schema_sha256", "mapping_key", "mapping_version"
+        )},
+    }
+
+
 @dataclass(frozen=True)
 class AnalysisSourceBinding:
     kind: str

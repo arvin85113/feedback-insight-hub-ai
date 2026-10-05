@@ -39,6 +39,14 @@ def _upsert_locked(definition, version):
     if created:
         survey = Survey(uuid=definition["survey_uuid"])
     apply_definition(survey, definition, version=version)
+    if definition.get("external_source"):
+        from cloudapi.external_sources import registration_kwargs
+        from feedback.analysis_sources import register_external_dataset_version
+        register_external_dataset_version(survey.pk, **registration_kwargs(definition["external_source"]))
+    else:
+        from feedback.analysis_sources import resolve_analysis_source
+        if resolve_analysis_source(survey).is_external:
+            raise ValueError("外部定義缺少來源 metadata；保留既有版本")
     if created:
         # Marks the survey as a cloud copy before the first sync cycle (builder spec §7.4).
         SurveySyncState.objects.get_or_create(survey=survey)

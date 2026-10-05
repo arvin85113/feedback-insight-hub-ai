@@ -280,6 +280,22 @@ def _expected_question(spec, code, order):
     }
 
 
+def mapping_definition(mapping, survey_uuid):
+    """Reusable definition only; no submissions, downloads or database writes."""
+    from cloudapi.definition import blank_definition
+
+    definition = blank_definition(
+        survey_uuid, title=mapping.survey.title, description=mapping.survey.description,
+        is_active=False, thank_you_email_enabled=False, improvement_tracking_enabled=False,
+    )
+    definition["questions"] = [
+        {"uuid": str(uuid.uuid5(uuid.UUID(str(survey_uuid)), code)),
+         **{key: value for key, value in _question_item(spec, code, order).items() if key != "options_text"}}
+        for order, (spec, code) in enumerate(zip(mapping.questions, _question_codes(mapping)), start=1)
+    ]
+    return definition
+
+
 def mapping_compatibility_errors(mapping, survey):
     """Fields where the survey's questions differ from the mapping, as `"<title>: <field>"` strings."""
 

@@ -3,6 +3,12 @@ from django.contrib.auth import get_user_model, password_validation
 from django.core.exceptions import ValidationError
 
 
+class DatasetRegistrationForm(forms.Form):
+    manifest_path = forms.CharField(label="本機 manifest 路徑", max_length=1024)
+    mapping_path = forms.CharField(label="本機 mapping 路徑", max_length=1024)
+    confirmation = forms.CharField(required=False, widget=forms.HiddenInput)
+
+
 class OrganizationSettingsForm(forms.Form):
     name = forms.CharField(label="組織名稱", max_length=120)
 

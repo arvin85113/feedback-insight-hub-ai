@@ -87,6 +87,9 @@ def _lifecycle(survey, definition):
 
     _check_choice_codes(survey, definition)
     definition = dict(definition)
+    current_source = serialize_definition(survey).get("external_source")
+    if definition.get("external_source") != current_source:
+        raise DefinitionError("來源版本只能經外部資料登錄入口更新")
     next_version = survey.definition_version + 1
     definition.update(
         published_version=survey.published_version,
@@ -103,7 +106,7 @@ def _lifecycle(survey, definition):
     if definition["published"]:
         if not definition["questions"]:
             raise DefinitionError("至少需要一題才能發布")
-        if survey.owner_node_id and not settings.CLOUD_INBOX_ENABLED:
+        if survey.owner_node_id and not current_source and not settings.CLOUD_INBOX_ENABLED:
             raise PublishBlocked()
         definition.update(
             published_version=next_version,
@@ -124,7 +127,7 @@ def change_definition(survey_uuid, *, expected_version, definition):
         definition={**definition, "survey_uuid": str(survey.uuid), "slug": survey.slug},
         prepare=_lifecycle,
     )
-    if publishing and survey.owner_node_id:
+    if publishing and survey.owner_node_id and not definition.get("external_source"):
         Survey.objects.filter(pk=survey.pk).update(inbox_since=timezone.now())
     return revision
 
@@ -158,6 +161,8 @@ def create_imported_survey(definition):
 @transaction.atomic
 def create_node_survey(node, definition):
     definition = validate_definition(definition)
+    if definition.get("external_source"):
+        raise DefinitionError("外部問卷須經資料集登錄入口建立")
     existing = Survey.objects.select_for_update().filter(uuid=definition["survey_uuid"]).first()
     if existing is not None:
         if existing.owner_node_id != node.pk:

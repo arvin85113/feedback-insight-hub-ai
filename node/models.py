@@ -35,6 +35,19 @@ class NodeInstallation(models.Model):
         return self.setup_completed_at is not None
 
 
+class LocalDatasetLocation(models.Model):
+    """Node-only locator for one immutable dataset version; never sent to the cloud."""
+
+    version = models.OneToOneField(
+        "feedback.ExternalDatasetVersion", on_delete=models.PROTECT, related_name="local_location"
+    )
+    manifest_path = models.TextField()
+    mapping_path = models.TextField()
+    manifest_sha256 = models.CharField(max_length=64)
+    mapping_sha256 = models.CharField(max_length=64)
+    verified_at = models.DateTimeField(auto_now=True)
+
+
 class AuditEventQuerySet(models.QuerySet):
     def update(self, **kwargs):
         raise AuditLogImmutable("稽核紀錄不可修改")

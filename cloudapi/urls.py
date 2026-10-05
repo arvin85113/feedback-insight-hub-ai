@@ -5,6 +5,7 @@ from . import views
 app_name = "cloudapi"
 
 urlpatterns = [
+    path("datasets/register/", views.external_dataset_register, name="dataset-register"),
     path("surveys/snapshot/", views.survey_snapshot, name="survey-snapshot"),
     path("surveys/changes/", views.survey_changes, name="survey-changes"),
     path("surveys/<uuid:survey_uuid>/revisions/<int:version>/", views.survey_revision, name="survey-revision"),
