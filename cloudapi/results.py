@@ -13,7 +13,8 @@ from django.db import transaction
 from django.db.models import F
 
 from feedback.analysis_jobs import _bounded_json
-from feedback.models import Survey, SurveyAnalysisState
+from feedback.analysis_sources import external_version_identity, resolve_analysis_source
+from feedback.models import ExternalDatasetVersion, Survey, SurveyAnalysisState
 
 from .envelope import canonical_bytes, sha256_hex
 from .models import PublishedResultRecord
@@ -80,7 +81,36 @@ def _validate(node, publish_uuid, publish_sequence, content_hash, content):
         raise ResultInvalid("published_at is not an ISO datetime") from exc
     if published_at.tzinfo is None:
         raise ResultInvalid("published_at must include a time zone")
+    _validate_source(survey, content)
     return publish_uuid, survey, definition_version, watermark, published_at
+
+
+def _validate_source(survey, content):
+    binding = resolve_analysis_source(survey)
+    identity = content.get("input_source", {"kind": "answers"})
+    if not isinstance(identity, dict):
+        raise ResultInvalid("input_source must be an object")
+    if identity.get("kind") == "answers":
+        if binding.is_external:
+            raise ResultInvalid("external survey requires a registered input_source")
+        if identity != {"kind": "answers"}:
+            raise ResultInvalid("unexpected answer source metadata")
+        return identity
+    if identity.get("kind") != "external" or not binding.is_external:
+        raise ResultInvalid("input_source does not match survey kind")
+    fields = {"kind", "source_ref", "source_version", "content_sha256", "schema_sha256", "mapping_key", "mapping_version"}
+    if set(identity) != fields or any(not isinstance(value, str) or len(value) > 255 for value in identity.values()):
+        raise ResultInvalid("invalid external source metadata")
+    version = ExternalDatasetVersion.objects.filter(
+        source__survey=survey,
+        source_ref=identity.get("source_ref"),
+        source_version=identity.get("source_version"),
+    ).first()
+    if version is None or identity != external_version_identity(version):
+        raise ResultInvalid("input_source is not a registered immutable version")
+    if content["analyzed_through_sequence"] != 0:
+        raise ResultInvalid("external input cannot have an inbox watermark")
+    return identity
 
 
 def apply_upload(node, *, publish_uuid, publish_sequence, content_hash, content):
@@ -89,6 +119,14 @@ def apply_upload(node, *, publish_uuid, publish_sequence, content_hash, content)
     )
     conflict_id = None
     with transaction.atomic():
+        # Source registration locks this same parent. Recheck ownership/versions under it,
+        # not a cached Survey or an earlier query outside the publication transaction.
+        survey = Survey.objects.select_for_update().filter(pk=survey.pk, owner_node=node).first()
+        if survey is None:
+            raise PermissionError("survey does not belong to this node")
+        input_source = _validate_source(survey, content)
+        if definition_version > survey.definition_version or watermark > survey.response_sequence:
+            raise ResultInvalid("result versions are ahead of the cloud")
         SurveyAnalysisState.objects.get_or_create(survey=survey)
         state = SurveyAnalysisState.objects.select_for_update().get(survey=survey)
         existing = PublishedResultRecord.objects.filter(publish_uuid=publish_uuid).first()
@@ -114,6 +152,12 @@ def apply_upload(node, *, publish_uuid, publish_sequence, content_hash, content)
                 and watermark >= state.analyzed_through_sequence
                 and definition_version >= state.definition_version
             )
+            if input_source["kind"] == "external":
+                binding = resolve_analysis_source(survey, lock=True)
+                newer = newer and (
+                    input_source["source_ref"] == binding.source_ref
+                    and input_source["source_version"] == binding.source_version
+                )
             if not newer:
                 return "stale", True
             ai_payload = content.get("ai_payload")
@@ -127,6 +171,7 @@ def apply_upload(node, *, publish_uuid, publish_sequence, content_hash, content)
                 "coverage": _bounded_json(content["coverage"]),
                 "ai_source": _bounded_json(content["ai_source"]),
                 "input_fingerprint": str(content.get("input_fingerprint", ""))[:128],
+                "input_source": input_source,
             }
             state.published_at = published_at
             state.published_snapshot = None

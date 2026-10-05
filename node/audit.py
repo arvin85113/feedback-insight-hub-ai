@@ -8,6 +8,7 @@ LOGIN_FAILED = "login.failed"
 ORGANIZATION_RENAMED = "organization.renamed"
 CLOUD_LINKED = "cloud.linked"
 CLOUD_UNLINKED = "cloud.unlinked"
+DATASET_REGISTERED = "dataset.registered"
 
 ACTION_LABELS = {
     SETUP_COMPLETED: "完成首次設定",
@@ -16,6 +17,7 @@ ACTION_LABELS = {
     ORGANIZATION_RENAMED: "變更組織名稱",
     CLOUD_LINKED: "連結雲端",
     CLOUD_UNLINKED: "中斷雲端連線",
+    DATASET_REGISTERED: "登錄外部資料集",
 }
 
 

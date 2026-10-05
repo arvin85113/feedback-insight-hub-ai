@@ -16,6 +16,7 @@
             <span class="analysis-publication-pill analysis-publication-pill-waiting">顯示上一版，等待新版分析</span>
         {% endif %}
         {% if node.has_result and not node.definition_current %}<span class="analysis-publication-note">問卷已變更，結果為舊版本</span>{% endif %}
+        {% if node.has_result and node.source_current == False %}<span class="analysis-publication-note">外部資料版本已變更，仍顯示上一版成功結果</span>{% endif %}
         {% if node.pending_new %}<span class="analysis-publication-note">有 {{ node.pending_new }} 筆新回覆尚未分析</span>{% endif %}
         {% if node.has_result %}<span class="analysis-publication-note">管線版本由本機申報{% if node.pipeline_declared.pipeline_version %}：{{ node.pipeline_declared.pipeline_version }}{% endif %}</span>{% endif %}
     {% elif analysis_publication.available %}

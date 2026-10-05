@@ -97,11 +97,22 @@ def _build_adapter(job, external_inputs):
         job.capture_scope = scope  # read again when the Snapshot is saved
         return adapter
     spec = (external_inputs or {}).get(job.source_ref)
+    if spec is None and settings.IS_NODE:
+        from node.datasets import input_for_job
+
+        spec = input_for_job(job)
     if spec is None:
         raise WorkerExecutionError("external_source_not_configured")
     adapter = ParquetInput(spec.manifest_path, spec.mapping_path)
     if adapter.dataset_version != job.source_version:
         raise WorkerExecutionError("external_source_version_mismatch")
+    if settings.IS_NODE:
+        from cloudsync.capture import CaptureScope
+
+        adapter.capture_scope = CaptureScope(
+            0, job.survey.analysis_definition_version or job.survey.definition_version,
+            None, {"voided": 0, "incomplete": 0},
+        )
     return adapter
 
 

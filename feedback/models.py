@@ -78,7 +78,9 @@ class Survey(models.Model):
 
     @property
     def accepts_responses(self):
-        return self.is_published and self.is_active and self.archived_at is None
+        from .analysis_sources import resolve_analysis_source
+        return (self.is_published and self.is_active and self.archived_at is None
+                and not resolve_analysis_source(self).is_external)
 
 
 class Question(models.Model):

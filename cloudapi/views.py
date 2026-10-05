@@ -94,6 +94,28 @@ def survey_create(request):
 
 
 @node_api
+@require_POST
+def external_dataset_register(request):
+    from .external_sources import register_node_dataset
+
+    body = read_json(request)
+    if not isinstance(body, dict) or set(body) != {"definition", "registration", "expected_version"}:
+        raise BadRequest("需要 definition、registration 與 expected_version")
+    if not isinstance(body["definition"], dict) or body["definition"].get("schema_version") != SCHEMA_VERSION:
+        raise BadRequest("只接受 schema_version 2")
+    try:
+        revision, created = register_node_dataset(request.node_device, **body)
+    except PermissionError:
+        return JsonResponse({"error": "not_found"}, status=404)
+    except VersionConflict as exc:
+        return JsonResponse({"error": "version_conflict", "current_version": exc.current_version}, status=409)
+    except DefinitionError:
+        # Never echo untrusted paths or content embedded in a rejected request.
+        return JsonResponse({"error": "invalid_external_source", "message": "外部資料登錄遭拒；請核對版本與欄位設定"}, status=400)
+    return JsonResponse({"definition": revision.definition}, status=201 if created else 200)
+
+
+@node_api
 @require_http_methods(["PUT"])
 def survey_update(request, survey_uuid):
     if _owned(request, survey_uuid) is None:

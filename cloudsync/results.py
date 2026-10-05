@@ -11,7 +11,10 @@ from django.conf import settings
 from django.db import transaction
 
 from cloudapi.envelope import canonical_bytes, sha256_hex
-from feedback.models import SurveyAnalysisState
+from feedback.analysis_sources import (
+    AnalysisSourceConfigurationError, external_version_identity, resolve_analysis_source,
+)
+from feedback.models import ExternalDatasetVersion, SurveyAnalysisState
 
 from .client import TRANSIENT, UNAUTHORIZED, CloudError
 from .models import ResultUpload, SurveySyncState
@@ -76,6 +79,21 @@ def build_content(state):
             "excluded": scope.get("excluded") or {"voided": 0, "incomplete": 0},
         },
     }
+    binding = resolve_analysis_source(state.survey)
+    if binding.is_external:
+        # Identity comes from the published snapshot/stage, never today's active binding.
+        source_stage = manifest.get("statistics") or {}
+        version = ExternalDatasetVersion.objects.filter(
+            source__survey=state.survey,
+            source_ref=source_stage.get("source_ref"),
+            source_version=source_stage.get("source_version"),
+        ).first()
+        if version is None or scope.get("source_version") != version.source_version:
+            raise AnalysisSourceConfigurationError("外部發布結果缺少固定來源版本")
+        content["input_source"] = external_version_identity(version)
+        content["analyzed_through_sequence"] = 0
+    else:
+        content["input_source"] = {"kind": "answers"}
     # Hash what the cloud will see after JSON round-tripping (tuples, non-string keys, ...).
     return json.loads(json.dumps(content, ensure_ascii=False))
 

@@ -73,7 +73,8 @@ from .published_analysis import (
 def analysis_visible_surveys():
     return (
         Survey.objects.filter(analysis_enabled=True, archived_at__isnull=True)
-        .filter(Q(is_active=True) | Q(dataset_import_batches__isnull=False))
+        .filter(Q(is_active=True) | Q(dataset_import_batches__isnull=False)
+                | Q(analysis_source__kind=SurveyAnalysisSource.Kind.EXTERNAL))
         .distinct()
     )
 
@@ -201,7 +202,7 @@ class CustomerRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
         return self.request.user.is_authenticated and not self.request.user.is_manager
 
 
-NODE_CONSOLE_NAV = [("node:overview", "節點總覽", "server")]
+NODE_CONSOLE_NAV = [("node:overview", "節點總覽", "server"), ("node:datasets", "資料集", "database")]
 NODE_CONSOLE_NAV_TAIL = [("cloudsync:connection", "雲端連線", "cloud"), ("node:settings", "設定", "gear")]
 
 

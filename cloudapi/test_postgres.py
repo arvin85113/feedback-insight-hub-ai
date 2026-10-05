@@ -391,3 +391,114 @@ class PurgeQuarantineLockOrderPostgreSQLTests(PurgeInboxLockOrderPostgreSQLTests
 
         self.race(lambda: quarantine_items(self.node, [{"submission_uuid": str(self.uid), "reason": "content_conflict"}]))
         self.assert_capacity_matches_bodies()
+
+
+class ExternalSourcePublicationPostgreSQLTests(_InboxPostgreSQLCase):
+    """Changing the registered source and uploading an old result share the parent lock."""
+
+    def test_old_upload_waits_for_source_change_and_cannot_become_latest(self):
+        import uuid
+
+        from cloudapi.envelope import sha256_hex
+        from cloudapi.models import PublishedResultRecord
+        from cloudapi.results import apply_upload
+        from cloudapi.tests.test_results import content
+        from feedback.analysis_sources import external_version_identity, register_external_dataset_version
+        from feedback.models import SurveyAnalysisState
+
+        survey, _ = self.make_inbox_survey()
+
+        def register(marker):
+            return register_external_dataset_version(
+                survey.pk, source_ref="fixture/reviews", source_version=f"v-{marker}",
+                source_revision=f"revision-{marker}", cleaning_version="clean-v1",
+                content_sha256=marker * 64, schema_sha256="f" * 64,
+                mapping_key="fixture", mapping_version="v1", row_count=4,
+            )[1]
+
+        first = register("a")
+        body = {**content(survey, watermark=0), "input_source": external_version_identity(first)}
+
+        def upload(sequence):
+            return apply_upload(survey.owner_node, publish_uuid=uuid.uuid4(), publish_sequence=sequence,
+                                content_hash=sha256_hex(body), content=body)
+
+        upload(1)
+        holding, release, errors, outcomes = threading.Event(), threading.Event(), [], []
+
+        def change_source():
+            try:
+                with transaction.atomic():
+                    register("b")
+                    holding.set()
+                    if not release.wait(10):
+                        raise RuntimeError("fixture release timed out")
+            except Exception as exc:
+                errors.append(exc)
+            finally:
+                close_old_connections()
+
+        def old_upload():
+            try:
+                outcomes.append(upload(2))
+            except Exception as exc:
+                errors.append(exc)
+            finally:
+                close_old_connections()
+
+        changer = threading.Thread(target=change_source)
+        uploader = threading.Thread(target=old_upload)
+        changer.start()
+        try:
+            self.assertTrue(holding.wait(10))
+            uploader.start()
+            time.sleep(0.2)
+            self.assertTrue(uploader.is_alive())
+        finally:
+            release.set()
+            changer.join(15)
+            if uploader.ident is not None:
+                uploader.join(15)
+        self.assertFalse(changer.is_alive())
+        self.assertFalse(uploader.is_alive())
+        self.assertEqual(errors, [])
+        self.assertEqual(outcomes, [("stale", True)])
+        self.assertEqual(SurveyAnalysisState.objects.get(survey=survey).publish_sequence, 1)
+        self.assertEqual(PublishedResultRecord.objects.filter(survey=survey, applied=True).count(), 1)
+
+
+class ExternalRegistrationPostgreSQLTests(_InboxPostgreSQLCase):
+    """The absent-parent creation race is serialized by the owning device row."""
+
+    def test_simultaneous_registration_creates_one_survey_and_revision(self):
+        from cloudapi.external_sources import register_node_dataset
+        from cloudapi.models import SurveyDefinitionRevision
+        from cloudapi.tests.test_external_registration import external_definition, source_metadata
+
+        ChangeClock.objects.get_or_create(pk=1)
+        device, _ = NodeDevice.issue("pg-external-registration")
+        definition = external_definition()
+        gate = threading.Barrier(2)
+        outcomes, errors = [], []
+
+        def register():
+            try:
+                gate.wait(timeout=10)
+                revision, created = register_node_dataset(device, definition=definition,
+                    registration=source_metadata(), expected_version=0)
+                outcomes.append((revision.survey_id, created))
+            except Exception as exc:
+                errors.append(exc)
+            finally:
+                close_old_connections()
+
+        threads = [threading.Thread(target=register) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(15)
+        self.assertFalse(any(thread.is_alive() for thread in threads))
+        self.assertEqual(errors, [])
+        self.assertEqual(len({pk for pk, created in outcomes}), 1)
+        self.assertEqual(sorted(created for pk, created in outcomes), [False, True])
+        self.assertEqual(SurveyDefinitionRevision.objects.filter(survey__uuid=definition["survey_uuid"]).count(), 1)

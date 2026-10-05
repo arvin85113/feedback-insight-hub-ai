@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
 from feedback.analysis_jobs import (
@@ -48,7 +49,7 @@ class Command(BaseCommand):
             options["worker_id"],
             lease_seconds=lease_seconds,
             executor=AnalysisJob.Executor.DETERMINISTIC,
-            external_source_refs=external_inputs.keys(),
+            external_source_refs=None if settings.IS_NODE else external_inputs.keys(),
         )
         if job is None:
             self.stdout.write(json.dumps({"status": "idle"}, ensure_ascii=False))

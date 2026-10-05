@@ -4,6 +4,7 @@ import json
 import time
 from pathlib import Path
 
+from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
 from feedback.ai_worker import (
@@ -139,7 +140,8 @@ class Command(BaseCommand):
                 options["worker_id"],
                 lease_seconds=lease_seconds,
                 executor=AnalysisJob.Executor.DETERMINISTIC,
-                external_source_refs=external_inputs.keys(),
+                # Claim missing node locators too, so they fail explicitly rather than stay pending forever.
+                external_source_refs=None if settings.IS_NODE else external_inputs.keys(),
             )
             if job:
                 beat("busy")
