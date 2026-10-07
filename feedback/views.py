@@ -202,7 +202,8 @@ class CustomerRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
         return self.request.user.is_authenticated and not self.request.user.is_manager
 
 
-NODE_CONSOLE_NAV = [("node:overview", "節點總覽", "server"), ("node:datasets", "資料集", "database")]
+NODE_CONSOLE_NAV = [("node:overview", "節點總覽", "server"), ("node:datasets", "資料集", "database"),
+                    ("node:jobs", "分析工作", "chart")]
 NODE_CONSOLE_NAV_TAIL = [("cloudsync:connection", "雲端連線", "cloud"), ("node:settings", "設定", "gear")]
 
 

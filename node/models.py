@@ -48,6 +48,22 @@ class LocalDatasetLocation(models.Model):
     verified_at = models.DateTimeField(auto_now=True)
 
 
+class NodeAIGrant(models.Model):
+    """One explicitly confirmed, bounded provider budget; never contains credentials."""
+
+    job = models.OneToOneField("feedback.AnalysisJob", on_delete=models.PROTECT, related_name="node_ai_grant")
+    confirmation_uuid = models.UUIDField(unique=True)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    identity = models.JSONField()
+    max_calls = models.PositiveSmallIntegerField(default=6)
+    calls_started = models.PositiveSmallIntegerField(default=0)
+    in_flight = models.BooleanField(default=False)
+    status = models.CharField(max_length=16, default="queued")
+    error_code = models.CharField(max_length=64, blank=True)
+    expires_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
 class AuditEventQuerySet(models.QuerySet):
     def update(self, **kwargs):
         raise AuditLogImmutable("稽核紀錄不可修改")

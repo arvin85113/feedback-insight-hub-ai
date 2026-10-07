@@ -77,6 +77,42 @@ class RunCycleTests(TestCase):
         CloudLink.unlink()
         self.assertEqual(run_cycle(), "not_linked")
 
+    def test_unbound_publication_cannot_report_complete_sync(self):
+        from feedback.models import Survey
+        from cloudsync.tests.test_results_local import published_state
+        published_state(Survey.objects.create(title="Local fixture", slug="local-fixture"))
+        self.assertEqual(self.run_with(FakeClient()), "results_incomplete")
+        self.assertIsNotNone(CloudLink.load().last_success_at)  # connection itself succeeded
+
+    def test_permanent_upload_rejection_cannot_report_complete_sync(self):
+        with patch("cloudsync.runner.upload_results", return_value={"uploaded": 0, "failed": 1}):
+            self.assertEqual(self.run_with(FakeClient()), "results_incomplete")
+
+    def test_local_history_does_not_fail_sync_or_block_a_bound_upload(self):
+        from cloudsync.definitions import upsert_definition
+        from cloudsync.models import ResultUpload
+        from cloudsync.tests.test_inbox import definition
+        from cloudsync.tests.test_publication_status import history_copy_batch
+        from cloudsync.tests.test_results_local import published_state
+        from feedback.models import Survey
+
+        history = Survey.objects.create(title="History fixture", slug="history-only")
+        history_copy_batch(history)
+        published_state(history)
+        bound, _ = upsert_definition(definition(1))
+        published_state(bound)
+
+        class UploadClient(FakeClient):
+            def post_raw(self, path, data):
+                self.posts.append(path)
+                return {"status": "applied"}
+
+        client = UploadClient()
+        self.assertEqual(self.run_with(client), "ok")
+        self.assertEqual(ResultUpload.objects.get(survey=bound).status, "uploaded")
+        self.assertFalse(ResultUpload.objects.filter(survey=history).exists())
+        self.assertEqual(client.posts, ["heartbeat/", "results/"])
+
 
 class InboxCycleTests(TestCase):
     def setUp(self):

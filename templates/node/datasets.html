@@ -4,7 +4,7 @@
 <section class="manager-panel">
     <p class="section-kicker">Local datasets</p>
     <h2>連接既有資料，不搬動原檔</h2>
-    <p>先驗證本機 manifest 與 mapping，再確認登錄。雲端只接收問卷定義與版本 metadata，不接收檔案、路徑或評論全文；外部問卷不開放填答。</p>
+    <p>先驗證本機 manifest 與 mapping，再確認登錄。這一步同時建立雲端發布綁定：之後本機更新統計／文字或經確認的 Gemini 結果，會自動排入上傳。雲端只接收問卷定義與版本 metadata，不接收檔案、路徑或評論全文；外部問卷不開放填答。</p>
     {% if not link.is_linked %}<p role="status">尚未連結雲端：可以驗證檔案，登錄前請先完成<a href="{% url 'cloudsync:connection' %}">雲端連線</a>。</p>{% endif %}
     <form method="post" class="form-stack">
         {% csrf_token %}
@@ -37,7 +37,7 @@
             <p>{{ source.active_external_version.row_count }} 筆 · {{ source.active_external_version.mapping_version }}</p>
             <p>資料版本 <code>{{ source.active_external_version.source_version }}</code></p>
             <p>最近本機發布 {{ source.survey.analysis_state.published_at|date:"Y/m/d H:i"|default:"尚無結果" }} ·
-                最近一次上傳 {% if source.last_upload_status == 'uploaded' %}已上傳{% elif source.last_upload_status == 'pending' %}待上傳{% elif source.last_upload_status == 'failed' %}失敗{% elif source.last_upload_status == 'stale' %}舊版已保存{% else %}尚無上傳{% endif %}（不代表目前版本已完成）</p>
+                本次發布上傳 {% if source.last_upload_status == 'uploaded' %}雲端已接收{% elif source.last_upload_status == 'pending' %}待上傳{% elif source.last_upload_status == 'failed' %}失敗{% elif source.last_upload_status == 'stale' %}僅保留雲端歷史{% else %}尚無本次上傳{% endif %}（是否最新仍須核對資料版本）</p>
             {% if source.active_external_version.local_location %}
             <p>路徑已登錄 · 上次完整性驗證 {{ source.active_external_version.local_location.verified_at|date:"Y/m/d H:i" }}；Worker 使用前會再次核對。</p>
             {% else %}<p>尚未綁定本機檔案；不能完成分析。</p>{% endif %}</div>

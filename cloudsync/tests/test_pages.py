@@ -143,6 +143,27 @@ class NodeBuilderTests(NodePageCase):
 
 
 class ConnectionPageTests(NodePageCase):
+    def test_history_is_informational_not_an_upload_failure(self):
+        from cloudsync.tests.test_publication_status import history_copy_batch
+        from cloudsync.tests.test_results_local import published_state
+        history_copy_batch(self.survey)
+        published_state(self.survey)
+        with patch("cloudsync.runner.client_for_link", side_effect=AssertionError("GET must not connect")):
+            response = self.client.get(reverse("cloudsync:connection"))
+        self.assertEqual(response.context["unbound_results_count"], 0)
+        self.assertEqual(response.context["local_only_count"], 1)
+        self.assertContains(response, "僅本機 · 1 份歷史副本")
+        self.assertContains(response, "不列入待上傳或同步失敗")
+        self.assertNotContains(response, "並非已上傳")
+        self.assertNotContains(response, "修復發布流程")
+
+    def test_incomplete_uploads_show_a_warning_not_complete_sync(self):
+        with patch("cloudsync.views.run_cycle", return_value="results_incomplete") as cycle:
+            response = self.client.post(reverse("cloudsync:connection"), {"action": "sync-now"}, follow=True)
+        cycle.assert_called_once_with(force=True)
+        self.assertContains(response, "雲端連線正常，但部分本機結果尚未上傳")
+        self.assertNotContains(response, "已完成本次雲端同步")
+
     def test_connect_tests_before_saving(self):
         CloudLink.unlink()
         with patch("cloudsync.views.CloudClient") as client_class:

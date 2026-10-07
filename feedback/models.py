@@ -78,9 +78,14 @@ class Survey(models.Model):
 
     @property
     def accepts_responses(self):
-        from .analysis_sources import resolve_analysis_source
-        return (self.is_published and self.is_active and self.archived_at is None
-                and not resolve_analysis_source(self).is_external)
+        from .analysis_sources import AnalysisSourceConfigurationError, resolve_analysis_source
+        if not (self.is_published and self.is_active and self.archived_at is None):
+            return False
+        try:
+            return not resolve_analysis_source(self).is_external
+        except AnalysisSourceConfigurationError:
+            # Invalid sources fail closed; infrastructure errors must still surface.
+            return False
 
 
 class Question(models.Model):

@@ -141,7 +141,20 @@ py -3.13 -m venv .venv
 
 ## Windows 本機節點與 EXE
 
-同一個 EXE 依參數切換角色：
+新節點封裝使用 `scripts/build_desktop.ps1 -NodeOnly`，輸出
+`dist/FeedbackInsightHubNode/FeedbackInsightHubNode.exe`，須保留整個資料夾。
+此封裝不包含 Dear PyGui，也拒絕 `--legacy-workbench`；原封裝與來源暫留作回退，以下舊工作台設定不適用新節點版。
+打包只建立檔案；正常啟動會套用本機 DB migration，首次設定會建立帳號，請先確認目標與備份。
+`--smoke-test` 僅檢查封裝模組與模板，不啟動伺服器、不套用 migration、不呼叫 API。
+
+本機主控台「分析工作」可查看問卷筆數、資料／統計／AI 時間與版本狀態，排程統計／文字、預覽 Gemini 及取消工作。
+OWNER 在「設定 → Gemini」存入 Windows 認證管理員；節點忽略 `.env` 的 `GOOGLE_API_KEY`，金鑰不寫 DB／紀錄。
+每次 Gemini 確認綁定輸入、設定、來源、模型、提示及憑證版本，通常三段，含格式重試硬上限六次。
+相同確認重送不建立新付費工作；逾時／崩潰留下不確定狀態，停下待查核，不自動重呼。Worker 不需另加 CLI 付費旗標。
+結果仍沿用 Snapshot／AI Stage，背景同步至已授權啟用的雲端 API；本機發布不等於雲端上傳完成。
+目前已通過隔離環境測試與封裝 smoke，正式切換、真實 Gemini、GUI 操作與安裝簽章仍需另外驗收／授權。
+
+來源碼與舊相容封裝依參數切換角色：
 
 | 啟動方式 | 角色 |
 |---|---|

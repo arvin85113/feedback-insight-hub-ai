@@ -79,7 +79,11 @@ class Command(BaseCommand):
 
     def _run_ai(self, job, *, lease_seconds):
         try:
-            result = execute_ai_job(job, allow_paid_ai=True, lease_seconds=lease_seconds)
+            if settings.IS_NODE:
+                from node.gemini import execute_confirmed
+                result = execute_confirmed(job, lease_seconds=lease_seconds)
+            else:
+                result = execute_ai_job(job, allow_paid_ai=True, lease_seconds=lease_seconds)
         except AIWorkerCancelled:
             finish_cancelled_job(job.pk, job.lease_token)
             return {"job_id": job.pk, "executor": job.executor, "status": "cancelled"}
@@ -153,11 +157,16 @@ class Command(BaseCommand):
                         lease_seconds=lease_seconds,
                     )
                 )
-            elif options["allow_paid_ai"]:
+            elif settings.IS_NODE or options["allow_paid_ai"]:
+                granted_ids = None
+                if settings.IS_NODE:
+                    from node.models import NodeAIGrant
+                    granted_ids = NodeAIGrant.objects.filter(status__in=("queued", "running")).values_list("job_id", flat=True)
                 job = claim_next_job(
                     options["worker_id"],
                     lease_seconds=lease_seconds,
                     executor=AnalysisJob.Executor.AI,
+                    job_ids=granted_ids,
                 )
                 if job:
                     beat("busy")

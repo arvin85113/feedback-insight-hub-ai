@@ -118,8 +118,14 @@ class RoleSelectionTests(unittest.TestCase):
         with unittest.mock.patch("desktop_app.__main__._load_external_environment") as load:
             prepare_environment("launcher", environ)
             prepare_environment("worker", environ)
+            prepare_environment("smoke", environ)
         load.assert_not_called()
         self.assertEqual(environ["DEPLOYMENT_MODE"], "node")
+
+    def test_node_only_package_rejects_legacy_role(self):
+        with unittest.mock.patch.dict("os.environ", {"FEEDBACK_HUB_NODE_ONLY": "1"}):
+            with self.assertRaises(ValueError):
+                select_role(["--legacy-workbench"])
 
     def test_legacy_workbench_stays_on_the_cloud_database(self):
         environ = {"FEEDBACK_HUB_DATABASE_URL": "postgres://example.invalid/db"}

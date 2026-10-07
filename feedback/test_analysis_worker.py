@@ -25,6 +25,17 @@ from .models import (
 
 
 class DeterministicWorkerTests(TestCase):
+    def test_worker_reports_real_stage_boundaries(self):
+        from feedback.job_progress import report_job_progress
+        claimed = self.queue_and_claim()
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "feedback.analysis_worker.report_job_progress", wraps=report_job_progress
+        ) as progress:
+            result = execute_deterministic_job(claimed, output_root=directory, lease_seconds=60)
+        self.assertTrue(result.published)
+        self.assertEqual([(call.kwargs["phase"], call.kwargs["completed"]) for call in progress.call_args_list],
+                         [("prepare", 0), ("statistics", 0), ("text", 1), ("assemble", 2), ("publish", 3)])
+
     def setUp(self):
         self.survey = Survey.objects.create(title="Worker fixture", slug="worker-fixture")
         with suppress_analysis_scheduling():
