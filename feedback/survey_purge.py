@@ -94,6 +94,11 @@ def purge_survey(survey, *, dry_run=False):
             from cloudsync.models import PendingAck
 
             _delete(PendingAck.objects.filter(submission_uuid__in=reply_keys), counts)
+        if apps.is_installed("node"):
+            from node.models import NodeAIGrant
+
+            # Grants PROTECT their job; the append-only audit log keeps the authorization history.
+            _delete(NodeAIGrant.objects.filter(job__survey=survey), counts)
         _delete_survey_row(survey, counts)
         if dry_run:
             transaction.set_rollback(True)

@@ -237,6 +237,20 @@ class NodePurgeTests(TestCase):
         purge_survey(survey)
         self.assertEqual(list(PendingAck.objects.values_list("pk", flat=True)), [foreign.pk])
 
+    def test_node_removes_gemini_grants_of_survey_jobs(self):
+        from django.contrib.auth import get_user_model
+        from node.models import NodeAIGrant
+
+        survey = make_full_survey()
+        job = AnalysisJob.objects.filter(survey=survey).first()
+        actor = get_user_model().objects.create_user(username="owner", password="x")
+        NodeAIGrant.objects.create(job=job, actor=actor, identity={}, confirmation_uuid=uuid.uuid4(),
+                                   expires_at=timezone.now())
+        counts = purge_survey(survey)
+        self.assertFalse(NodeAIGrant.objects.exists())
+        self.assertFalse(Survey.objects.filter(pk=survey.pk).exists())
+        self.assertEqual(counts["node.NodeAIGrant"], 1)
+
     def test_node_refuses_synced_survey(self):
         from cloudsync.models import SurveySyncState
 
