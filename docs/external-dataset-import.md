@@ -80,8 +80,7 @@ python manage.py register_external_analysis_source --survey <slug> --manifest <m
 mapping 版本與非敏感證據），不寫入任何資料列、評論、`user_id` 或本機路徑。來源切換後舊 pending 工作
 會取消，舊 Worker 在發布前會被拒絕。
 
-桌面工作台以 `%LOCALAPPDATA%\FeedbackInsightHub\datasets.json` 將登錄的 `source_ref`／`source_version`
-對應到本機資料根目錄；檔案不存在或版本不符時顯示「本機未就緒」，不會改讀 Supabase 的 Answer。
+本機節點在主控台「資料集」登錄已驗證的 manifest 與 mapping，本機路徑與驗證雜湊只保存在節點（`LocalDatasetLocation`），Worker 依登錄的不可變版本讀取 Parquet；Supabase 只保存來源版本與有限結果。
 
 ## 小型資料匯入（`import_feedback_dataset`）
 

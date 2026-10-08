@@ -13,9 +13,9 @@
 
 ## 架構原則
 
-- Django 是唯一後端與 ORM；頁面、填答、分析協調與本機工作台共用 Django domain service，不恢復第二套 fallback 寫入路徑。
+- Django 是唯一後端與 ORM；頁面、填答、分析協調與本機節點共用 Django domain service，不恢復第二套 fallback 寫入路徑。
 - 網站問卷為 login-only，保留 CUSTOMER／MANAGER 權限與伺服器端驗證；填答身分取自登入使用者。
-- 網站（本機與 Render）分析頁只讀已發布結果，不在 request 內做統計、NLP 或 Gemini；運算由本機 Worker／工作台完成後版本化發布。
+- 網站（本機與 Render）分析頁只讀已發布結果，不在 request 內做統計、NLP 或 Gemini；運算由本機節點 Worker 完成後版本化發布並上傳。
 - 發布前核對輸入版本、管線版本、來源版本與工作租約，過期 Worker 不得覆蓋新結果；離線時沿用最後成功結果。
 - 資料歸屬依部署模式與已授權切換決定：現行雲端流程保存回覆；節點流程以本機回覆／Parquet 為分析正本，雲端保存定義、收件收據與有限發布結果。不得只因原型已實作就切換正式收件或清理正文。
 - 優先重用既有分析邏輯、Snapshot 與 AI Stage；不新增同義模型或資料集專用的平行核心。
@@ -66,8 +66,7 @@
 | 統計／文字 | [分析服務](feedback/local_service.py)、[文字管線](feedback/text_pipeline.py)、[詞典資料](feedback/data/)、[架構參考](docs/architecture.md) |
 | Snapshot／Gemini | [Snapshot](feedback/ai_snapshot_service.py)、[AI Stage](feedback/ai_stage_service.py)、[數字驗證](feedback/ai_grounding.py)、[README](README.md) |
 | 發布與展示 | [發布讀取](feedback/published_analysis.py)、[views](feedback/views.py)、[templates](templates/) |
-| 桌面工作台／EXE | [服務](desktop_app/service.py)、[介面](desktop_app/app.py)、[打包腳本](scripts/build_desktop.ps1) |
-| 本機節點／外部路徑 | [啟動器](desktop_app/node_launcher.py)、[登錄服務](node/datasets.py)、[共用驗證](feedback/external_dataset.py)、[分段接手與回退](docs/superpowers/plans/2026-10-05-node-only-analysis-integration.md) |
+| 本機節點／EXE／外部路徑 | [啟動器](desktop_app/node_launcher.py)、[打包腳本](scripts/build_desktop.ps1)、[登錄服務](node/datasets.py)、[共用驗證](feedback/external_dataset.py)、[分段接手與回退](docs/superpowers/plans/2026-10-05-node-only-analysis-integration.md) |
 | UI／權限／完整 URL | [架構與 UI 流程](docs/architecture.md)、[feedback URLs](feedback/urls.py)、[accounts URLs](accounts/urls.py) |
 | 部署／依賴 | [README](README.md)、[render.yaml](render.yaml)、[build.sh](build.sh)、[設定](config/settings.py)、[依賴](requirements.txt) |
 | Schema／migration | [feedback models](feedback/models.py)、[accounts models](accounts/models.py)、[feedback migrations](feedback/migrations/)、[accounts migrations](accounts/migrations/) |

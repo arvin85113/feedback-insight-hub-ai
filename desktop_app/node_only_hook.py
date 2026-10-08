@@ -1,5 +1,4 @@
-"""PyInstaller runtime hook for the isolated node-only distribution."""
+"""PyInstaller runtime hook: the packaged EXE is always the local node."""
 import os
 
-os.environ["FEEDBACK_HUB_NODE_ONLY"] = "1"
 os.environ["DEPLOYMENT_MODE"] = "node"

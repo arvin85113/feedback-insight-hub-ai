@@ -6,18 +6,18 @@
 
 | 層 | 技術 | 選擇理由 |
 |---|---|---|
-| Web | Django 6（唯一後端與 ORM） | 權限、表單、ORM 與 migration 一體，網站與本機工作台共用同一套 models 與 domain service |
+| Web | Django 6（唯一後端與 ORM） | 權限、表單、ORM 與 migration 一體，網站與本機節點共用同一套 models 與 domain service |
 | 資料庫 | Supabase PostgreSQL；本機與測試用 SQLite | 雲端託管 PostgreSQL；測試用記憶體 SQLite，併發測試另用 PostgreSQL 17 |
 | 統計 | pandas＋SciPy | 依資料型態自動選擇檢定 |
 | 文字 | jieba＋自建詞典（中文）、英文詞典 | 可解釋、可版本化；未命中的情緒標示為未知而非中立 |
 | 大型資料 | DuckDB＋本機 Parquet | 20 萬筆評論不進雲端資料庫，只發布有限結果 |
-| AI | Gemini（Vertex express mode） | 結構化輸出＋後端驗證，只由本機工作台呼叫 |
+| AI | Gemini（Vertex express mode） | 結構化輸出＋後端驗證，只由本機節點在管理者確認後呼叫 |
 | 桌面 | Dear PyGui＋PyInstaller one-folder EXE | 不依賴 Tcl/Tk，可在管理者電腦執行重運算 |
 | 部署 | Render（Gunicorn＋WhiteNoise）、GitHub Actions CI | 合併到 `main` 前必須通過全套測試（雲端與本機節點兩種模式）與 PostgreSQL 併發測試 |
 
 ## 2. 架構：網站收資料，本機算，版本化發布
 
-- 網站負責登入、問卷、填答、權限與工作排程；統計、文字與 Gemini 都在本機工作台／Worker 執行
+- 網站負責登入、問卷、填答、權限與工作排程；統計、文字與 Gemini 都在本機節點 Worker 執行
   （[analysis_worker](../feedback/analysis_worker.py)、[ai_worker](../feedback/ai_worker.py)）。
 - 回覆、題目或詞典變更會提升問卷的輸入／設定版本並合併待處理工作
   （[analysis_jobs](../feedback/analysis_jobs.py)、[signals](../feedback/signals.py)）。
@@ -77,8 +77,8 @@
 - 部署環境缺少 `DJANGO_SECRET_KEY` 時拒絕啟動，Render 上預設 `DEBUG=False`（[settings](../config/settings.py)）。
 - 測試設定固定測試模型並使用假金鑰，不讀開發者 `.env`（[settings_test](../config/settings_test.py)）。
 
-## 10. 桌面工作台
+## 10. 本機節點
 
-- 第一段發布統計與文字，第二段（需勾選同意使用 API 額度）執行 Gemini（[desktop_app/service](../desktop_app/service.py)）。
-- Gemini「最新」判定同時核對資料版本、模型名稱與 prompt 版本。
-- 錯誤寫入本機輪替日誌，不含憑證（[desktop_app/__main__](../desktop_app/__main__.py)）。
+- 系統匣啟動器監督分析 Worker，網頁主控台查看工作、資料集與雲端連線（[desktop_app/node_launcher](../desktop_app/node_launcher.py)）。
+- 統計與文字自動排程；Gemini 由 OWNER 確認後執行，金鑰存在 Windows 認證管理員（[node/gemini](../node/gemini.py)）。
+- 結果經背景同步上傳雲端；收件、確認與上傳都可重送且冪等（[cloudsync/runner](../cloudsync/runner.py)）。

@@ -7,55 +7,10 @@ from pathlib import Path
 
 from desktop_app.__main__ import (
     _configure_file_logging,
-    _external_env_candidates,
     parent_pid_from,
     prepare_environment,
     select_role,
 )
-
-
-class DesktopEnvironmentDiscoveryTests(unittest.TestCase):
-    def test_development_build_finds_repository_env_without_bundling_it(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            (root / "manage.py").touch()
-            (root / "config").mkdir()
-            (root / "config" / "settings.py").touch()
-            executable = root / "dist" / "FeedbackInsightHub" / "FeedbackInsightHub.exe"
-            executable.parent.mkdir(parents=True)
-
-            candidates = list(
-                _external_env_candidates(
-                    executable=executable,
-                    local_app_data=root / "user-data",
-                )
-            )
-
-            self.assertIn((root / ".env").resolve(), candidates)
-            self.assertLess(
-                candidates.index((executable.parent / ".env").resolve()),
-                candidates.index((root / ".env").resolve()),
-            )
-
-    def test_explicit_settings_file_has_highest_priority(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            explicit = root / "private" / "desktop.env"
-            executable = root / "app" / "FeedbackInsightHub.exe"
-
-            candidates = list(
-                _external_env_candidates(
-                    executable=executable,
-                    local_app_data=root / "user-data",
-                    explicit=explicit,
-                )
-            )
-
-            self.assertEqual(candidates[0], explicit.resolve())
-            self.assertIn(
-                (root / "user-data" / "FeedbackInsightHub" / ".env").resolve(),
-                candidates,
-            )
 
 
 class DesktopFileLoggingTests(unittest.TestCase):
@@ -105,7 +60,6 @@ class RoleSelectionTests(unittest.TestCase):
     def test_roles(self):
         self.assertEqual(select_role([]), "launcher")
         self.assertEqual(select_role(["--worker"]), "worker")
-        self.assertEqual(select_role(["--legacy-workbench"]), "legacy")
         self.assertEqual(select_role(["--smoke-test"]), "smoke")
 
     def test_parent_pid_is_read_from_the_worker_arguments(self):
@@ -113,26 +67,14 @@ class RoleSelectionTests(unittest.TestCase):
         self.assertIsNone(parent_pid_from(["--worker"]))
         self.assertIsNone(parent_pid_from(["--worker", "--parent-pid", "nope"]))
 
-    def test_node_roles_never_load_the_external_cloud_env(self):
-        environ = {}
-        with unittest.mock.patch("desktop_app.__main__._load_external_environment") as load:
-            prepare_environment("launcher", environ)
-            prepare_environment("worker", environ)
-            prepare_environment("smoke", environ)
-        load.assert_not_called()
-        self.assertEqual(environ["DEPLOYMENT_MODE"], "node")
+    def test_every_role_runs_as_the_local_node(self):
+        environ = {"DEPLOYMENT_MODE": "cloud"}
+        for role in ("launcher", "worker", "smoke"):
+            prepare_environment(role, environ)
+            self.assertEqual(environ["DEPLOYMENT_MODE"], "node")
 
-    def test_node_only_package_rejects_legacy_role(self):
-        with unittest.mock.patch.dict("os.environ", {"FEEDBACK_HUB_NODE_ONLY": "1"}):
-            with self.assertRaises(ValueError):
-                select_role(["--legacy-workbench"])
-
-    def test_legacy_workbench_stays_on_the_cloud_database(self):
-        environ = {"FEEDBACK_HUB_DATABASE_URL": "postgres://example.invalid/db"}
-        with unittest.mock.patch("desktop_app.__main__._load_external_environment", return_value=None):
-            prepare_environment("legacy", environ)
-        self.assertEqual(environ["DEPLOYMENT_MODE"], "cloud")
-        self.assertEqual(environ["DATABASE_URL"], "postgres://example.invalid/db")
+    def test_removed_workbench_flag_starts_the_node(self):
+        self.assertEqual(select_role(["--legacy-workbench"]), "launcher")
 
 
 class DesktopBuildScriptTests(unittest.TestCase):
@@ -152,6 +94,13 @@ class DesktopBuildScriptTests(unittest.TestCase):
         root = Path(__file__).resolve().parent.parent
         script = (root / "scripts" / "build_desktop.ps1").read_text(encoding="utf-8-sig")
         self.assertIn("--collect-submodules whitenoise ", script)
+
+    def test_package_is_node_only(self):
+        root = Path(__file__).resolve().parent.parent
+        script = (root / "scripts" / "build_desktop.ps1").read_text(encoding="utf-8-sig")
+        self.assertNotIn("dearpygui", script)
+        self.assertIn("node_only_hook.py", script)
+        self.assertFalse((root / "desktop_app" / "app.py").exists())
 
 
 class DesktopThreadLoggingTests(unittest.TestCase):
