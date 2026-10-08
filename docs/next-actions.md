@@ -51,6 +51,13 @@
   C4 搬移擱置（收件節點在發布時決定，不搬移既有回覆）。本機節點計畫 B 仍暫停。
 - **問卷建立工具**（規格 `2026-10-03-survey-builder-redesign-design.md`）已部署，介面為 Google 表單式卡片；
   之後處理通知系統。
+- **飲料店改走收件匣、網站草稿指派節點**（[節點唯一分析規格](superpowers/specs/2026-10-04-node-only-analysis-design.md) 第 1、4、5 節）：
+  程式已完成，**尚未部署**。明文收件匣只收 `CLOUD_INBOX_SELF_TEST_SURVEYS` 列出的問卷（`CLOUD_INBOX_REQUIRE_SELF_TEST` 預設開啟）；
+  飲料店節點問卷 UUID 固定為 `seed_demo_beverage.BEVERAGE_NODE_SURVEY_UUID`。部署後操作順序，**每步另行授權**：
+  1. Render 設 `CLOUD_INBOX_SELF_TEST_SURVEYS=<該 UUID>`、`CLOUD_SYNC_PROTOTYPE_ENABLED=True`、`CLOUD_INBOX_ENABLED=True`，並建立節點裝置權杖。
+  2. 節點連結雲端後執行 `seed_demo_beverage --node-create`。
+  3. 雲端執行 `seed_demo_beverage --inbox --count 100 --seed 7`（同一 seed 重跑視為重送）。
+  4. 節點同步、分析、上傳後驗收網站數量與結果；之後才封存舊 `beverage-feedback` 問卷，清除另行批准。Gemini 另行批准。
 
 **桌面工作台／EXE**
 - `dist/FeedbackInsightHub/` 為單一 windowed 版；錯誤寫入 `%LOCALAPPDATA%\FeedbackInsightHub\logs\desktop.log`。
