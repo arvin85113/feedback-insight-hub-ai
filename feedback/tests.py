@@ -723,6 +723,52 @@ class FingerprintAndSnapshotTests(AIReportTestCase):
         self.assertEqual(keyword["response_count"], 7)
         self.assertIsNone(keyword["sample_size"])
 
+    def test_ai_evidence_labels_are_chinese_and_distribution_uses_answered_n(self):
+        self.add_responses(count=3)
+        stats_payload = {
+            **EMPTY_STATS,
+            "charts": [
+                {
+                    "type": "category",
+                    "question": {"title": "清潔度 Cleanliness"},
+                    "answered_n": 10,
+                    "counts": [{"value": "5", "total": 6}, {"value": "4", "total": 4}],
+                }
+            ],
+            "inferential_analysis": [
+                {
+                    "analysis_family": "association",
+                    "method_key": "spearman",
+                    "test_name": "Spearman 等級相關分析",
+                    "iv_title": "整體評分 Overall rating",
+                    "dv_title": "客房評分 Rooms",
+                    "statistic": 0.7723,
+                    "p_value": 0.00001,
+                    "is_significant": True,
+                    "insight": "",
+                }
+            ],
+        }
+        text_payload = {
+            **EMPTY_TEXT,
+            "category_sentiments": [{"category": "客房", "positive": 5, "neutral": 3, "negative": 4, "total": 12}],
+        }
+        with patch("feedback.ai_snapshot_service.build_stats_payload", return_value=stats_payload), patch(
+            "feedback.ai_snapshot_service.build_text_analysis_payload", return_value=text_payload
+        ):
+            snapshot = build_or_reuse_snapshot(self.survey).snapshot
+        evidence = list(snapshot.source_snapshot["evidence_catalog"])
+        labels = " ".join(row["label"] for row in evidence)
+        for english in ("negative", "positive", "neutral", "Cleanliness", "Overall rating", "Rooms"):
+            self.assertNotIn(english, labels)
+        sentiment = next(row for row in evidence if row["kind"] == "category_sentiment" and row["id"].endswith("negative"))
+        self.assertEqual(sentiment["label"], "客房 負面評論")
+        distribution = next(row for row in evidence if row["kind"] == "categorical_distribution")
+        self.assertEqual(distribution["label"], "清潔度：5")
+        self.assertEqual(distribution["sample_size"], 10)  # people who answered, not the bucket count
+        statistic = next(row for row in evidence if row["kind"] == "statistical_test")
+        self.assertEqual(statistic["variables"], ["整體評分", "客房評分"])
+
     def test_source_change_twice_does_not_save_inconsistent_snapshot(self):
         self.add_responses(count=3)
         base = calculate_data_fingerprint(self.survey)

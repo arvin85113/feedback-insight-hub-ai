@@ -103,6 +103,18 @@ def _clean_text(value):
     return _PHONE_RE.sub("[已隱藏電話]", text)
 
 
+# Bilingual question titles from dataset mappings ("清潔度 Cleanliness"): the model copies
+# labels into prose, so AI evidence keeps only the Chinese part.
+_TRAILING_ENGLISH_RE = re.compile(r"^(.*[\u3400-\u9fff）)])\s+[A-Za-z][A-Za-z0-9 &/'().-]*$")
+_SENTIMENT_LABELS = {"positive": "正面評論", "neutral": "中立評論", "negative": "負面評論"}
+
+
+def _ai_label(value):
+    text = _clean_text(value)
+    match = _TRAILING_ENGLISH_RE.match(text)
+    return match.group(1) if match else text
+
+
 _TEST_EVIDENCE_RE = re.compile(r"^test\.(test-\d+)\.(p_value|effect_size|statistic)$")
 _STATISTIC_LABELS = {
     "pearson": "相關係數 r",
@@ -174,7 +186,7 @@ def serialize_evidence_for_display(row, source_snapshot=None):
     method_key = result.get("method_key") or test.get("method_key")
     test_name = _clean_text(result.get("test_name") or test.get("test_name"))
     variables = result.get("variables") or [test.get("iv_title"), test.get("dv_title")]
-    clean_variables = [_clean_text(value) for value in variables if _clean_text(value)]
+    clean_variables = [_ai_label(value) for value in variables if _ai_label(value)]
     variable_label = " × ".join(clean_variables) if len(clean_variables) == 2 else ""
     context = "｜".join(value for value in (variable_label, test_name) if value)
 
@@ -476,7 +488,7 @@ def build_statistics_snapshot(questions, payload, evidence_catalog, caveats):
     for chart in payload.get("charts", []):
         question = chart.get("question")
         question_id = getattr(question, "pk", None)
-        question_title = getattr(question, "title", None) or (question or {}).get("title", "未命名題目")
+        question_title = _ai_label(getattr(question, "title", None) or (question or {}).get("title", "未命名題目"))
         question_ref = question_refs.get(question_id, f"q-{_safe_ref(question_title)}")
         chart_type = chart.get("type")
         if chart_type == "numeric":
@@ -542,7 +554,7 @@ def build_statistics_snapshot(questions, payload, evidence_catalog, caveats):
                     label=f"{question_title}：{item['value']}",
                     value=item["total"],
                     unit="responses",
-                    sample_size=item["total"],
+                    sample_size=chart.get("answered_n") or item["total"],
                 )
                 for key, label in (("selection_rate", "選取率"), ("check_share", "勾選次數占比")):
                     if item.get(key) is None:
@@ -564,7 +576,7 @@ def build_statistics_snapshot(questions, payload, evidence_catalog, caveats):
                 {
                     "test_ref": f"test-{index}",
                     "test_name": result.get("test_name") or result.get("method_key") or "未執行檢定",
-                    "variables": [_clean_text(result.get("iv_title")), _clean_text(result.get("dv_title"))],
+                    "variables": [_ai_label(result.get("iv_title")), _ai_label(result.get("dv_title"))],
                     "skipped_reason": _clean_text(result.get("skipped_reason")),
                 }
             )
@@ -596,8 +608,8 @@ def build_statistics_snapshot(questions, payload, evidence_catalog, caveats):
             }
         }
         safe_result["test_ref"] = f"test-{index}"
-        safe_result["iv_title"] = _clean_text(safe_result.get("iv_title"))
-        safe_result["dv_title"] = _clean_text(safe_result.get("dv_title"))
+        safe_result["iv_title"] = _ai_label(safe_result.get("iv_title"))
+        safe_result["dv_title"] = _ai_label(safe_result.get("dv_title"))
         safe_result["insight"] = _clean_text(safe_result.get("insight"))
         safe_result["groups"] = [
             {
@@ -690,7 +702,7 @@ def _build_text_snapshot(payload, evidence_catalog, caveats):
                     evidence_catalog,
                     evidence_id=f"sentiment.{_safe_ref(row['category'])}.{key}",
                     kind="category_sentiment",
-                    label=f"{row['category']} {key}",
+                    label=f"{row['category']} {_SENTIMENT_LABELS[key]}",
                     value=row[key],
                     unit="responses",
                     sample_size=row["total"],
