@@ -61,7 +61,10 @@ def respondent_ref(user):
 
 
 @transaction.atomic
-def accept_submission(survey, *, user, submission_uuid, form_version, consent_follow_up, answers):
+def accept_submission(survey, *, user, submission_uuid, form_version, consent_follow_up, answers, simulated_name=""):
+    # `simulated_name` labels seeded self-test replies ("飲料店模擬填答 #n"); a real respondent's name comes from the account.
+    if simulated_name and user is not None:
+        raise ValueError("simulated_name is only for replies without a user")
     survey = Survey.objects.select_for_update().get(pk=survey.pk)
     incoming_hash = payload_hash(
         survey_uuid=survey.uuid,
@@ -100,7 +103,7 @@ def accept_submission(survey, *, user, submission_uuid, form_version, consent_fo
         submitted_at=now,
         consent_follow_up=consent_follow_up,
         respondent_ref=respondent_ref(user),
-        name=user.get_full_name() if user else "",
+        name=user.get_full_name() if user else simulated_name,
         email=user.email if user else "",
         answers=answers,
     )

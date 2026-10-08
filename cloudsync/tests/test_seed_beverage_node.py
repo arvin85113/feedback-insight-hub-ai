@@ -63,3 +63,23 @@ class NodeBeverageSeedTests(TestCase):
         self.node_create()
         with self.assertRaisesMessage(CommandError, "已存在"):
             self.node_create()
+
+    def test_beverage_through_inbox_end_to_end(self):
+        from cloudsync.runner import run_cycle
+        from feedback.management.commands.seed_demo_beverage import NAME_PREFIX
+        from feedback.models import AnalysisJob, Answer, FeedbackSubmission
+
+        survey = self.node_create()
+        self.cloud._manage("seed_demo_beverage", "--inbox", "--count", "12", "--seed", "7")
+        self.assertEqual(run_cycle(force=True), "ok")
+        submissions = FeedbackSubmission.objects.filter(survey=survey)
+        self.assertEqual(submissions.count(), 12)
+        self.assertTrue(all(name.startswith(NAME_PREFIX) for name in submissions.values_list("respondent_name", flat=True)))
+        self.assertTrue(Answer.objects.filter(submission__survey=survey, question__kind="multiple_choice")
+                        .exclude(choice_codes=None).exists())
+        self.assertTrue(AnalysisJob.objects.filter(survey=survey, status="pending").exists())
+        statuses = self.cloud.shell(
+            "from cloudapi.models import SubmissionReceipt; "
+            "print(sorted(set(SubmissionReceipt.objects.values_list('status', flat=True))))"
+        ).strip().splitlines()[-1]
+        self.assertEqual(statuses, "['synced']")

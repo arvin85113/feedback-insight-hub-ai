@@ -104,6 +104,36 @@ def create_published_node_survey(*, survey_uuid, title, questions, description="
     return survey
 
 
+def inbox_answers(survey, values):
+    """{question title: value} → the envelope answers a real fill of the published form would send.
+
+    Labels become choice codes, then the values go through the fill page's own form and encoder.
+    """
+
+    from django.utils.datastructures import MultiValueDict
+
+    from cloudapi.envelope import encode_answers
+
+    from .forms import SurveyFormBuilder
+    from .local_service import _encode_answer
+    from .models import Question
+
+    questions = {question.title: question for question in survey.questions.all()}
+    data = MultiValueDict()
+    for title, value in values.items():
+        if value is None:
+            continue
+        question = questions[title]
+        if question.kind in (Question.Kind.SINGLE_CHOICE, Question.Kind.MULTIPLE_CHOICE):
+            data.setlist(f"question_{question.id}", _encode_answer(question, value)[0])
+        else:
+            data[f"question_{question.id}"] = str(value)
+    form = SurveyFormBuilder(data, survey=survey)
+    if not form.is_valid():
+        raise CommandError(f"模擬答案不符合問卷：{form.errors.as_text()}")
+    return encode_answers(survey, form.cleaned_data)
+
+
 def answers_by_title(survey, values):
     """{question title: value} → the `answers` dict submit_survey_payload expects (labels are accepted)."""
 

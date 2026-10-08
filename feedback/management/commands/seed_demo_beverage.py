@@ -12,6 +12,7 @@ from feedback.seed_support import (
     choice_question,
     create_published_node_survey,
     create_published_survey,
+    inbox_answers,
     number_question,
     scale_question,
     text_question,
@@ -183,6 +184,11 @@ class Command(BaseCommand):
             help="本機節點模式：經雲端 API 建立並發布節點擁有的飲料店問卷（固定 UUID）與關鍵字，不灌填答",
         )
         parser.add_argument(
+            "--inbox",
+            action="store_true",
+            help="雲端模式：把模擬填答送進節點飲料店問卷的收件匣（需 --seed；同一 seed 重跑視為重送）",
+        )
+        parser.add_argument(
             "--yes",
             action="store_true",
             help="cleanup / reset 時略過互動確認（CI / 腳本使用）",
@@ -192,8 +198,13 @@ class Command(BaseCommand):
         if opts["cleanup"] and opts["reset"]:
             raise CommandError("--cleanup 與 --reset 不可同時使用")
 
+        if opts["node_create"] and opts["inbox"]:
+            raise CommandError("--node-create 與 --inbox 不可同時使用")
         if opts["node_create"]:
             self._node_create(opts)
+            return
+        if opts["inbox"]:
+            self._inbox(opts)
             return
 
         if opts["cleanup"]:
@@ -244,6 +255,39 @@ class Command(BaseCommand):
             f"完成：節點問卷已建立並發布（UUID {survey.uuid}，slug {survey.slug}）；"
             "模擬填答請在雲端執行 --inbox"
         ))
+
+    def _inbox(self, opts):
+        from cloudapi.inbox import InboxRejected, accept_submission, uses_inbox
+
+        if settings.IS_NODE:
+            raise CommandError("--inbox 只能在雲端模式執行")
+        if opts["reset"] or opts["cleanup"]:
+            raise CommandError("--inbox 不可與 --reset、--cleanup 併用")
+        if opts["seed"] is None:
+            raise CommandError("--inbox 需要 --seed，重跑才不會重複收件")
+        if opts["count"] < 1:
+            raise CommandError("--count 必須 >= 1")
+        survey = Survey.objects.filter(uuid=BEVERAGE_NODE_SURVEY_UUID).first()
+        if survey is None or survey.published_version is None:
+            raise CommandError("找不到已發布的節點飲料店問卷；請先在節點執行 --node-create")
+        if not uses_inbox(survey):
+            raise CommandError("這份問卷目前不收件：請確認 CLOUD_INBOX_ENABLED 已開啟且 CLOUD_INBOX_SELF_TEST_SURVEYS 含此問卷 UUID")
+        created = reused = 0
+        for i, values, consent in simulated_responses(random.Random(opts["seed"]), opts["count"]):
+            try:
+                result = accept_submission(
+                    survey, user=None, submission_uuid=uuid.uuid5(BEVERAGE_NODE_SURVEY_UUID, f"{opts['seed']}:{i}"),
+                    form_version=survey.published_version, consent_follow_up=consent,
+                    answers=inbox_answers(survey, values), simulated_name=f"{NAME_PREFIX} #{i}",
+                )
+            except InboxRejected as exc:
+                raise CommandError(f"第 {i} 筆未送出（{exc.user_message}）；已送出 {created} 筆、重送 {reused} 筆") from exc
+            if result.reused:
+                reused += 1
+            else:
+                created += 1
+        self.stdout.write(self.style.SUCCESS(f"完成：收件匣新收件 {created} 筆、重送 {reused} 筆（問卷 {survey.slug}）"))
+        self._print_db_hint()
 
     def _cleanup_only(self, opts):
         survey = Survey.objects.filter(slug=SURVEY_SLUG).first()
