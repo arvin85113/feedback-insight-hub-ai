@@ -66,7 +66,7 @@
 | 統計／文字 | [分析服務](feedback/local_service.py)、[文字管線](feedback/text_pipeline.py)、[詞典資料](feedback/data/)、[架構參考](docs/architecture.md) |
 | Snapshot／Gemini | [Snapshot](feedback/ai_snapshot_service.py)、[AI Stage](feedback/ai_stage_service.py)、[數字驗證](feedback/ai_grounding.py)、[README](README.md) |
 | 發布與展示 | [發布讀取](feedback/published_analysis.py)、[views](feedback/views.py)、[templates](templates/) |
-| 本機節點／EXE／外部路徑 | [啟動器](desktop_app/node_launcher.py)、[打包腳本](scripts/build_desktop.ps1)、[登錄服務](node/datasets.py)、[共用驗證](feedback/external_dataset.py)、[分段接手與回退](docs/superpowers/plans/2026-10-05-node-only-analysis-integration.md) |
+| 本機節點／EXE／外部路徑 | [啟動器](desktop_app/node_launcher.py)、[打包腳本](scripts/build_desktop.ps1)、[登錄服務](node/datasets.py)、[共用驗證](feedback/external_dataset.py)、[節點唯一分析規格](docs/superpowers/specs/2026-10-04-node-only-analysis-design.md) |
 | UI／權限／完整 URL | [架構與 UI 流程](docs/architecture.md)、[feedback URLs](feedback/urls.py)、[accounts URLs](accounts/urls.py) |
 | 部署／依賴 | [README](README.md)、[render.yaml](render.yaml)、[build.sh](build.sh)、[設定](config/settings.py)、[依賴](requirements.txt) |
 | Schema／migration | [feedback models](feedback/models.py)、[accounts models](accounts/models.py)、[feedback migrations](feedback/migrations/)、[accounts migrations](accounts/migrations/) |
