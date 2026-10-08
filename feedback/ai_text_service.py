@@ -3,7 +3,7 @@ from collections.abc import Mapping
 
 
 SCHEMA_VERSION = "2"
-PROMPT_VERSION = "6"
+PROMPT_VERSION = "7"
 STAGE_TYPE = "text"
 SECTIONS = (
     "keyword_findings",
@@ -74,6 +74,7 @@ SYSTEM_INSTRUCTION = """你是企業問卷文字洞察分析師，只根據提�
 不得接收、推測或重建個別回答；關鍵字出現次數不是回覆人數，兩者不得混用；情緒未知不等於中立。
 依對營運決策的重要性排序，優先指出差異、異常、極端值與可行動的訊號；不要重述顯而易見的填答分布。rationale 說明這代表什麼、為何重要。data_limitations 只寫與該項發現直接相關的具體限制，沒有就留空陣列。
 可以引用數字，但只能照抄所引用 evidence 的數值、樣本數或標籤中的數字，並依 evidence 精度四捨五入；不要自行計算差距、比例或目標值。
+不寫資料描述型發現（例如文字長度、填答筆數或分布形狀本身），除非它直接改變營運決策；「最高、最低、最多、優於」等比較，只在同時引用被比較項目的 evidence 時才寫。
 某類 evidence 不存在時，該區塊回傳空陣列；不得編造 evidence ID。"""
 
 

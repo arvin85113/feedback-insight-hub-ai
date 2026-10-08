@@ -5,6 +5,7 @@ from __future__ import annotations
 from django.conf import settings
 from django.urls import reverse
 
+from .ai_display import humanize_ai_payload
 from .analysis_sources import AnalysisSourceConfigurationError, resolve_analysis_source
 from .models import AnalysisJob, ImprovementUpdate, SurveyAnalysisState
 
@@ -160,7 +161,7 @@ def get_published_analysis_payload(survey):
         "statistics": statistics,
         "text_analysis": text_analysis,
         "snapshot": display.get("snapshot") if isinstance(display.get("snapshot"), dict) else {},
-        "ai": state.published_ai_payload or None,
+        "ai": humanize_ai_payload(state.published_ai_payload) or None,
         "ai_source": (
             {
                 "snapshot_id": ai_snapshot.pk,
@@ -206,7 +207,7 @@ def _node_payload(survey, state, display, statistics, text_analysis, latest_job)
         "statistics": statistics,
         "text_analysis": text_analysis,
         "snapshot": display.get("snapshot") if isinstance(display.get("snapshot"), dict) else {},
-        "ai": state.published_ai_payload or None,
+        "ai": humanize_ai_payload(state.published_ai_payload) or None,
         "ai_source": (manifest.get("ai_source") or {}) if node["has_result"] else {},
         "latest_job": latest_job,
         "node_result": node,
