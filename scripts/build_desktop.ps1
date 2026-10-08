@@ -1,19 +1,14 @@
 ﻿param(
     [string]$Python = ".\.venv\Scripts\python.exe",
-    [switch]$Diagnostic,
-    [switch]$NodeOnly
+    [switch]$Diagnostic
 )
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $PythonPath = Join-Path $ProjectRoot $Python
-$BuildName = if ($Diagnostic) { "FeedbackInsightHubDiagnostic" } else { "FeedbackInsightHub" }
-if ($NodeOnly) { $BuildName = if ($Diagnostic) { "FeedbackInsightHubNodeDiagnostic" } else { "FeedbackInsightHubNode" } }
+$BuildName = if ($Diagnostic) { "FeedbackInsightHubNodeDiagnostic" } else { "FeedbackInsightHubNode" }
 $WindowMode = if ($Diagnostic) { "--console" } else { "--windowed" }
-$DesktopModeArgs = if ($NodeOnly) {
-    @("--exclude-module", "dearpygui", "--exclude-module", "desktop_app.app",
-      "--exclude-module", "desktop_app.service", "--runtime-hook", (Join-Path $ProjectRoot "desktop_app\node_only_hook.py"))
-} else { @("--collect-all", "dearpygui", "--hidden-import", "desktop_app.app") }
+$NodeHookArgs = @("--runtime-hook", (Join-Path $ProjectRoot "desktop_app\node_only_hook.py"))
 $PipelineSourceFiles = @(
     "feedback\analysis_adapters.py",
     "feedback\analysis_input.py",
@@ -57,7 +52,7 @@ try {
         --paths $ProjectRoot `
         --specpath (Join-Path $ProjectRoot "build") `
         --collect-data feedback `
-        @DesktopModeArgs `
+        @NodeHookArgs `
         --collect-all allauth `
         --add-data "$ProjectRoot\templates;templates" `
         --add-data "$ProjectRoot\static;static" `

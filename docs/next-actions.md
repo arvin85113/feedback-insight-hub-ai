@@ -17,7 +17,7 @@
 - 一般回覆及四筆外部 fixture 已經兩個獨立隔離 DB 的真 HTTP 驗收；Gemini 管線／Worker 使用 mock。另已完成真實 TripAdvisor 全量統計／文字與正式結果 API 上傳，未呼叫真實 Gemini。
 - 最新 `FeedbackInsightHubNode` 封裝包含工作流與 UTC 修正，隔離 smoke 退出 0、未建立 DB，五份 UI 資產一致且未封裝環境設定、SQLite 或資料集。舊版完整保留於 `.tmp/node-workflow-exe-backup-20261007-192929/`。本次未跑 migrate、未啟動完整節點服務；Render 瀏覽器驗收遇登入頁，未驗收登入後畫面。雲端驗證限於正式 API 收妥及正式 DB 的唯讀展示服務核對，不將此當成登入後 GUI 驗收。
 - 既有來源換版／登錄／發布 PostgreSQL 併發已由 PR #30 CI 的 PG17 job 通過；本段未重跑，不據此推定新確認流程的 PG 行為。
-- 待完成：雲端全面停止排程、明文自測範圍限制、網站自動指派、正式切換及驗收後退役舊工作台。正式站收件閘門不變；詳見接手文件。
+- 待完成：雲端全面停止排程、明文自測範圍限制、網站自動指派、正式切換。正式站收件閘門不變；詳見接手文件。
 
 ## 目前狀態（2026-10-04 查證）
 
@@ -59,10 +59,9 @@
   3. 雲端執行 `seed_demo_beverage --inbox --count 100 --seed 7`（同一 seed 重跑視為重送）。
   4. 節點同步、分析、上傳後驗收網站數量與結果；之後才封存舊 `beverage-feedback` 問卷，清除另行批准。Gemini 另行批准。
 
-**桌面工作台／EXE**
-- `dist/FeedbackInsightHub/` 為單一 windowed 版；錯誤寫入 `%LOCALAPPDATA%\FeedbackInsightHub\logs\desktop.log`。
-- 本機 `.venv`、EXE 與 Render 都使用 Python 3.13（本機為獨立安裝的 3.13.15，Render 釘選 3.13.2）；
-  舊的 3.12 環境保留於 `.venv-py312` 供回退，確認無誤後可刪除。
+**本機節點／EXE**
+- 正式節點是這台 PC（裝置 `Arvin-PC`），封裝在 `dist/FeedbackInsightHubNode/`；舊的 Dear PyGui 工作台已移除，雙擊 EXE 只啟動節點。
+- 錯誤寫入 `%LOCALAPPDATA%\FeedbackInsightHub\logs\`（`node.log`、`worker.log`）。
 
 ## 待辦（依優先順序）
 

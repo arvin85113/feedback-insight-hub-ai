@@ -4,52 +4,6 @@ import json
 from pathlib import Path
 
 
-def _external_env_candidates(*, executable=None, local_app_data=None, explicit=None):
-    """Return external settings locations from most to least explicit."""
-
-    executable_path = Path(executable or sys.executable).resolve()
-    executable_dir = executable_path.parent
-    candidates = []
-    if explicit:
-        candidates.append(Path(explicit).expanduser())
-    candidates.append(executable_dir / ".env")
-    if local_app_data:
-        candidates.append(Path(local_app_data) / "FeedbackInsightHub" / ".env")
-
-    # A development build under ``<repo>/dist/<name>`` may reuse the repo's
-    # external .env.  Require repository markers so an arbitrary ancestor .env
-    # is never loaded merely because the EXE was copied elsewhere.
-    for parent in executable_dir.parents:
-        if (parent / "manage.py").is_file() and (parent / "config" / "settings.py").is_file():
-            candidates.append(parent / ".env")
-            break
-
-    seen = set()
-    for candidate in candidates:
-        resolved = candidate.resolve()
-        if resolved not in seen:
-            seen.add(resolved)
-            yield resolved
-
-
-def _load_external_environment():
-    if not getattr(sys, "frozen", False):
-        return None
-
-    from dotenv import load_dotenv
-
-    candidates = _external_env_candidates(
-        explicit=os.getenv("FEEDBACK_HUB_ENV_FILE", "").strip() or None,
-        local_app_data=os.getenv("LOCALAPPDATA", "").strip() or None,
-    )
-    for candidate in candidates:
-        if candidate.is_file():
-            # Existing process environment always wins over an external file.
-            load_dotenv(candidate, override=False)
-            return candidate
-    return None
-
-
 def _configure_file_logging(*, local_app_data=None, log_dir=None, filename="desktop.log"):
     """Write warnings and crashes to a rotating log, replacing the console build.
 
@@ -93,14 +47,11 @@ def _configure_file_logging(*, local_app_data=None, log_dir=None, filename="desk
 
 ROLE_FLAGS = (
     ("--worker", "worker"),
-    ("--legacy-workbench", "legacy"),
     ("--smoke-test", "smoke"),
 )
 
 
 def select_role(argv):
-    if "--legacy-workbench" in argv and os.getenv("FEEDBACK_HUB_NODE_ONLY") == "1":
-        raise ValueError("此封裝只支援本機節點，不支援舊工作台。")
     for flag, role in ROLE_FLAGS:
         if flag in argv:
             return role
@@ -118,18 +69,10 @@ def parent_pid_from(argv):
 
 
 def prepare_environment(role, environ=None):
-    """Node roles run on local data only; the workbench keeps its cloud .env."""
+    """Every role is the local node: local data only, never the cloud .env."""
 
     environ = os.environ if environ is None else environ
-    if role in {"launcher", "worker", "smoke"}:
-        environ["DEPLOYMENT_MODE"] = "node"
-        return None
-    environ["DEPLOYMENT_MODE"] = "cloud"
-    loaded = _load_external_environment()
-    desktop_database_url = environ.get("FEEDBACK_HUB_DATABASE_URL", "").strip()
-    if desktop_database_url and not environ.get("DATABASE_URL", "").strip():
-        environ["DATABASE_URL"] = desktop_database_url
-    return loaded
+    environ["DEPLOYMENT_MODE"] = "node"
 
 
 def _run_smoke_test():
@@ -161,26 +104,17 @@ def main():
     if role == "smoke":
         _run_smoke_test()
         return
-    if role in {"launcher", "worker"}:
-        from desktop_app import node_launcher
+    from desktop_app import node_launcher
 
-        # Each runner calls django.setup() and then configures its own log file.
-        if role == "launcher":
-            node_launcher.run_launcher()
-            return
-        from desktop_app.node_runtime import exit_code_of
+    # Each runner calls django.setup() and then configures its own log file.
+    if role == "launcher":
+        node_launcher.run_launcher()
+        return
+    from desktop_app.node_runtime import exit_code_of
 
-        # A supervised child must exit on a crash so the launcher can restart it.
-        parent_pid = parent_pid_from(sys.argv[1:])
-        sys.exit(exit_code_of(lambda: node_launcher.run_worker(parent_pid=parent_pid)))
-    import django
-
-    django.setup()
-    # After Django's LOGGING so the file handler is not reset by dictConfig.
-    _configure_file_logging()
-    from desktop_app.app import main as run_app
-
-    run_app()
+    # A supervised child must exit on a crash so the launcher can restart it.
+    parent_pid = parent_pid_from(sys.argv[1:])
+    sys.exit(exit_code_of(lambda: node_launcher.run_worker(parent_pid=parent_pid)))
 
 
 if __name__ == "__main__":

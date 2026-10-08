@@ -8,7 +8,7 @@
 
 > **第一次看這個專案？** 先讀 [案例說明](docs/case-study.md)（問題、我的角色、設計取捨），再看 [AI 輸出評估](docs/ai-eval.md)（如何讓 LLM 寫的數字可以被信任）。
 
-網站負責問卷、權限、資料收集與結果展示；Windows 本機工作台負責統計、文字分析及經管理者啟用的 Gemini 解析。資料與歷史結果保存在 Supabase PostgreSQL，Render 上的分析頁讀取已發布結果。
+網站負責問卷、權限、填答與結果展示；Windows 本機節點負責統計、文字分析及經管理者確認的 Gemini 解析。問卷定義與發布結果保存在 Supabase PostgreSQL；節點問卷的回覆經雲端收件匣進入本機節點保存，Render 上的分析頁讀取節點上傳的已發布結果。
 
 ## 目前功能
 
@@ -17,7 +17,7 @@
 - 通用外部資料匯入 mapping；外部資料會建立標準的 `Survey`、`Question`、`FeedbackSubmission` 與 `Answer`，和網站填答使用同一條後續分析流程。
 - 依題目資料型態產生描述統計、分布與適用的推論分析；目前序位評分的推論分析採秩次檢定或 Spearman 相關，平均數比較限於符合條件的連續型結果。
 - 字典式文字分析：關鍵字、分類、情緒與涵蓋率均標示為分析結果，而非原始標籤。
-- 本機工作台可查看各問卷的資料筆數、最新資料時間、統計／文字版本、Gemini 版本與待更新狀態；可手動更新或依設定於開啟時處理。
+- 本機節點主控台可查看各問卷的資料筆數、最新資料時間、統計／文字版本、Gemini 版本與上傳狀態；統計／文字自動排程，Gemini 由管理者確認後執行。
 - 統計／文字結果與 AI 結果分段發布。Gemini 失敗不會覆蓋已成功發布的統計／文字結果。
 - 改善建議先是可編輯草稿；建立改善項目、通知與寄信均需明確操作，不會自動執行。
 
@@ -25,31 +25,33 @@
 
 ```mermaid
 flowchart LR
-    A[網站填答或外部資料匯入] --> B[Supabase PostgreSQL]
-    B --> C[版本更新與 AnalysisJob 排程]
-    C --> D[Windows 本機工作台]
-    D --> E[統計與文字分析]
+    A[網站填答] --> B[雲端收件匣]
+    B --> D[Windows 本機節點]
+    X[外部資料登錄] --> D
+    D --> C[版本更新與 AnalysisJob 排程]
+    C --> E[統計與文字分析]
     E --> F[版本化 Snapshot 發布]
     F --> G[選用：Gemini 三階段解析]
     G --> H[版本化 AI Stage 發布]
-    F --> I[Render Django 唯讀展示]
-    H --> I
+    F --> U[上傳雲端]
+    H --> U
+    U --> I[Render Django 唯讀展示]
 ```
 
-1. 網站回覆或已核准的外部匯入資料寫入標準問卷結構。
-2. 資料、題目、詞典或分析設定變動時，系統更新版本並合併待處理工作。
-3. 本機工作台從 Supabase 讀取工作與問卷狀態，先執行統計與文字分析。
+1. 網站回覆經雲端收件匣進入本機節點，外部資料在節點登錄；兩者都寫成標準問卷結構或不可變來源版本。
+2. 資料、題目、詞典或分析設定變動時，節點更新版本並合併待處理工作。
+3. 節點 Worker 先執行統計與文字分析。
 4. 第一階段通過版本核對後，會建立或重用不可變 Snapshot，並發布有限大小的展示 payload。
-5. 管理者在本機明確啟用 API 額度後，第二階段才會呼叫 Gemini，依序產生統計解讀、文字洞察與綜合營運解析。
-6. 新結果以版本保存；僅在輸入、管線版本與工作租約仍一致時更新發布指標。Render 只讀該指標，不在網頁請求中重算或呼叫 Gemini。
+5. 管理者在節點主控台確認 API 額度後，第二階段才會呼叫 Gemini，依序產生統計解讀、文字洞察與綜合營運解析。
+6. 新結果以版本保存；僅在輸入、管線版本與工作租約仍一致時更新發布指標，並由背景同步上傳雲端。Render 只讀雲端套用的結果，不在網頁請求中重算或呼叫 Gemini。
 
 ## 元件分工
 
 | 元件 | 責任 |
 | --- | --- |
 | Django | 網頁、登入與角色權限、問卷、匯入、ORM、版本更新、工作排程、改善追蹤與發布結果讀取 |
-| Supabase PostgreSQL | 問卷、回覆、匯入批次、工作狀態、Snapshot、AI Stage 與歷史發布結果的權威儲存 |
-| Windows 本機工作台 | 問卷掃描、統計、文字分析、選用 Gemini、工作取消與版本化發布 |
+| Supabase PostgreSQL | 問卷定義正本、收件匣暫存與收據、節點上傳的發布結果 |
+| Windows 本機節點 | 回覆與外部資料正本、統計、文字分析、確認後的 Gemini、版本化發布與上傳 |
 | Pandas / SciPy | 描述統計與符合資料型態的推論分析 |
 | Gemini | 根據受限、遮蔽且可驗證的分析證據產生解讀與改善草稿；不是統計計算器或最終決策者 |
 | Render | Django 網站與靜態資源；分析頁只展示已發布結果 |
@@ -89,13 +91,13 @@ DATABASE_URL=
 DEBUG=True
 ALLOWED_HOSTS=127.0.0.1,localhost
 
-# 僅本機 Gemini 工作台需要
+# 僅開發用指令（例如 run_ai_eval）需要；本機節點的金鑰存在 Windows 認證管理員
 GOOGLE_API_KEY=
 GEMINI_MODEL=gemini-3.6-flash
 ```
 
 - 未設定 `DATABASE_URL` 時，開發環境可使用 SQLite；需要與網站共用資料時，設定受控的 PostgreSQL／Supabase 連線。
-- `GOOGLE_API_KEY` 只應存在於執行 Gemini 的本機環境。Render 不應設定這個值。
+- `GOOGLE_API_KEY` 只用於開發指令；Render 不應設定這個值。
 - 請以既有管理流程建立 Manager 帳號；範例或 seed 資料不是標準啟動步驟。
 
 編輯 `.env` 並確認資料庫目標後，再初始化及啟動網站：
@@ -105,7 +107,7 @@ python manage.py migrate
 python manage.py runserver
 ```
 
-開啟 `http://127.0.0.1:8000/`。本機網站與 Render 使用相同的分析展示流程：頁面只讀已發布結果，統計、文字與 Gemini 由本機工作台或 Worker 產生並發布。
+開啟 `http://127.0.0.1:8000/`。本機網站與 Render 使用相同的分析展示流程：頁面只讀已發布結果，統計、文字與 Gemini 由本機節點產生並上傳。
 
 ### 在另一台電腦接續開發
 
@@ -115,7 +117,6 @@ Git 只帶走程式與文件；以下三樣只在原本的開發機上，需另�
 |---|---|---|
 | `.env` | 專案根目錄 | 含資料庫連線與 Gemini 金鑰；與原機共用同一個 Supabase，寫入會影響正式網站 |
 | 本機資料包（`data/local/` 的 TripAdvisor clean／manifest／report／分析產物、`ai-eval/`） | 解壓到專案根目錄 | 評論正文仍可能含個資；不含 raw（有 `user_id`） |
-| `%LOCALAPPDATA%\FeedbackInsightHub\datasets.json` | 新電腦同一路徑 | 本機工作台用來找 TripAdvisor 資料；`root` 改成新電腦的專案路徑 |
 
 ```powershell
 winget install Python.Python.3.13
@@ -128,80 +129,44 @@ py -3.13 -m venv .venv
 .\.venv\Scripts\python.exe manage.py test feedback accounts config --settings=config.settings_test
 ```
 
-`datasets.json` 內容（`root` 換成實際路徑；`source_version` 必須與登錄值一致）：
-
-```json
-{"datasets": [{"source_ref": "jniimi/tripadvisor-review-rating",
-  "source_version": "1a1b7077c997eb496e402c6e9c97d91989eb24bb:tripadvisor-clean-v1:8892cf5be77ea70df321aa05c090ea86d76a0d7fbbe10cf620e408e0ba0309c5",
-  "root": "C:\\Projects\\feedback-insight-hub-ai\\data\\local\\tripadvisor-review-rating"}]}
-```
-
 若沒有資料包，可用 `prepare_local_dataset`（見 [外部資料交接](docs/external-dataset-import.md)）重新下載並驗證 TripAdvisor 資料；
 內容雜湊會與原機相同。
 
 ## Windows 本機節點與 EXE
 
-新節點封裝使用 `scripts/build_desktop.ps1 -NodeOnly`，輸出
-`dist/FeedbackInsightHubNode/FeedbackInsightHubNode.exe`，須保留整個資料夾。
-此封裝不包含 Dear PyGui，也拒絕 `--legacy-workbench`；原封裝與來源暫留作回退，以下舊工作台設定不適用新節點版。
-打包只建立檔案；正常啟動會套用本機 DB migration，首次設定會建立帳號，請先確認目標與備份。
-`--smoke-test` 僅檢查封裝模組與模板，不啟動伺服器、不套用 migration、不呼叫 API。
-
-本機主控台「分析工作」可查看問卷筆數、資料／統計／AI 時間與版本狀態，排程統計／文字、預覽 Gemini 及取消工作。
-OWNER 在「設定 → Gemini」存入 Windows 認證管理員；節點忽略 `.env` 的 `GOOGLE_API_KEY`，金鑰不寫 DB／紀錄。
-每次 Gemini 確認綁定輸入、設定、來源、模型、提示及憑證版本，通常三段，含格式重試硬上限六次。
-相同確認重送不建立新付費工作；逾時／崩潰留下不確定狀態，停下待查核，不自動重呼。Worker 不需另加 CLI 付費旗標。
-結果仍沿用 Snapshot／AI Stage，背景同步至已授權啟用的雲端 API；本機發布不等於雲端上傳完成。
-目前已通過隔離環境測試與封裝 smoke，正式切換、真實 Gemini、GUI 操作與安裝簽章仍需另外驗收／授權。
-
-來源碼與舊相容封裝依參數切換角色：
-
-| 啟動方式 | 角色 |
-|---|---|
-| 不帶參數 | 本機節點（`DEPLOYMENT_MODE=node`）：系統匣＋網頁主控台 `http://127.0.0.1:8750/`（被占用時往後找埠），並監督分析 Worker |
-| `--legacy-workbench` | 原 Dear PyGui 工作台，以雲端設定連 Supabase（見下方外部設定） |
-| `--worker` | 由本機節點自動啟動的分析 Worker，不需手動執行 |
-| `--smoke-test` | 打包驗證 |
-
-從原始碼啟動：
+本機節點是唯一做分析的地方：系統匣＋網頁主控台 `http://127.0.0.1:8750/`（被占用時往後找埠），並監督分析 Worker。
 
 ```powershell
+# 從原始碼啟動
 .\.venv\Scripts\python.exe -m pip install -r requirements-desktop.txt
 .\.venv\Scripts\python.exe -m desktop_app
-```
 
-本機節點資料都在 `%LOCALAPPDATA%\FeedbackInsightHub\`（`data\node.sqlite3`、`secrets\`、`run\`、`logs\node.log`、`logs\worker.log`）；試跑時可用 `FEEDBACK_HUB_NODE_HOME` 指到隔離資料夾。
-本機節點只讀 `NODE_DATABASE_URL`（預設本機 SQLite），不讀 `DATABASE_URL`，不會連到 Supabase。首次啟動會開啟一次性設定頁建立擁有者；
-之後以本機帳號登入（allauth，閒置 4 小時登出）。設計見 [本機節點規格](docs/superpowers/specs/2026-09-30-local-node-console-and-auth-design.md)。
-問卷定義同步（原型）：在主控台「雲端連線」輸入雲端網址與裝置權杖；權杖在雲端以 `manage.py create_node_device --name <名稱>` 產生，只顯示一次。
-雲端須設定 `CLOUD_SYNC_PROTOTYPE_ENABLED=True` 才開放節點 API，正式網站維持關閉。
-收件匣（原型）：雲端另設 `CLOUD_INBOX_ENABLED=True` 後，指派節點的問卷在發布時開啟收件匣。明文收件匣只限自測資料：`CLOUD_INBOX_SELF_TEST_SURVEYS` 列出允許的問卷 UUID（逗號分隔），不在清單的節點問卷不能發布、填答會被拒絕；`CLOUD_INBOX_REQUIRE_SELF_TEST` 預設 `True`，接入真實顧客回覆前須完成加密或另行批准，不可直接改成 `False`。
-
-Dear PyGui 工作台（`--legacy-workbench`）提供「開啟時檢查」、「開啟後自動更新」與「第一階段完成後執行 Gemini」選項。網站問卷從 Supabase Answer 串流分析；大型外部問卷則依資料庫登錄的不可變資料版本讀取本機 Parquet。兩種來源共用同一套工作、Snapshot 與發布流程；不會依問卷 slug 或資料夾名稱猜測來源。Gemini 預設關閉，勾選後才會使用本機 API 額度。
-
-封裝入口為：
-
-```powershell
+# 封裝（輸出 dist/FeedbackInsightHubNode/FeedbackInsightHubNode.exe，須保留整個資料夾）
 .\scripts\build_desktop.ps1
 ```
 
-封裝不包含 `.env`、憑證、完整 Parquet 或其他大型資料產物。正式安裝包、簽章與長駐 Worker 服務仍待完成。
+| 啟動方式 | 角色 |
+|---|---|
+| 不帶參數 | 本機節點（`DEPLOYMENT_MODE=node`） |
+| `--worker` | 由節點自動啟動的分析 Worker，不需手動執行 |
+| `--smoke-test` | 封裝驗證：只檢查模組與模板，不啟動伺服器、不套用 migration、不呼叫 API |
 
-封裝輸出為 `dist/FeedbackInsightHub/FeedbackInsightHub.exe`，啟動時須保留完整資料夾。警告與未預期錯誤會寫入 `%LOCALAPPDATA%\FeedbackInsightHub\logs\desktop.log`（輪替保留 3 份），不含憑證；一般不需要另外建置主控台診斷版（`-Diagnostic` 仍保留作為最後手段）。
+- 資料都在 `%LOCALAPPDATA%\FeedbackInsightHub\`（`data\node.sqlite3`、`secrets\`、`run\`、`logs\node.log`、`logs\worker.log`）；試跑時可用 `FEEDBACK_HUB_NODE_HOME` 指到隔離資料夾。
+- 節點只讀 `NODE_DATABASE_URL`（預設本機 SQLite），不讀 `.env` 的 `DATABASE_URL`，不會直接連 Supabase。正常啟動會套用本機 DB migration；首次啟動開啟一次性設定頁建立擁有者，之後以本機帳號登入（allauth，閒置 4 小時登出）。設計見 [本機節點規格](docs/superpowers/specs/2026-09-30-local-node-console-and-auth-design.md)。
+- 封裝不包含 `.env`、憑證、完整 Parquet 或其他大型資料產物；`-Diagnostic` 產生主控台診斷版，只作最後手段。正式安裝包與簽章仍待完成。
 
-`--legacy-workbench` 使用外部設定連接與網站相同的 Supabase。既有程序環境變數優先，其次讀取第一個存在的設定檔：`FEEDBACK_HUB_ENV_FILE` 指定路徑、EXE 同層 `.env`、`%LOCALAPPDATA%\FeedbackInsightHub\.env`。專案目錄內的開發封裝也可沿用專案根目錄 `.env`。設定 `DATABASE_URL`（或 `FEEDBACK_HUB_DATABASE_URL`）及選用的 `GOOGLE_API_KEY`；封裝版問卷工作流程要求 PostgreSQL。
+**分析與 Gemini**：主控台「分析工作」顯示各問卷的筆數、資料／統計／AI 時間與版本狀態，可排程統計／文字、預覽 Gemini 與取消工作。
+OWNER 在「設定 → Gemini」把金鑰存入 Windows 認證管理員；節點不讀 `.env` 的 `GOOGLE_API_KEY`，金鑰不寫 DB 或紀錄。
+每次 Gemini 確認綁定輸入、設定、來源、模型、提示與憑證版本，通常三段，含格式重試硬上限六次；逾時或崩潰留下不確定狀態，停下待查核，不自動重呼。
 
-大型外部資料需先以已驗證的 manifest 與 mapping 登錄為該問卷的作用中分析來源。此操作只保存來源 revision、清理版本、SHA-256、列數和 mapping 證據，不會把 Parquet 或本機路徑寫入 Supabase：
+**外部資料（TripAdvisor）**：在主控台「資料集」選擇已驗證的 manifest 與 mapping；節點核對 SHA-256、大小與筆數，經雲端 API 建立外部資料問卷並登錄不可變來源版本，之後自動分析與上傳。
+本機路徑只存在節點，不寫入 Supabase；資料包準備見 [外部資料交接](docs/external-dataset-import.md)。
 
-```powershell
-# 先確認內容，不寫資料庫
-.\.venv\Scripts\python.exe manage.py register_external_analysis_source `
-  --survey <survey-slug> --manifest <dataset-manifest.json> --mapping <mapping.json> --dry-run
-
-# 確認目標資料庫與授權後才移除 --dry-run
-```
-
-EXE 再從 `%LOCALAPPDATA%\FeedbackInsightHub\datasets.json` 讀取該不可變版本在本機的位置；每筆設定必須同時含有 `source_ref`、`source_version` 與 `root`。`source_version` 必須與登錄指令輸出一致。可用 `FEEDBACK_HUB_DATA_ROOT` 為單一資料集的明確設定；程式不再自動掃描專案資料夾尋找資料。
+**雲端同步**：在主控台「雲端連線」輸入雲端網址與裝置權杖（雲端以 `manage.py create_node_device --name <名稱>` 產生，只顯示一次）。
+背景同步每 5 分鐘同步問卷定義、從收件匣收取回覆並確認收訖、上傳發布結果；本機發布不等於雲端已收到，以「雲端已接收此版本」為準。
+雲端須設定 `CLOUD_SYNC_PROTOTYPE_ENABLED=True` 才開放節點 API；`CLOUD_INBOX_ENABLED=True` 後，指派節點的問卷在發布時開啟收件匣。
+明文收件匣只限自測資料：`CLOUD_INBOX_SELF_TEST_SURVEYS` 列出允許的問卷 UUID（逗號分隔），不在清單的節點問卷不能發布、填答會被拒絕；
+`CLOUD_INBOX_REQUIRE_SELF_TEST` 預設 `True`，接入真實顧客回覆前須完成加密或另行批准，不可直接改成 `False`。
 
 ## Render 部署
 
@@ -220,7 +185,7 @@ EXE 再從 `%LOCALAPPDATA%\FeedbackInsightHub\datasets.json` 讀取該不可變�
 ```text
 accounts/                         帳號、角色、個人資料與通知偏好
 config/                           Django 設定、根路由、WSGI／ASGI
-desktop_app/                      Windows 本機分析工作台與 EXE 入口
+desktop_app/                      Windows 本機節點啟動器、Worker 監督與 EXE 入口
 feedback/                         問卷、匯入、分析、工作協調、Snapshot 與改善追蹤
   analysis_input.py               共用分析輸入契約
   analysis_adapters.py            Answer／Parquet 輸入轉接
@@ -236,7 +201,7 @@ static/ templates/                Django 前端資產與樣板
 
 ## 目前限制
 
-- 已具備本機 GUI 與 one-folder EXE 流程，但正式安裝、簽章、長駐服務與完整雲端端到端驗收尚未完成。
+- 已具備本機節點與 one-folder EXE，但正式安裝包、程式碼簽章與收件匣加密尚未完成。
 - 真實 Gemini 呼叫仍受 API 額度、網路、模型延遲與供應商行為影響；不確定狀態不會盲目重呼。
 - Manager 目前共用可見問卷，多組織／owner 層級資料隔離仍待實作。通知已有預覽入口，完整改善成效比較與歷史分析版本介面仍需另行規劃與驗證。
 - 預測模型訓練、固定資料切分與 EXE 的模型管理介面尚未實作。

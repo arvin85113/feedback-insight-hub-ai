@@ -64,7 +64,7 @@ Shared DB:
 原型閘門 `CLOUD_SYNC_PROTOTYPE_ENABLED` 預設關閉：關閉時 API 回 503、`assign_survey_node` 拒絕執行；正式網站不開啟。
 收件匣（原型，C2）：`CLOUD_INBOX_ENABLED` 開啟且問卷已指派節點並設定 `inbox_since` 時，顧客送出改寫入雲端收件匣（明文封套、`SubmissionReceipt` 收據長期保存、每節點容量 20,000 筆／100 MB、單筆 64 KB），送出前依序核對同 ID 重送、填答版本與額度；本機逐筆寫成一般 `FeedbackSubmission`／`Answer`（`SyncedSubmissionSource` 保存原始答案與雜湊），提交後逐筆 ACK，雲端才刪除正文。無法寫入的回覆隔離，由雲端「收件匣」管理頁放回或放棄；最舊待收滿 25／30 天警示。正式網站不開啟此開關。結果上傳（原型，C3）：只適用於雲端同步、分析來源為問卷回覆的問卷。本機分析在建立輸入時凍結回覆水位（只納入序號不大於水位的收件匣回覆），題目、詞典或本機回覆的變更在同一交易遞增版本，使執行中的結果作廢；水位前進即重新排程。每次發布在同一交易內凍結為 `ResultUpload`（身分、序號、內容雜湊不再改變），同步週期以 UTF-8 JSON 上傳；雲端驗證後寫入只含中繼資料的 `PublishedResultRecord`，並在 `SurveyAnalysisState` 列鎖內只於序號、水位、定義版本都不倒退時切換展示。網站對指派給節點的問卷顯示「本機發布 #N」，以定義版本與回覆水位判定是否最新（管線版本為本機申報）。不搬移既有回覆（C4 擱置）。規格見 [雲端同步](superpowers/specs/2026-10-01-cloud-sync-design.md)。
 
-網站與本機工作台共用 Django models、工作協調與分析輸入契約，不維護第二套 HTTP domain service 或 ORM 鏡像。
+網站與本機節點共用 Django models、工作協調與分析輸入契約，不維護第二套 HTTP domain service 或 ORM 鏡像。
 
 ---
 
@@ -146,7 +146,7 @@ Shared DB:
 | 靜態檔案 | Whitenoise |
 | 部署 | Render |
 | 前端 | Django templates；設計變數與既有樣式在 `static/css/app.css`，元件層在 `static/css/ui.css`；頁面腳本在 `static/js/` |
-| AI | Gemini（`GEMINI_MODEL`，Vertex express mode），只由本機工作台／Worker 呼叫；AI 文字中的數字須對應 evidence |
+| AI | Gemini（`GEMINI_MODEL`，Vertex express mode），只由本機節點 Worker 在管理者確認後呼叫；AI 文字中的數字須對應 evidence |
 
 ---
 
@@ -186,7 +186,7 @@ Shared DB:
 | `feedback/published_analysis.py` | 頁面讀取已發布結果 |
 | `feedback/ai_stage_service.py` / `feedback/ai_grounding.py` | Gemini 三階段分析與數字驗證 |
 | `config/health.py` | 健康檢查與資料庫無法連線時的 503 頁 |
-| `desktop_app/` | Windows 本機工作台（EXE） |
+| `desktop_app/` | Windows 本機節點啟動器與 EXE 入口 |
 | `static/css/` / `static/js/` | 樣式與頁面腳本 |
 | `templates/` | All Django templates |
 
@@ -205,7 +205,7 @@ Shared DB:
 | 字典驅動文字分析 | 使用自訂詞典、同義詞正規化、情緒字典評分（`feedback/text_pipeline.py`）；網站提交只保存原始答案並排程，正式統計／文字計算由本機 Worker 執行。 |
 | Survey-index-first 流程 | 統計分析、文字洞察、改善追蹤、通知中心均採「先選問卷 → 再進入工作台」的流程，減少頁面跳轉並讓各功能聚焦於單一問卷。 |
 | Django 單一後端 | Render 與問卷寫入使用 Django，避免雙 ORM 與逾時 fallback 造成重複寫入。 |
-| 頁面只讀已發布結果 | 統計、文字與 Gemini 由本機工作台／Worker 計算後版本化發布；網站不在 request 內運算，Free 方案也不會逾時。 |
+| 頁面只讀已發布結果 | 統計、文字與 Gemini 由本機節點 Worker 計算後版本化發布並上傳；網站不在 request 內運算，Free 方案也不會逾時。 |
 | 大型資料留在本機 | 大型固定外部資料以本機 Parquet 分析，Supabase 只存定義、來源版本與發布結果，避免超過 500 MB 上限。 |
 | 問卷／題目生命週期分離 | `Survey.is_active` 控制填答、`analysis_enabled` 控制分析、`archived_at` 保留歷史；題目以 `code` 作穩定識別並可停用。 |
 | 回覆與匯入可追溯 | 回覆具有冪等鍵、寫入時間、完整／作廢狀態；外部來源以 namespace＋record key 去重，內容改變列為衝突而不覆寫。 |
