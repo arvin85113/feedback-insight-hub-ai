@@ -15,6 +15,7 @@
     <div class="panel-head">
         <h2>建立表單</h2>
     </div>
+    {% if node_notice %}<div class="builder-alert builder-alert-info" role="status">{{ node_notice }}</div>{% endif %}
     <form method="post" class="form-stack">
         {% csrf_token %}
         {% if is_node %}<input type="hidden" name="survey_uuid" value="{{ pending_survey_uuid }}">{% endif %}

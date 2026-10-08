@@ -477,6 +477,27 @@ class SurveyCategoryDeleteView(ManagerRequiredMixin, View):
         return redirect("feedback:survey-manager")
 
 
+NODE_MISSING_NOTICE = "尚未連接本機節點，發布後不會產生分析"
+
+
+def active_nodes():
+    """Nodes a new website draft may belong to (node-only analysis spec §5); none outside the cloud prototype."""
+
+    from cloudapi.models import NodeDevice
+
+    if settings.IS_NODE or not settings.CLOUD_SYNC_PROTOTYPE_ENABLED:
+        return NodeDevice.objects.none()
+    return NodeDevice.objects.filter(status=NodeDevice.Status.ACTIVE)
+
+
+def node_notice(survey=None):
+    if settings.IS_NODE or not settings.CLOUD_SYNC_PROTOTYPE_ENABLED:
+        return ""
+    if survey is not None and survey.owner_node_id:
+        return ""
+    return "" if active_nodes().exists() else NODE_MISSING_NOTICE
+
+
 class SurveyCreateView(DashboardBaseMixin, CreateView):
     template_name = "feedback/survey_create.html"
     form_class = SurveyCreateForm
@@ -485,6 +506,7 @@ class SurveyCreateView(DashboardBaseMixin, CreateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context.update(self.get_dashboard_base_context())
+        context["node_notice"] = node_notice()
         if settings.IS_NODE:
             import uuid as uuid_module
 
@@ -506,13 +528,23 @@ class SurveyCreateView(DashboardBaseMixin, CreateView):
                 messages.error(self.request, "表單已過期，請重新開啟建立問卷頁。")
                 return self.form_invalid(form)
         data = form.cleaned_data
+        nodes = list(active_nodes()[:2])
+        if len(nodes) > 1:
+            # Several nodes: never pick one silently (spec §5).
+            messages.error(self.request, "已連接多個本機節點，請先在後台撤銷不用的節點再建立問卷。")
+            return self.form_invalid(form)
         try:
-            self.object = create_draft({
-                "survey_uuid": survey_uuid, "title": data["title"], "description": data.get("description", ""),
-                "is_active": True, "analysis_enabled": data.get("analysis_enabled", True),
-                "thank_you_email_enabled": data.get("thank_you_email_enabled", True),
-                "category": data["category"].name if data.get("category") else None,
-            })
+            with transaction.atomic():
+                self.object = create_draft({
+                    "survey_uuid": survey_uuid, "title": data["title"], "description": data.get("description", ""),
+                    "is_active": True, "analysis_enabled": data.get("analysis_enabled", True),
+                    "thank_you_email_enabled": data.get("thank_you_email_enabled", True),
+                    "category": data["category"].name if data.get("category") else None,
+                })
+                if nodes:
+                    from cloudapi.writes import assign_survey_to_node
+
+                    self.object = assign_survey_to_node(self.object, nodes[0]).survey
         except DefinitionCommitError as exc:
             messages.error(self.request, exc.user_message)
             return self.form_invalid(form)
@@ -552,6 +584,7 @@ class SurveyBuilderView(DashboardBaseMixin, DetailView):
             latest = self.object.submissions.order_by("-submitted_at").only("submitted_at").first()
             context["latest_response_at"] = latest.submitted_at if latest else None
         context["active_tab"] = self.request.GET.get("tab", "questions")
+        context["node_notice"] = node_notice(self.object)
         return context
 
     def post(self, request, *args, **kwargs):
