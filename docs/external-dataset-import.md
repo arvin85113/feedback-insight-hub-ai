@@ -12,13 +12,13 @@
 
 兩條路徑共用相同的排程、統計／文字分析、Snapshot 與版本化發布流程。
 
-### 本機節點接手（未切換正式流程）
+### 本機節點登錄
 
 - `register_external_analysis_source` 沿用既有 CLI；會寫入所選 DB，必須先確認模式、目標及授權。`--dry-run` 僅驗證，不建立登錄或工作。
 - 在 node 模式，除既有來源版本外，同一交易保存 `LocalDatasetLocation`；Worker 可直接依工作版本取檔，不必重傳 CLI 路徑。cloud 模式不保存本機路徑。
 - 登錄會核對 clean 大小／SHA-256、manifest、mapping 與來源 revision；mapping 與 manifest 的檔案雜湊也綁定。不是重新全量檢查，也不等於上游來源真實性或授權驗證。
 - C3 外部結果附固定來源身分；雲端必須已登錄同一版本。來源換版後，舊結果只能保留為上一版，舊工作晚到不切換展示指標。
-- 雲端來源登錄 API、問卷定義同步及 OWNER 資料集頁已局部實作並經隔離測試，尚缺雙 DB 真 API／PG／GUI 驗收；不能只執行本機登錄就認定 Render 已接通。規範見 [節點唯一分析](superpowers/specs/2026-10-04-node-only-analysis-design.md)，證據見 [分段接手與回退](superpowers/plans/2026-10-05-node-only-analysis-integration.md)。
+- 一般使用走節點主控台「資料集」頁（經雲端 API 建立外部資料問卷並登錄來源版本）；TripAdvisor 目前即以此方式上線（雲端 slug `pka6fikw`）。規範見 [節點唯一分析](superpowers/specs/2026-10-04-node-only-analysis-design.md)。
 
 ## 安全原則
 

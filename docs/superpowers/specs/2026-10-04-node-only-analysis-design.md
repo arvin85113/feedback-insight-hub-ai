@@ -6,7 +6,7 @@
 - **尚未實作**：第 1 節 cloud 模式全面阻擋分析排程；第 6 節移除桌面工作台與只含節點的最終 EXE。
 - **尚未驗收**：第 7 節 Runbook 的正式操作（Render 開關、節點權杖、TripAdvisor 與飲料店切換、舊問卷封存）、實機 GUI／Windows 憑證庫與真實 Gemini；每步另行授權。
 來源：PR #29 固定 head `4c87fa98dd73f6f697b3c0e6f17a57847e32d37e` 的文件，於 `codex/node-only-analysis` 整合修訂。
-本文件不構成 commit／push／合併／正式 DB／部署／付費 API 授權；驗證與回退紀錄見 [實作交接](../plans/2026-10-05-node-only-analysis-integration.md)。
+本文件不構成 commit／push／合併／正式 DB／部署／付費 API 授權；實作與驗證歷程見 Git log（PR #30～#36）。
 前置規格：[本機節點架構總覽](2026-09-30-local-node-architecture-design.md)、[主控台與登入](2026-09-30-local-node-console-and-auth-design.md)、
 [雲端同步](2026-10-01-cloud-sync-design.md)（本規格執行其第 11 節「切換」）、[問卷建立工具改版](2026-10-03-survey-builder-redesign-design.md)。
 
