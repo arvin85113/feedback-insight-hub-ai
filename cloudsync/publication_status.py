@@ -37,6 +37,14 @@ def publication_issues():
     ).filter(queued=False).exclude(survey_id__in=local_history_surveys().values("pk"))
 
 
+def current_failed_uploads():
+    """Failed uploads of the version each enabled survey shows now; superseded failures stay history."""
+    return ResultUpload.objects.filter(
+        status=ResultUpload.Status.FAILED, published_at=F("survey__analysis_state__published_at"),
+        survey__analysis_enabled=True, survey__archived_at__isnull=True,
+    )
+
+
 def decorate_publications(surveys, link):
     """Attach the status of the currently shown publication, never an older upload."""
     ids = [survey.pk for survey in surveys]
