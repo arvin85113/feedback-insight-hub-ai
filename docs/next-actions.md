@@ -55,7 +55,8 @@
   程式已完成，**尚未部署**。明文收件匣只收 `CLOUD_INBOX_SELF_TEST_SURVEYS` 列出的問卷（`CLOUD_INBOX_REQUIRE_SELF_TEST` 預設開啟）；
   飲料店節點問卷 UUID 固定為 `seed_demo_beverage.BEVERAGE_NODE_SURVEY_UUID`。部署後操作順序，**每步另行授權**：
   1. Render 設 `CLOUD_INBOX_SELF_TEST_SURVEYS=<該 UUID>`、`CLOUD_SYNC_PROTOTYPE_ENABLED=True`、`CLOUD_INBOX_ENABLED=True`，並建立節點裝置權杖。
-  2. 節點連結雲端後執行 `seed_demo_beverage --node-create`。
+     之後網站新建的草稿都屬於節點；不在允許清單的節點問卷無法發布（建立頁與編輯頁會說明），自測問卷也只接受管理者與模擬填答，一般顧客無法填答。正式收真實回覆須先完成加密或另行批准。
+  2. 節點連結雲端後執行 `seed_demo_beverage --node-create`（中途失敗可直接重跑，會續接發布並補建關鍵字）。
   3. 雲端執行 `seed_demo_beverage --inbox --count 100 --seed 7`（同一 seed 重跑視為重送）。
   4. 節點同步、分析、上傳後驗收網站數量與結果；之後才封存舊 `beverage-feedback` 問卷，清除另行批准。Gemini 另行批准。
 

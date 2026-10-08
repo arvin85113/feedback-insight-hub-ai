@@ -24,6 +24,12 @@ class PublishBlocked(DefinitionCommitError):
 
     code = "publish_blocked"
     user_message = "收件匣尚未開啟，無法發布指派節點的問卷"
+    SELF_TEST_MESSAGE = "收件匣目前只開放自測問卷，這份指派節點的問卷無法發布"
+
+    def __init__(self, message=None):
+        super().__init__(message or self.user_message)
+        if message:
+            self.user_message = message
 
 
 class DefinitionError(DefinitionCommitError, ValueError):

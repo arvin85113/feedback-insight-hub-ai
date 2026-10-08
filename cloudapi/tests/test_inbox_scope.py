@@ -83,3 +83,66 @@ class InboxScopeTests(TestCase):
              "meta-idempotency_key": "11111111-1111-1111-1111-111111111111"}, follow=True)
         self.assertContains(response, SurveyClosed.user_message)
         self.assertEqual((FeedbackSubmission.objects.count(), SubmissionReceipt.objects.count()), (0, 0))
+
+
+@override_settings(CLOUD_INBOX_ENABLED=True, CLOUD_INBOX_REQUIRE_SELF_TEST=True)
+class SelfTestSurveyAccessTests(TestCase):
+    """Final review: real customers stay out of the plaintext inbox; blocked publishes say why."""
+
+    def setUp(self):
+        self.node, _ = NodeDevice.issue("office")
+        survey = Survey.objects.create(title="S", slug="s")
+        self.question = Question.objects.create(survey=survey, title="Q", kind="short_text", data_type="text", order=1)
+        self.survey = published(assign_survey_to_node(survey, self.node).survey)
+        Survey.objects.filter(pk=self.survey.pk).update(inbox_since=timezone.now(), published_version=1,
+                                                         analysis_definition_version=1)
+        self.survey.refresh_from_db()
+        self.scope = override_settings(CLOUD_INBOX_SELF_TEST_SURVEYS=frozenset({str(self.survey.uuid)}))
+        self.scope.enable()
+        self.addCleanup(self.scope.disable)
+
+    def accept(self, user):
+        return accept_submission(self.survey, user=user, submission_uuid=uuid.uuid4(), form_version=1,
+                                 consent_follow_up=False, answers={str(self.question.uuid): "好"})
+
+    def test_customer_reply_to_self_test_survey_is_refused(self):
+        customer = User.objects.create_user(username="c", password="x")
+        with self.assertRaises(SurveyClosed):
+            self.accept(customer)
+        self.assertFalse(SubmissionReceipt.objects.exists())
+
+    def test_manager_and_seeded_replies_are_accepted(self):
+        manager = User.objects.create_user(username="m", password="x", role="manager")
+        self.accept(manager)
+        self.accept(None)
+        self.assertEqual(SubmissionReceipt.objects.count(), 2)
+
+    @cloud_only
+    def test_customer_fill_page_is_refused_without_writing(self):
+        customer = User.objects.create_user(username="c", password="x")
+        self.client.force_login(customer)
+        response = self.client.post(
+            reverse("feedback:survey-detail", args=[self.survey.slug]),
+            {"definition_version": 1, f"question_{self.question.id}": "好",
+             "meta-idempotency_key": "11111111-1111-1111-1111-111111111111"}, follow=True)
+        self.assertContains(response, SurveyClosed.user_message)
+        self.assertFalse(SubmissionReceipt.objects.exists())
+
+    def test_publish_outside_scope_explains_the_self_test_limit(self):
+        definition = blank_definition(uuid.uuid4(), title="節點草稿")
+        add_question(definition, {"title": "感想", "kind": "long_text", "order": 1})
+        draft = create_node_survey(self.node, definition)[0].survey
+        published_definition = serialize_definition(draft)
+        published_definition["published"] = True
+        with self.assertRaises(PublishBlocked) as raised:
+            change_definition(draft.uuid, expected_version=draft.definition_version, definition=published_definition)
+        self.assertIn("自測", raised.exception.user_message)
+
+    @cloud_only
+    def test_builder_warns_node_draft_outside_scope(self):
+        manager = User.objects.create_user(username="m", password="x", role="manager")
+        self.client.force_login(manager)
+        definition = blank_definition(uuid.uuid4(), title="節點草稿")
+        draft = create_node_survey(self.node, definition)[0].survey
+        page = self.client.get(reverse("feedback:survey-builder", args=[draft.slug]))
+        self.assertContains(page, "只開放自測問卷")

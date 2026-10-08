@@ -490,10 +490,20 @@ def active_nodes():
     return NodeDevice.objects.filter(status=NodeDevice.Status.ACTIVE)
 
 
+SELF_TEST_ONLY_NOTICE = "這份問卷由本機節點收件；收件匣目前只開放自測問卷，無法發布"
+
+
 def node_notice(survey=None):
-    if settings.IS_NODE or not settings.CLOUD_SYNC_PROTOTYPE_ENABLED:
+    if settings.IS_NODE:
         return ""
     if survey is not None and survey.owner_node_id:
+        from cloudapi.definition import serialize_definition
+        from cloudapi.inbox import inbox_scope_allows
+
+        # Same rule as the publish check: external-source surveys never use the inbox.
+        unpublishable = survey.published_version is None and not inbox_scope_allows(survey)
+        return SELF_TEST_ONLY_NOTICE if unpublishable and not serialize_definition(survey).get("external_source") else ""
+    if not settings.CLOUD_SYNC_PROTOTYPE_ENABLED:
         return ""
     return "" if active_nodes().exists() else NODE_MISSING_NOTICE
 

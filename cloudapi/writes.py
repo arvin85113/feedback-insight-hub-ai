@@ -107,9 +107,11 @@ def _lifecycle(survey, definition):
     if definition["published"]:
         if not definition["questions"]:
             raise DefinitionError("至少需要一題才能發布")
-        if survey.owner_node_id and not current_source and not (
-                settings.CLOUD_INBOX_ENABLED and inbox_scope_allows(survey)):
-            raise PublishBlocked()
+        if survey.owner_node_id and not current_source:
+            if not settings.CLOUD_INBOX_ENABLED:
+                raise PublishBlocked()
+            if not inbox_scope_allows(survey):
+                raise PublishBlocked(PublishBlocked.SELF_TEST_MESSAGE)
         definition.update(
             published_version=next_version,
             published_at=timezone.now().isoformat(),

@@ -59,10 +59,11 @@ class NodeBeverageSeedTests(TestCase):
         self.assertFalse(Survey.objects.filter(uuid=BEVERAGE_NODE_SURVEY_UUID).exists())
         self.assertFalse(KeywordCategory.objects.exists())
 
-    def test_node_create_twice_refuses(self):
+    def test_node_create_twice_is_a_no_op(self):
         self.node_create()
-        with self.assertRaisesMessage(CommandError, "已存在"):
-            self.node_create()
+        survey = self.node_create()
+        self.assertEqual(KeywordCategory.objects.filter(survey=survey).count(), 6)
+        self.assertEqual(Survey.objects.filter(uuid=BEVERAGE_NODE_SURVEY_UUID).count(), 1)
 
     def test_beverage_through_inbox_end_to_end(self):
         from cloudsync.runner import run_cycle
@@ -83,3 +84,17 @@ class NodeBeverageSeedTests(TestCase):
             "print(sorted(set(SubmissionReceipt.objects.values_list('status', flat=True))))"
         ).strip().splitlines()[-1]
         self.assertEqual(statuses, "['synced']")
+
+    def test_node_create_resumes_after_a_failed_publish(self):
+        from unittest.mock import patch
+
+        from cloudapi.errors import PublishBlocked
+
+        with patch("feedback.survey_lifecycle.commit", side_effect=PublishBlocked()):
+            with self.assertRaises(CommandError):
+                self.node_create()
+        draft = Survey.objects.get(uuid=BEVERAGE_NODE_SURVEY_UUID)
+        self.assertIsNone(draft.published_version)
+        survey = self.node_create()
+        self.assertIsNotNone(survey.published_version)
+        self.assertEqual(KeywordCategory.objects.filter(survey=survey).count(), 6)

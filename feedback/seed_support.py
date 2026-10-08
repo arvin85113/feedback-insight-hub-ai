@@ -59,7 +59,8 @@ def survey_definition(*, survey_uuid, title, questions, description="", category
 
 def _create_keywords(survey, keywords):
     for keyword, category_name in keywords:
-        KeywordCategory.objects.create(survey=survey, keyword=keyword, category=category_name, threshold=2)
+        KeywordCategory.objects.get_or_create(survey=survey, keyword=keyword, category=category_name,
+                                              defaults={"threshold": 2})
 
 
 def create_published_survey(*, slug, title, questions, description="", category=None, keywords=(),
@@ -81,22 +82,25 @@ def create_published_survey(*, slug, title, questions, description="", category=
 def create_published_node_survey(*, survey_uuid, title, questions, description="", category=None, keywords=()):
     """Node mode: create and publish through the cloud API (the cloud stays the only definition writer).
 
-    Keywords are node-local data (cloud sync spec §1), created only after the publish succeeded.
+    Resumable: a draft left by a failed publish is published on the next run, and missing keywords are
+    added. Keywords are node-local data (cloud sync spec §1), created only once the survey is published.
     """
 
     from cloudapi.errors import DefinitionCommitError, DefinitionError
 
     from .survey_lifecycle import commit, create_draft
 
-    if Survey.objects.filter(uuid=survey_uuid).exists():
-        raise CommandError(f"問卷 {survey_uuid} 已存在於本機；請在節點主控台處理後再執行")
-    definition = survey_definition(survey_uuid=survey_uuid, title=title, questions=questions,
-                                   description=description, category=category)
+    survey = Survey.objects.filter(uuid=survey_uuid).first()
+    if survey is not None and survey.archived_at is not None:
+        raise CommandError(f"問卷 {survey_uuid} 已封存；不能重新建立同一份問卷")
     try:
-        survey = create_draft(definition)
-        published = serialize_definition(survey)
-        published["published"] = True
-        commit(survey, published, survey.definition_version)
+        if survey is None:
+            survey = create_draft(survey_definition(survey_uuid=survey_uuid, title=title, questions=questions,
+                                                    description=description, category=category))
+        if survey.published_version is None:
+            published = serialize_definition(survey)
+            published["published"] = True
+            commit(survey, published, survey.definition_version)
     except (DefinitionCommitError, DefinitionError) as exc:
         raise CommandError(getattr(exc, "user_message", "") or str(exc)) from exc
     survey = Survey.objects.get(uuid=survey_uuid)

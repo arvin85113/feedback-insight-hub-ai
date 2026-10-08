@@ -90,6 +90,9 @@ def accept_submission(survey, *, user, submission_uuid, form_version, consent_fo
     # Only a new reply needs an open survey and the published form (builder spec §7.1).
     if not survey.accepts_responses or not inbox_scope_allows(survey):
         raise SurveyClosed()
+    if settings.CLOUD_INBOX_REQUIRE_SELF_TEST and user is not None and not user.is_manager:
+        # Self-test surveys take only seeded replies and staff tests, never a real customer's name and email.
+        raise SurveyClosed()
     if form_version != survey.published_version:
         raise DefinitionOutdated()
 

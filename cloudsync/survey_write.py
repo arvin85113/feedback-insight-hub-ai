@@ -26,7 +26,9 @@ def _translate(error):
     if error.kind == CONFLICT:
         return VersionConflict(error.payload.get("current_version"))
     if error.kind == SEMANTIC:
-        return PublishBlocked() if error.payload.get("error") == PublishBlocked.code else PublishedLocked()
+        if error.payload.get("error") == PublishBlocked.code:
+            return PublishBlocked(error.payload.get("message"))
+        return PublishedLocked()
     return DefinitionError(str(error))
 
 
