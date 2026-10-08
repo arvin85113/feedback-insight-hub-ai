@@ -10,6 +10,7 @@ from .ai_worker import AIWorkerExecutionError, execute_ai_job
 from .analysis_jobs import claim_next_job, publish_analysis_snapshot, schedule_survey_analysis
 from .models import AnalysisJob, Survey, SurveyAIAnalysisStage, SurveyAIReportSnapshot, SurveyAnalysisState
 from .test_ai_stages import provider_response, statistics_payload, synthesis_payload, text_payload
+from .test_utils import node_only
 from .tests import source_snapshot
 
 
@@ -96,6 +97,7 @@ class AIWorkerTests(TestCase):
         job.refresh_from_db()
         self.assertEqual(job.status, AnalysisJob.Status.RUNNING)
 
+    @node_only
     @patch("feedback.ai_stage_service.create_gemini_client")
     def test_bound_base_and_mock_ai_publish_automatically_queue_and_upload(self, client_factory):
         from cloudapi.definition import serialize_definition
