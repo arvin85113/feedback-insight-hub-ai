@@ -1,6 +1,10 @@
 # 本機節點成為唯一分析入口
 
-狀態：2026-10-06 本機接手；本文件為規格正本，包含 PR #29 的五點修正。外部來源／資料集入口與 Gemini 工作確認已實作；獨立 DB 真 HTTP 和 mock 管線已局部驗收。正式切換、實機 GUI／憑證與真實 Gemini 尚未驗收，詳見交接。
+狀態（2026-10-08）：本文件為規格正本，包含 PR #29 的五點修正；以下是實作現況，正式切換尚未執行。
+- **已實作並合併**：第 2 節外部資料問卷與資料集入口（#30、#31）；第 3 節 Gemini 工作確認與憑證庫（#31）；本機發布結果自動上傳的狀態修正（#31）；
+  第 1 節明文收件匣的伺服器端自測範圍限制、第 4 節飲料店 `--node-create`／`--inbox`、第 5 節網站草稿指派節點（#32）。
+- **尚未實作**：第 1 節 cloud 模式全面阻擋分析排程；第 6 節移除桌面工作台與只含節點的最終 EXE。
+- **尚未驗收**：第 7 節 Runbook 的正式操作（Render 開關、節點權杖、TripAdvisor 與飲料店切換、舊問卷封存）、實機 GUI／Windows 憑證庫與真實 Gemini；每步另行授權。
 來源：PR #29 固定 head `4c87fa98dd73f6f697b3c0e6f17a57847e32d37e` 的文件，於 `codex/node-only-analysis` 整合修訂。
 本文件不構成 commit／push／合併／正式 DB／部署／付費 API 授權；驗證與回退紀錄見 [實作交接](../plans/2026-10-05-node-only-analysis-integration.md)。
 前置規格：[本機節點架構總覽](2026-09-30-local-node-architecture-design.md)、[主控台與登入](2026-09-30-local-node-console-and-auth-design.md)、
