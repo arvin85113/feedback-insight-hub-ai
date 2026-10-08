@@ -120,14 +120,14 @@ def results_status(link=None):
     link = CloudLink.load() if link is None else link
     if not link.is_linked:
         return StatusItem("results", "結果上傳", "off", "未連線")
-    from cloudsync.publication_status import publication_issues
+    from cloudsync.publication_status import current_failed_uploads, publication_issues
     issues = publication_issues()
     missing_binding = issues.filter(cloud_bound=False).count()
     if missing_binding:
         return StatusItem("results", "結果上傳", "warn", f"{missing_binding} 份已在本機發布，但尚未接上雲端發布")
     if issues.exists():
         return StatusItem("results", "結果上傳", "warn", "已發布結果尚未建立上傳紀錄；下次同步會補建")
-    failed = ResultUpload.objects.filter(status=ResultUpload.Status.FAILED).count()
+    failed = current_failed_uploads().count()
     if failed:
         return StatusItem("results", "結果上傳", "warn", f"{failed} 份結果上傳失敗")
     pending = ResultUpload.objects.filter(status=ResultUpload.Status.PENDING).count()

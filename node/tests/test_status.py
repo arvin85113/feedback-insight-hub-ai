@@ -111,8 +111,6 @@ class InboxStatusTests(TestCase):
 
 class ResultsStatusTests(TestCase):
     def test_results_status_counts_and_failures(self):
-        from django.utils import timezone
-
         from cloudsync.definitions import upsert_definition
         from cloudsync.models import ResultUpload
         from cloudsync.tests.test_inbox import definition
@@ -120,9 +118,12 @@ class ResultsStatusTests(TestCase):
 
         linked = CloudLink(api_url="https://c", node_uuid="99999999-9999-9999-9999-999999999999")
         self.assertEqual(results_status(CloudLink()).state, "off")
+        from cloudsync.tests.test_results_local import published_state
+
         survey, _ = upsert_definition(definition(1))
+        state = published_state(survey)  # failures count only for the version the survey shows now
         ResultUpload.objects.create(survey=survey, publish_sequence=1, content_hash="h", content={},
-                                    published_at=timezone.now())
+                                    published_at=state.published_at)
         ok = results_status(linked)
         self.assertEqual(ok.state, "ok")
         self.assertIn("待上傳 1 份", ok.summary)

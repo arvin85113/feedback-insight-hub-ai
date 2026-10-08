@@ -84,9 +84,50 @@ class RunCycleTests(TestCase):
         self.assertEqual(self.run_with(FakeClient()), "results_incomplete")
         self.assertIsNotNone(CloudLink.load().last_success_at)  # connection itself succeeded
 
-    def test_permanent_upload_rejection_cannot_report_complete_sync(self):
-        with patch("cloudsync.runner.upload_results", return_value={"uploaded": 0, "failed": 1}):
-            self.assertEqual(self.run_with(FakeClient()), "results_incomplete")
+    def failed_upload(self, *, published_at=None, **survey_changes):
+        from cloudsync.definitions import upsert_definition
+        from cloudsync.models import ResultUpload
+        from cloudsync.results import record_publication
+        from cloudsync.tests.test_inbox import definition
+        from cloudsync.tests.test_results_local import published_state
+        from feedback.models import Survey
+
+        survey, _ = upsert_definition(definition(1))
+        upload = record_publication(published_state(survey))
+        ResultUpload.objects.filter(pk=upload.pk).update(status="failed", last_error="invalid")
+        if survey_changes:
+            Survey.objects.filter(pk=survey.pk).update(**survey_changes)
+        return survey, upload
+
+    def test_failed_current_upload_cannot_report_complete_sync(self):
+        self.failed_upload()
+        self.assertEqual(self.run_with(FakeClient()), "results_incomplete")
+
+    def test_failed_upload_of_a_superseded_version_does_not_keep_sync_incomplete(self):
+        from cloudsync.models import ResultUpload
+        from cloudsync.results import record_publication
+        from cloudsync.tests.test_results_local import published_state
+
+        survey, old = self.failed_upload()
+        current = record_publication(published_state(survey))
+        ResultUpload.objects.filter(pk=current.pk).update(status="uploaded")
+        self.assertEqual(self.run_with(FakeClient()), "ok")
+        self.assertEqual(ResultUpload.objects.get(pk=old.pk).status, "failed")  # history kept
+
+    def test_failed_upload_of_an_archived_survey_does_not_keep_sync_incomplete(self):
+        self.failed_upload(archived_at=timezone.now(), analysis_enabled=False)
+        self.assertEqual(self.run_with(FakeClient()), "ok")
+
+    def test_node_status_counts_only_current_failed_uploads(self):
+        from cloudsync.models import ResultUpload
+        from cloudsync.results import record_publication
+        from cloudsync.tests.test_results_local import published_state
+        from node.status import results_status
+
+        survey, _ = self.failed_upload()
+        self.assertEqual(results_status().state, "warn")
+        ResultUpload.objects.filter(pk=record_publication(published_state(survey)).pk).update(status="uploaded")
+        self.assertEqual(results_status().state, "ok")
 
     def test_local_history_does_not_fail_sync_or_block_a_bound_upload(self):
         from cloudsync.definitions import upsert_definition
