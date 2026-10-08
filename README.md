@@ -175,7 +175,7 @@ OWNER 在「設定 → Gemini」存入 Windows 認證管理員；節點忽略 `.
 之後以本機帳號登入（allauth，閒置 4 小時登出）。設計見 [本機節點規格](docs/superpowers/specs/2026-09-30-local-node-console-and-auth-design.md)。
 問卷定義同步（原型）：在主控台「雲端連線」輸入雲端網址與裝置權杖；權杖在雲端以 `manage.py create_node_device --name <名稱>` 產生，只顯示一次。
 雲端須設定 `CLOUD_SYNC_PROTOTYPE_ENABLED=True` 才開放節點 API，正式網站維持關閉。
-收件匣（原型）：雲端另設 `CLOUD_INBOX_ENABLED=True` 後，以 `manage.py enable_survey_inbox --survey <slug>` 開啟單一已指派問卷的收件匣；只用於隔離環境。
+收件匣（原型）：雲端另設 `CLOUD_INBOX_ENABLED=True` 後，指派節點的問卷在發布時開啟收件匣。明文收件匣只限自測資料：`CLOUD_INBOX_SELF_TEST_SURVEYS` 列出允許的問卷 UUID（逗號分隔），不在清單的節點問卷不能發布、填答會被拒絕；`CLOUD_INBOX_REQUIRE_SELF_TEST` 預設 `True`，接入真實顧客回覆前須完成加密或另行批准，不可直接改成 `False`。
 
 Dear PyGui 工作台（`--legacy-workbench`）提供「開啟時檢查」、「開啟後自動更新」與「第一階段完成後執行 Gemini」選項。網站問卷從 Supabase Answer 串流分析；大型外部問卷則依資料庫登錄的不可變資料版本讀取本機 Parquet。兩種來源共用同一套工作、Snapshot 與發布流程；不會依問卷 slug 或資料夾名稱猜測來源。Gemini 預設關閉，勾選後才會使用本機 API 額度。
 

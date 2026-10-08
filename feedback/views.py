@@ -966,8 +966,11 @@ class SurveyDetailView(DetailView):
             return self.render_to_response(context)
         consent_follow_up = respondent_form.cleaned_data["consent_follow_up"]
 
-        from cloudapi.inbox import uses_inbox
+        from cloudapi.inbox import SurveyClosed, uses_inbox
 
+        if settings.CLOUD_INBOX_ENABLED and self.object.owner_node_id and not uses_inbox(self.object):
+            # A node survey outside the self-test scope: never fall back to a cloud write the node cannot see.
+            return self._notice(SurveyClosed.user_message, "error")
         if uses_inbox(self.object):
             if not request.user.is_manager:
                 request.user.notification_opt_in = consent_follow_up

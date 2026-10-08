@@ -20,7 +20,7 @@ def _free_port():
 
 
 class CloudServer:
-    def __init__(self, workdir, *, startup_timeout=60, inbox=False):
+    def __init__(self, workdir, *, startup_timeout=60, inbox=False, self_test_surveys=None):
         self.workdir = Path(workdir)
         self.startup_timeout = startup_timeout
         self.port = _free_port()
@@ -35,6 +35,9 @@ class CloudServer:
             "ALLOWED_HOSTS": "127.0.0.1,localhost",
             "CLOUD_SYNC_PROTOTYPE_ENABLED": "True",
             "CLOUD_INBOX_ENABLED": "True" if inbox else "False",
+            # None: no self-test scope (the inbox suites); a list: only those survey UUIDs use the inbox.
+            "CLOUD_INBOX_REQUIRE_SELF_TEST": "False" if self_test_surveys is None else "True",
+            "CLOUD_INBOX_SELF_TEST_SURVEYS": ",".join(str(item) for item in self_test_surveys or ()),
             "LOG_LEVEL": "WARNING",
             "PYTHONIOENCODING": "utf-8",
         })

@@ -24,4 +24,6 @@ LOGGING["loggers"]["feedback"]["level"] = "WARNING"  # noqa: F405
 
 # Existing suites exercise pages directly; node setup tests switch the gate back on.
 NODE_SETUP_GATE = False
+# Inbox suites predate the self-test scope; its own tests switch the requirement back on.
+CLOUD_INBOX_REQUIRE_SELF_TEST = False
 NODE_TEST_CREDENTIAL_STORE = True  # Only isolated fixtures may use an in-memory vault.

@@ -46,8 +46,14 @@ class AcceptResult:
     reused: bool
 
 
+def inbox_scope_allows(survey):
+    """Server-side self-test allowlist; the global switch alone never admits real replies (spec §1)."""
+    return not settings.CLOUD_INBOX_REQUIRE_SELF_TEST or str(survey.uuid) in settings.CLOUD_INBOX_SELF_TEST_SURVEYS
+
+
 def uses_inbox(survey):
-    return bool(settings.CLOUD_INBOX_ENABLED and survey.owner_node_id and survey.inbox_since)
+    return bool(settings.CLOUD_INBOX_ENABLED and survey.owner_node_id and survey.inbox_since
+                and inbox_scope_allows(survey))
 
 
 def respondent_ref(user):
@@ -79,7 +85,7 @@ def accept_submission(survey, *, user, submission_uuid, form_version, consent_fo
         return AcceptResult(existing, reused=True)
 
     # Only a new reply needs an open survey and the published form (builder spec §7.1).
-    if not survey.accepts_responses:
+    if not survey.accepts_responses or not inbox_scope_allows(survey):
         raise SurveyClosed()
     if form_version != survey.published_version:
         raise DefinitionOutdated()
