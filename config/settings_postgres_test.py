@@ -38,3 +38,6 @@ EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
 GEMINI_MODEL = "gemini-2.5-flash"
 GOOGLE_API_KEY = "test-key-not-a-real-credential"
+
+# Concurrency suites predate the inbox self-test scope; its own tests switch the requirement back on.
+CLOUD_INBOX_REQUIRE_SELF_TEST = False

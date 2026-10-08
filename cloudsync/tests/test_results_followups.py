@@ -26,14 +26,14 @@ class UploadFollowupTests(TestCase):
         upload_results(FakeResultClient([{"status": "applied"}]))
         self.upload.refresh_from_db()
         self.assertEqual((self.upload.status, self.upload.content, self.upload.content_hash), ("uploaded", {}, content_hash))
-        other = record_publication(SurveyAnalysisState.objects.get(survey=self.survey))
+        other = record_publication(published_state(self.survey))
         upload_results(FakeResultClient([CloudError(CLIENT, status=400)]))
         other.refresh_from_db()
         self.assertEqual(other.status, "failed")
         self.assertNotEqual(other.content, {})
 
     def test_cloud_rejections_are_named(self):  # M2
-        second = record_publication(SurveyAnalysisState.objects.get(survey=self.survey))
+        second = record_publication(published_state(self.survey))
         upload_results(FakeResultClient([CloudError(CLIENT, status=413), CloudError(CLIENT, status=400)]))
         self.assertEqual(ResultUpload.objects.get(pk=self.upload.pk).last_error, "too_large")
         self.assertEqual(ResultUpload.objects.get(pk=second.pk).last_error, "invalid")

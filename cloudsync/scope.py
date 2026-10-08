@@ -6,15 +6,15 @@ from feedback.models import AnalysisJob
 
 
 def is_cloud_synced(survey):
-    """Synced from the cloud and analysed from its own replies.
+    """A synced definition with a valid Answer or immutable Parquet input binding.
 
-    External-dataset surveys are excluded: their imports commit in chunks and bump
-    versions only at the end, which breaks the version-invalidation premise.
+    Small imports remain Answer inputs; external publication carries a separate
+    immutable source identity instead of pretending to have an inbox watermark.
     """
 
     if not SurveyDefinitionRevision.objects.filter(survey=survey).exists():
         return False
     try:
-        return resolve_analysis_source(survey).kind == AnalysisJob.SourceKind.ANSWERS
+        return resolve_analysis_source(survey).kind in AnalysisJob.SourceKind.values
     except AnalysisSourceConfigurationError:
         return False

@@ -1,0 +1,49 @@
+{% extends "feedback/dashboard_base.html" %}
+{% block title %}資料集 | 回饋洞察 AI 平台{% endblock %}
+{% block dashboard_content %}
+<section class="manager-panel">
+    <p class="section-kicker">Local datasets</p>
+    <h2>連接既有資料，不搬動原檔</h2>
+    <p>先驗證本機 manifest 與 mapping，再確認登錄。這一步同時建立雲端發布綁定：之後本機更新統計／文字或經確認的 Gemini 結果，會自動排入上傳。雲端只接收問卷定義與版本 metadata，不接收檔案、路徑或評論全文；外部問卷不開放填答。</p>
+    {% if not link.is_linked %}<p role="status">尚未連結雲端：可以驗證檔案，登錄前請先完成<a href="{% url 'cloudsync:connection' %}">雲端連線</a>。</p>{% endif %}
+    <form method="post" class="form-stack">
+        {% csrf_token %}
+        {{ form.non_field_errors }}
+        <label for="{{ form.manifest_path.id_for_label }}">{{ form.manifest_path.label }}</label>
+        {{ form.manifest_path }}{{ form.manifest_path.errors }}
+        <label for="{{ form.mapping_path.id_for_label }}">{{ form.mapping_path.label }}</label>
+        {{ form.mapping_path }}{{ form.mapping_path.errors }}
+        {{ form.confirmation }}
+        <button type="submit" name="action" value="validate" class="button button-secondary">驗證並預覽</button>
+        {% if preview %}
+        <section aria-label="已驗證來源">
+            <h3>{{ survey_title }}</h3>
+            <p>{{ preview.row_count }} 筆 · {{ preview.source_ref }}</p>
+            <p>來源 revision <code>{{ preview.source_revision }}</code></p>
+            <p>清理版本 <code>{{ preview.cleaning_version }}</code> · mapping <code>{{ preview.mapping_version }}</code></p>
+            <p>內容 SHA-256 <code>{{ preview.content_sha256 }}</code></p>
+            <p>完整性驗證不代表授權或完全匿名。登錄會寫入問卷與版本 metadata，並安排本機背景分析；不呼叫 Gemini。</p>
+            {% if link.is_linked %}<button type="submit" name="action" value="register" class="button button-primary">確認登錄並安排本機分析</button>{% endif %}
+        </section>
+        {% endif %}
+    </form>
+</section>
+<section class="manager-panel">
+    <h2>本機外部來源（最多顯示 100 份）</h2>
+    <div class="record-list">
+        {% for source in sources %}
+        <article class="record-row">
+            <div><strong>{{ source.survey.title }}</strong>
+            <p>{{ source.active_external_version.row_count }} 筆 · {{ source.active_external_version.mapping_version }}</p>
+            <p>資料版本 <code>{{ source.active_external_version.source_version }}</code></p>
+            <p>最近本機發布 {{ source.survey.analysis_state.published_at|date:"Y/m/d H:i"|default:"尚無結果" }} ·
+                本次發布上傳 {% if source.last_upload_status == 'uploaded' %}雲端已接收{% elif source.last_upload_status == 'pending' %}待上傳{% elif source.last_upload_status == 'failed' %}失敗{% elif source.last_upload_status == 'stale' %}僅保留雲端歷史{% else %}尚無本次上傳{% endif %}（是否最新仍須核對資料版本）</p>
+            {% if source.active_external_version.local_location %}
+            <p>路徑已登錄 · 上次完整性驗證 {{ source.active_external_version.local_location.verified_at|date:"Y/m/d H:i" }}；Worker 使用前會再次核對。</p>
+            {% else %}<p>尚未綁定本機檔案；不能完成分析。</p>{% endif %}</div>
+            <a class="button button-secondary" href="{% url 'feedback:stats-overview' %}?survey={{ source.survey.slug|urlencode }}">查看已發布統計</a>
+        </article>
+        {% empty %}<p>尚未登錄外部資料集。此頁不會自動下載或掃描完整資料。</p>{% endfor %}
+    </div>
+</section>
+{% endblock %}

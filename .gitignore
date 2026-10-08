@@ -26,3 +26,7 @@ feedback/management/commands/generate_synthetic_submissions.py
 data/local/
 *.parquet.part
 /.tmp_tripadvisor_sample_25.csv
+
+# Dedicated node test home (contains generated test-only secrets; never commit)
+/.tmp/codex-node-only-validation-*/
+/.tmp/codex-node-completion-*/

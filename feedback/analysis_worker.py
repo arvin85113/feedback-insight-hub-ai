@@ -15,6 +15,7 @@ from django.db.models import Max
 
 from .analysis_adapters import AnswerInput, ParquetInput
 from .analysis_jobs import heartbeat_job, publish_analysis_snapshot
+from .job_progress import report_job_progress
 from .ai_snapshot_service import SNAPSHOT_SCHEMA_VERSION, current_prompt_version
 from .background_analysis import (
     PROFILE_PATH,
@@ -97,11 +98,22 @@ def _build_adapter(job, external_inputs):
         job.capture_scope = scope  # read again when the Snapshot is saved
         return adapter
     spec = (external_inputs or {}).get(job.source_ref)
+    if spec is None and settings.IS_NODE:
+        from node.datasets import input_for_job
+
+        spec = input_for_job(job)
     if spec is None:
         raise WorkerExecutionError("external_source_not_configured")
     adapter = ParquetInput(spec.manifest_path, spec.mapping_path)
     if adapter.dataset_version != job.source_version:
         raise WorkerExecutionError("external_source_version_mismatch")
+    if settings.IS_NODE:
+        from cloudsync.capture import CaptureScope
+
+        adapter.capture_scope = CaptureScope(
+            0, job.survey.analysis_definition_version or job.survey.definition_version,
+            None, {"voided": 0, "incomplete": 0},
+        )
     return adapter
 
 
@@ -257,6 +269,7 @@ def execute_deterministic_job(
     }:
         raise WorkerExecutionError("unsupported_stage")
     _assert_lease(job, lease_seconds)
+    report_job_progress(job.pk, job.lease_token, phase="prepare", completed=0)
     adapter = _build_adapter(job, external_inputs)
     profile = json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
     try:
@@ -273,12 +286,15 @@ def execute_deterministic_job(
     def build_result(input_fingerprint):
         started = time.perf_counter()
         questions = descriptors(adapter)
+        report_job_progress(job.pk, job.lease_token, phase="statistics", completed=0)
         statistics, input_rows = calculate_statistics(adapter, questions)
         after_statistics = time.perf_counter()
         _assert_lease(job, lease_seconds)
+        report_job_progress(job.pk, job.lease_token, phase="text", completed=1)
         text = calculate_text(adapter, profile)
         after_text = time.perf_counter()
         _assert_lease(job, lease_seconds)
+        report_job_progress(job.pk, job.lease_token, phase="assemble", completed=2)
         source_snapshot = assemble_input(
             adapter,
             questions,
@@ -334,6 +350,7 @@ def execute_deterministic_job(
     _assert_lease(job, lease_seconds)
     snapshot = _persist_snapshot(job, result)
     _assert_lease(job, lease_seconds)
+    report_job_progress(job.pk, job.lease_token, phase="publish", completed=3)
     publication = publish_analysis_snapshot(
         job.pk,
         job.lease_token,

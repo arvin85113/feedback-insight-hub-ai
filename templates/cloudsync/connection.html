@@ -3,9 +3,13 @@
 {% block dashboard_content %}
 <section class="manager-panel">
     <h2>目前狀態</h2>
+    <p>節點所屬問卷在本機發布後自動排入上傳，背景同步通常每 5 分鐘送出；「立即同步」可提早執行。歷史副本僅保存在本機，不參與雲端上傳。</p>
+    {% if unbound_results_count %}<section class="flash-message flash-error" role="status"><strong>{{ unbound_results_count }} 份本機結果尚未接上雲端發布，並非已上傳。</strong><ul>{% for row in unbound_results %}<li>{{ row.survey__title }}</li>{% endfor %}</ul><p>外部資料請由資料集頁完成雲端來源登錄；其他未綁定來源需核對定義與節點歸屬，不能直接改指派或覆蓋舊問卷。</p><a class="button" href="{% url 'node:jobs' %}">查看待處理來源</a></section>{% endif %}
+    {% if unqueued_results_count %}<p class="flash-message flash-error">{{ unqueued_results_count }} 份已綁定結果尚未建立上傳紀錄；下一次同步會補建，若仍存在請查看下方錯誤。</p>{% endif %}
+    {% if local_only_count %}<aside aria-label="僅本機歷史副本"><h3>僅本機 · {{ local_only_count }} 份歷史副本</h3><p>可在本機查看與分析；不列入待上傳或同步失敗，也不會覆蓋舊雲端問卷。</p><ul>{% for row in local_only_surveys %}<li>{{ row.title }}</li>{% endfor %}</ul><a class="button" href="{% url 'node:history-transfer' %}">查看本機歷史資料</a></aside>{% endif %}
     {% if link.is_linked %}
         <p>已連結 <code>{{ link.api_url }}</code>（節點 {{ link.node_uuid }}）</p>
-        <p>上次成功同步：{{ link.last_success_at|date:"Y/m/d H:i"|default:"尚未同步" }}</p>
+        <p>最近雲端連線成功：{{ link.last_success_at|date:"Y/m/d H:i"|default:"尚未同步" }}（不代表所有結果已上傳）</p>
         {% if inbox %}
         <p>收件匣：待收 {{ inbox.pending_count }} 筆 · 衝突 {{ inbox.quarantined_count|default:0 }} 筆 · 占用 {{ inbox.occupied_count }} / {{ inbox.max_count }} 筆{% if inbox.oldest_pending_at %} · 最舊待收 {{ inbox.oldest_pending_at }}{% endif %}</p>
         {% if inbox.deadline_state == "critical" %}<p class="flash-message flash-error">最舊待收已超過 30 天，請立即同步。</p>{% elif inbox.deadline_state == "warn" %}<p class="flash-message flash-error">最舊待收已超過 25 天。</p>{% endif %}
@@ -34,6 +38,7 @@
 </section>
 <section class="manager-panel">
     <h2>{% if link.is_linked %}重新連結{% else %}連結雲端{% endif %}</h2>
+    {% for error in backfill_errors %}<p class="flash-message flash-error">歷史上傳錯誤紀錄：問卷 {{ error.target }}，{{ error.details.code }}（{{ error.created_at }}）。請核對來源設定與目前上傳狀態；其他問卷仍可同步。</p>{% endfor %}
     <form method="post" class="form-stack">{% csrf_token %}
         {{ form.non_field_errors }}
         {% for field in form %}<label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{{ field.errors }}{% endfor %}

@@ -116,6 +116,8 @@ def frozen_fields_changed(current, incoming):
 
     if not incoming["published"]:
         return True
+    if current.get("external_source") != incoming.get("external_source"):
+        return True
     if any(current[field] != incoming[field] for field in ("title", "description")):
         return True
     current_questions = {item["uuid"]: item for item in current["questions"]}
@@ -130,11 +132,22 @@ def frozen_fields_changed(current, incoming):
 
 
 def serialize_definition(survey):
-    return definition_from_fields(
+    definition = definition_from_fields(
         survey,
         survey.questions.order_by("order", "id"),
         survey.category.name if survey.category_id else None,
     )
+    # Optional v2 extension, emitted only for external surveys. Historical migration
+    # serialization remains plain field reads; paths never enter the definition.
+    from feedback.analysis_sources import resolve_analysis_source
+    binding = resolve_analysis_source(survey.pk)
+    if binding.is_external:
+        from feedback.models import ExternalDatasetVersion
+        from .external_sources import registration_for_version
+        definition["external_source"] = registration_for_version(
+            ExternalDatasetVersion.objects.get(pk=binding.external_version_id)
+        )
+    return definition
 
 
 def upgrade_v1(definition):
@@ -240,6 +253,9 @@ def validate_definition(definition):
 
     _require(isinstance(definition, dict), "定義必須是物件")
     definition = upgrade_v1(definition)
+    if "external_source" in definition:
+        from .external_sources import validate_registration
+        definition["external_source"] = validate_registration(definition["external_source"])
     required = ("survey_uuid", "version", *SURVEY_FIELDS, "category", "archived_at", "questions", "published",
                 "published_version", "published_at", "analysis_definition_version", "next_question_number")
     missing = [key for key in required if key not in definition]

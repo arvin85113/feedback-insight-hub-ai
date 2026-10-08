@@ -73,7 +73,8 @@ from .published_analysis import (
 def analysis_visible_surveys():
     return (
         Survey.objects.filter(analysis_enabled=True, archived_at__isnull=True)
-        .filter(Q(is_active=True) | Q(dataset_import_batches__isnull=False))
+        .filter(Q(is_active=True) | Q(dataset_import_batches__isnull=False)
+                | Q(analysis_source__kind=SurveyAnalysisSource.Kind.EXTERNAL))
         .distinct()
     )
 
@@ -201,7 +202,8 @@ class CustomerRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
         return self.request.user.is_authenticated and not self.request.user.is_manager
 
 
-NODE_CONSOLE_NAV = [("node:overview", "節點總覽", "server")]
+NODE_CONSOLE_NAV = [("node:overview", "節點總覽", "server"), ("node:datasets", "資料集", "database"),
+                    ("node:jobs", "分析工作", "chart")]
 NODE_CONSOLE_NAV_TAIL = [("cloudsync:connection", "雲端連線", "cloud"), ("node:settings", "設定", "gear")]
 
 
@@ -475,6 +477,37 @@ class SurveyCategoryDeleteView(ManagerRequiredMixin, View):
         return redirect("feedback:survey-manager")
 
 
+NODE_MISSING_NOTICE = "尚未連接本機節點，發布後不會產生分析"
+
+
+def active_nodes():
+    """Nodes a new website draft may belong to (node-only analysis spec §5); none outside the cloud prototype."""
+
+    from cloudapi.models import NodeDevice
+
+    if settings.IS_NODE or not settings.CLOUD_SYNC_PROTOTYPE_ENABLED:
+        return NodeDevice.objects.none()
+    return NodeDevice.objects.filter(status=NodeDevice.Status.ACTIVE)
+
+
+SELF_TEST_ONLY_NOTICE = "這份問卷由本機節點收件；收件匣目前只開放自測問卷，無法發布"
+
+
+def node_notice(survey=None):
+    if settings.IS_NODE:
+        return ""
+    if survey is not None and survey.owner_node_id:
+        from cloudapi.definition import serialize_definition
+        from cloudapi.inbox import inbox_scope_allows
+
+        # Same rule as the publish check: external-source surveys never use the inbox.
+        unpublishable = survey.published_version is None and not inbox_scope_allows(survey)
+        return SELF_TEST_ONLY_NOTICE if unpublishable and not serialize_definition(survey).get("external_source") else ""
+    if not settings.CLOUD_SYNC_PROTOTYPE_ENABLED:
+        return ""
+    return "" if active_nodes().exists() else NODE_MISSING_NOTICE
+
+
 class SurveyCreateView(DashboardBaseMixin, CreateView):
     template_name = "feedback/survey_create.html"
     form_class = SurveyCreateForm
@@ -483,6 +516,7 @@ class SurveyCreateView(DashboardBaseMixin, CreateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context.update(self.get_dashboard_base_context())
+        context["node_notice"] = node_notice()
         if settings.IS_NODE:
             import uuid as uuid_module
 
@@ -504,13 +538,23 @@ class SurveyCreateView(DashboardBaseMixin, CreateView):
                 messages.error(self.request, "表單已過期，請重新開啟建立問卷頁。")
                 return self.form_invalid(form)
         data = form.cleaned_data
+        nodes = list(active_nodes()[:2])
+        if len(nodes) > 1:
+            # Several nodes: never pick one silently (spec §5).
+            messages.error(self.request, "已連接多個本機節點，請先在後台撤銷不用的節點再建立問卷。")
+            return self.form_invalid(form)
         try:
-            self.object = create_draft({
-                "survey_uuid": survey_uuid, "title": data["title"], "description": data.get("description", ""),
-                "is_active": True, "analysis_enabled": data.get("analysis_enabled", True),
-                "thank_you_email_enabled": data.get("thank_you_email_enabled", True),
-                "category": data["category"].name if data.get("category") else None,
-            })
+            with transaction.atomic():
+                self.object = create_draft({
+                    "survey_uuid": survey_uuid, "title": data["title"], "description": data.get("description", ""),
+                    "is_active": True, "analysis_enabled": data.get("analysis_enabled", True),
+                    "thank_you_email_enabled": data.get("thank_you_email_enabled", True),
+                    "category": data["category"].name if data.get("category") else None,
+                })
+                if nodes:
+                    from cloudapi.writes import assign_survey_to_node
+
+                    self.object = assign_survey_to_node(self.object, nodes[0]).survey
         except DefinitionCommitError as exc:
             messages.error(self.request, exc.user_message)
             return self.form_invalid(form)
@@ -550,6 +594,7 @@ class SurveyBuilderView(DashboardBaseMixin, DetailView):
             latest = self.object.submissions.order_by("-submitted_at").only("submitted_at").first()
             context["latest_response_at"] = latest.submitted_at if latest else None
         context["active_tab"] = self.request.GET.get("tab", "questions")
+        context["node_notice"] = node_notice(self.object)
         return context
 
     def post(self, request, *args, **kwargs):
@@ -964,8 +1009,11 @@ class SurveyDetailView(DetailView):
             return self.render_to_response(context)
         consent_follow_up = respondent_form.cleaned_data["consent_follow_up"]
 
-        from cloudapi.inbox import uses_inbox
+        from cloudapi.inbox import SurveyClosed, uses_inbox
 
+        if settings.CLOUD_INBOX_ENABLED and self.object.owner_node_id and not uses_inbox(self.object):
+            # A node survey outside the self-test scope: never fall back to a cloud write the node cannot see.
+            return self._notice(SurveyClosed.user_message, "error")
         if uses_inbox(self.object):
             if not request.user.is_manager:
                 request.user.notification_opt_in = consent_follow_up

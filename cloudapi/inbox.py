@@ -46,8 +46,14 @@ class AcceptResult:
     reused: bool
 
 
+def inbox_scope_allows(survey):
+    """Server-side self-test allowlist; the global switch alone never admits real replies (spec §1)."""
+    return not settings.CLOUD_INBOX_REQUIRE_SELF_TEST or str(survey.uuid) in settings.CLOUD_INBOX_SELF_TEST_SURVEYS
+
+
 def uses_inbox(survey):
-    return bool(settings.CLOUD_INBOX_ENABLED and survey.owner_node_id and survey.inbox_since)
+    return bool(settings.CLOUD_INBOX_ENABLED and survey.owner_node_id and survey.inbox_since
+                and inbox_scope_allows(survey))
 
 
 def respondent_ref(user):
@@ -55,7 +61,10 @@ def respondent_ref(user):
 
 
 @transaction.atomic
-def accept_submission(survey, *, user, submission_uuid, form_version, consent_follow_up, answers):
+def accept_submission(survey, *, user, submission_uuid, form_version, consent_follow_up, answers, simulated_name=""):
+    # `simulated_name` labels seeded self-test replies ("飲料店模擬填答 #n"); a real respondent's name comes from the account.
+    if simulated_name and user is not None:
+        raise ValueError("simulated_name is only for replies without a user")
     survey = Survey.objects.select_for_update().get(pk=survey.pk)
     incoming_hash = payload_hash(
         survey_uuid=survey.uuid,
@@ -79,7 +88,10 @@ def accept_submission(survey, *, user, submission_uuid, form_version, consent_fo
         return AcceptResult(existing, reused=True)
 
     # Only a new reply needs an open survey and the published form (builder spec §7.1).
-    if not survey.accepts_responses:
+    if not survey.accepts_responses or not inbox_scope_allows(survey):
+        raise SurveyClosed()
+    if settings.CLOUD_INBOX_REQUIRE_SELF_TEST and user is not None and not user.is_manager:
+        # Self-test surveys take only seeded replies and staff tests, never a real customer's name and email.
         raise SurveyClosed()
     if form_version != survey.published_version:
         raise DefinitionOutdated()
@@ -94,7 +106,7 @@ def accept_submission(survey, *, user, submission_uuid, form_version, consent_fo
         submitted_at=now,
         consent_follow_up=consent_follow_up,
         respondent_ref=respondent_ref(user),
-        name=user.get_full_name() if user else "",
+        name=user.get_full_name() if user else simulated_name,
         email=user.email if user else "",
         answers=answers,
     )

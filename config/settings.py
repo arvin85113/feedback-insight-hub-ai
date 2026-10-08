@@ -44,6 +44,17 @@ ANALYSIS_AUTO_AI_ENABLED = os.getenv("ANALYSIS_AUTO_AI_ENABLED", "False").lower(
 CLOUD_SYNC_PROTOTYPE_ENABLED = os.getenv("CLOUD_SYNC_PROTOTYPE_ENABLED", "False").lower() == "true"
 # Plain-text inbox prototype (spec §12): production keeps this off.
 CLOUD_INBOX_ENABLED = os.getenv("CLOUD_INBOX_ENABLED", "False").lower() == "true"
+
+
+def parse_uuid_list(raw):
+    """Comma-separated UUIDs from the environment, trimmed and lower-cased."""
+    return frozenset(item.strip().lower() for item in raw.split(",") if item.strip())
+
+
+# The plaintext inbox is approved only for simulated / self-test data (node-only analysis spec §1):
+# a node survey uses it only when its UUID is listed here, until encryption or a separate approval.
+CLOUD_INBOX_REQUIRE_SELF_TEST = os.getenv("CLOUD_INBOX_REQUIRE_SELF_TEST", "True").lower() != "false"
+CLOUD_INBOX_SELF_TEST_SURVEYS = parse_uuid_list(os.getenv("CLOUD_INBOX_SELF_TEST_SURVEYS", ""))
 CLOUD_INBOX_MAX_COUNT = int(os.getenv("CLOUD_INBOX_MAX_COUNT", "20000"))
 CLOUD_INBOX_MAX_BYTES = int(os.getenv("CLOUD_INBOX_MAX_BYTES", str(100 * 1024 * 1024)))
 CLOUD_INBOX_MAX_ITEM_BYTES = int(os.getenv("CLOUD_INBOX_MAX_ITEM_BYTES", str(64 * 1024)))
@@ -225,6 +236,8 @@ if IS_NODE:
         }
     }
     INSTALLED_APPS += ["allauth", "allauth.account", "organizations", "node", "cloudsync"]
+    # Node provider access must come through its explicit credential-store grant.
+    GOOGLE_API_KEY = ""
     # Bearer tokens go over HTTPS only; isolated end-to-end tests opt in to loopback HTTP.
     CLOUD_SYNC_ALLOW_LOOPBACK_HTTP = os.getenv("CLOUD_SYNC_ALLOW_LOOPBACK_HTTP", "False").lower() == "true"
     MIDDLEWARE.append("allauth.account.middleware.AccountMiddleware")

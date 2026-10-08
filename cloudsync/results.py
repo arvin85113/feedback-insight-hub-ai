@@ -11,7 +11,10 @@ from django.conf import settings
 from django.db import transaction
 
 from cloudapi.envelope import canonical_bytes, sha256_hex
-from feedback.models import SurveyAnalysisState
+from feedback.analysis_sources import (
+    AnalysisSourceConfigurationError, external_version_identity, resolve_analysis_source,
+)
+from feedback.models import ExternalDatasetVersion, SurveyAnalysisState
 
 from .client import TRANSIENT, UNAUTHORIZED, CloudError
 from .models import ResultUpload, SurveySyncState
@@ -76,6 +79,21 @@ def build_content(state):
             "excluded": scope.get("excluded") or {"voided": 0, "incomplete": 0},
         },
     }
+    binding = resolve_analysis_source(state.survey)
+    if binding.is_external:
+        # Identity comes from the published snapshot/stage, never today's active binding.
+        source_stage = manifest.get("statistics") or {}
+        version = ExternalDatasetVersion.objects.filter(
+            source__survey=state.survey,
+            source_ref=source_stage.get("source_ref"),
+            source_version=source_stage.get("source_version"),
+        ).first()
+        if version is None or scope.get("source_version") != version.source_version:
+            raise AnalysisSourceConfigurationError("外部發布結果缺少固定來源版本")
+        content["input_source"] = external_version_identity(version)
+        content["analyzed_through_sequence"] = 0
+    else:
+        content["input_source"] = {"kind": "answers"}
     # Hash what the cloud will see after JSON round-tripping (tuples, non-string keys, ...).
     return json.loads(json.dumps(content, ensure_ascii=False))
 
@@ -87,6 +105,10 @@ def record_publication(state):
         return None
     SurveySyncState.objects.get_or_create(survey=state.survey)
     sync_state = SurveySyncState.objects.select_for_update().get(survey=state.survey)
+    existing = ResultUpload.objects.filter(survey=state.survey, published_at=state.published_at).first()
+    if existing is not None:
+        # A retry/backfill reuses the frozen identity, never a second sequence.
+        return existing
     sequence = max(sync_state.cloud_publish_sequence, sync_state.local_publish_sequence) + 1
     sync_state.local_publish_sequence = sequence
     sync_state.save(update_fields=["local_publish_sequence"])
@@ -110,19 +132,34 @@ def backfill_publications():
         .distinct()
     )
     for survey_id in candidates:
-        with transaction.atomic():
-            state = (
-                SurveyAnalysisState.objects.select_for_update()
-                .select_related("survey", "published_snapshot", "published_ai_stage__snapshot")
-                .get(survey_id=survey_id)
-            )
-            if state.published_at is None:
-                continue
-            if ResultUpload.objects.filter(survey_id=survey_id, published_at=state.published_at).exists():
-                continue
-            if record_publication(state) is not None:
-                created += 1
+        try:
+            created += _backfill_one(survey_id)
+        except AnalysisSourceConfigurationError:
+            from node.models import NodeAuditEvent
+            from node.audit import record
+            state = SurveyAnalysisState.objects.get(survey_id=survey_id)
+            details = {"code": "invalid_publication_source", "published_at": state.published_at.isoformat()}
+            target = str(state.survey.uuid)
+            if not NodeAuditEvent.objects.filter(action="result.backfill_failed", target=target, details=details).exists():
+                record("result.backfill_failed", target=target, **details)
     return created
+
+
+def _backfill_one(survey_id):
+    # Catch configuration failures outside atomic(), rolling back sequence allocation.
+    with transaction.atomic():
+        state = (
+            SurveyAnalysisState.objects.select_for_update(of=("self",))
+            .select_related("survey", "published_snapshot", "published_ai_stage__snapshot")
+            .get(survey_id=survey_id)
+        )
+        if state.published_at is None:
+            return 0
+        if ResultUpload.objects.filter(survey_id=survey_id, published_at=state.published_at).exists():
+            return 0
+        if record_publication(state) is not None:
+            return 1
+    return 0
 
 
 RETRYABLE = (TRANSIENT, UNAUTHORIZED)

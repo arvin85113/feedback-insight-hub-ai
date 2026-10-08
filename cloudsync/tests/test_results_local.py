@@ -45,7 +45,7 @@ class RecordPublicationTests(TestCase):
     def test_sequence_continues_after_cloud(self):
         record_publication(published_state(self.survey))
         SurveySyncState.objects.filter(survey=self.survey).update(cloud_publish_sequence=7)
-        state = SurveyAnalysisState.objects.get(survey=self.survey)
+        state = published_state(self.survey)  # a NEW publication, not a resend of the first
         self.assertEqual(record_publication(state).publish_sequence, 8)
 
     def test_out_of_scope_surveys_create_nothing(self):
@@ -56,6 +56,15 @@ class RecordPublicationTests(TestCase):
         published_state(self.survey)
         self.assertEqual((backfill_publications(), backfill_publications()), (1, 0))
         self.assertEqual(ResultUpload.objects.count(), 1)
+
+    def test_same_publication_retry_keeps_uuid_hash_and_sequence(self):
+        state = published_state(self.survey)
+        first = record_publication(state)
+        repeated = record_publication(state)
+        self.assertEqual((first.pk, first.publish_uuid, first.content_hash, first.publish_sequence),
+                         (repeated.pk, repeated.publish_uuid, repeated.content_hash, repeated.publish_sequence))
+        self.assertEqual(ResultUpload.objects.count(), 1)
+        self.assertEqual(SurveySyncState.objects.get(survey=self.survey).local_publish_sequence, 1)
 
 
 class PublishHookTests(TestCase):

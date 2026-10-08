@@ -1,13 +1,19 @@
 ﻿param(
     [string]$Python = ".\.venv\Scripts\python.exe",
-    [switch]$Diagnostic
+    [switch]$Diagnostic,
+    [switch]$NodeOnly
 )
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $PythonPath = Join-Path $ProjectRoot $Python
 $BuildName = if ($Diagnostic) { "FeedbackInsightHubDiagnostic" } else { "FeedbackInsightHub" }
+if ($NodeOnly) { $BuildName = if ($Diagnostic) { "FeedbackInsightHubNodeDiagnostic" } else { "FeedbackInsightHubNode" } }
 $WindowMode = if ($Diagnostic) { "--console" } else { "--windowed" }
+$DesktopModeArgs = if ($NodeOnly) {
+    @("--exclude-module", "dearpygui", "--exclude-module", "desktop_app.app",
+      "--exclude-module", "desktop_app.service", "--runtime-hook", (Join-Path $ProjectRoot "desktop_app\node_only_hook.py"))
+} else { @("--collect-all", "dearpygui", "--hidden-import", "desktop_app.app") }
 $PipelineSourceFiles = @(
     "feedback\analysis_adapters.py",
     "feedback\analysis_input.py",
@@ -51,12 +57,13 @@ try {
         --paths $ProjectRoot `
         --specpath (Join-Path $ProjectRoot "build") `
         --collect-data feedback `
-        --collect-all dearpygui `
+        @DesktopModeArgs `
         --collect-all allauth `
         --add-data "$ProjectRoot\templates;templates" `
         --add-data "$ProjectRoot\static;static" `
         --hidden-import pystray._win32 `
         --hidden-import cheroot.wsgi `
+        --hidden-import keyring.backends.Windows `
         --collect-submodules whitenoise `
         --collect-submodules accounts `
         --collect-submodules cloudapi `
@@ -74,7 +81,6 @@ try {
         --hidden-import feedback `
         --hidden-import feedback.apps `
         --hidden-import feedback.models `
-        --hidden-import desktop_app.app `
         --hidden-import feedback.analysis_adapters `
         --hidden-import feedback.background_analysis `
         --hidden-import feedback.analysis_jobs `

@@ -141,7 +141,20 @@ py -3.13 -m venv .venv
 
 ## Windows 本機節點與 EXE
 
-同一個 EXE 依參數切換角色：
+新節點封裝使用 `scripts/build_desktop.ps1 -NodeOnly`，輸出
+`dist/FeedbackInsightHubNode/FeedbackInsightHubNode.exe`，須保留整個資料夾。
+此封裝不包含 Dear PyGui，也拒絕 `--legacy-workbench`；原封裝與來源暫留作回退，以下舊工作台設定不適用新節點版。
+打包只建立檔案；正常啟動會套用本機 DB migration，首次設定會建立帳號，請先確認目標與備份。
+`--smoke-test` 僅檢查封裝模組與模板，不啟動伺服器、不套用 migration、不呼叫 API。
+
+本機主控台「分析工作」可查看問卷筆數、資料／統計／AI 時間與版本狀態，排程統計／文字、預覽 Gemini 及取消工作。
+OWNER 在「設定 → Gemini」存入 Windows 認證管理員；節點忽略 `.env` 的 `GOOGLE_API_KEY`，金鑰不寫 DB／紀錄。
+每次 Gemini 確認綁定輸入、設定、來源、模型、提示及憑證版本，通常三段，含格式重試硬上限六次。
+相同確認重送不建立新付費工作；逾時／崩潰留下不確定狀態，停下待查核，不自動重呼。Worker 不需另加 CLI 付費旗標。
+結果仍沿用 Snapshot／AI Stage，背景同步至已授權啟用的雲端 API；本機發布不等於雲端上傳完成。
+目前已通過隔離環境測試與封裝 smoke，正式切換、真實 Gemini、GUI 操作與安裝簽章仍需另外驗收／授權。
+
+來源碼與舊相容封裝依參數切換角色：
 
 | 啟動方式 | 角色 |
 |---|---|
@@ -162,7 +175,7 @@ py -3.13 -m venv .venv
 之後以本機帳號登入（allauth，閒置 4 小時登出）。設計見 [本機節點規格](docs/superpowers/specs/2026-09-30-local-node-console-and-auth-design.md)。
 問卷定義同步（原型）：在主控台「雲端連線」輸入雲端網址與裝置權杖；權杖在雲端以 `manage.py create_node_device --name <名稱>` 產生，只顯示一次。
 雲端須設定 `CLOUD_SYNC_PROTOTYPE_ENABLED=True` 才開放節點 API，正式網站維持關閉。
-收件匣（原型）：雲端另設 `CLOUD_INBOX_ENABLED=True` 後，以 `manage.py enable_survey_inbox --survey <slug>` 開啟單一已指派問卷的收件匣；只用於隔離環境。
+收件匣（原型）：雲端另設 `CLOUD_INBOX_ENABLED=True` 後，指派節點的問卷在發布時開啟收件匣。明文收件匣只限自測資料：`CLOUD_INBOX_SELF_TEST_SURVEYS` 列出允許的問卷 UUID（逗號分隔），不在清單的節點問卷不能發布、填答會被拒絕；`CLOUD_INBOX_REQUIRE_SELF_TEST` 預設 `True`，接入真實顧客回覆前須完成加密或另行批准，不可直接改成 `False`。
 
 Dear PyGui 工作台（`--legacy-workbench`）提供「開啟時檢查」、「開啟後自動更新」與「第一階段完成後執行 Gemini」選項。網站問卷從 Supabase Answer 串流分析；大型外部問卷則依資料庫登錄的不可變資料版本讀取本機 Parquet。兩種來源共用同一套工作、Snapshot 與發布流程；不會依問卷 slug 或資料夾名稱猜測來源。Gemini 預設關閉，勾選後才會使用本機 API 額度。
 

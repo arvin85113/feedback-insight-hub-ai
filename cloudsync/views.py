@@ -26,6 +26,14 @@ class ConnectionView(NodeConsoleMixin, TemplateView):
         context["inbox"] = context["link"].inbox_status or {}
         context["unconfirmed_acks"] = PendingAck.objects.exclude(last_status="").count()
         context["pending_results"] = ResultUpload.objects.filter(status=ResultUpload.Status.PENDING).count()
+        from .publication_status import local_history_surveys, publication_issues
+        issues = publication_issues()
+        context["unbound_results_count"] = issues.filter(cloud_bound=False).count()
+        context["unbound_results"] = list(issues.filter(cloud_bound=False).values("survey__title")[:20])
+        context["unqueued_results_count"] = issues.filter(cloud_bound=True).count()
+        local_only = local_history_surveys().filter(analysis_enabled=True, archived_at__isnull=True)
+        context["local_only_count"] = local_only.count()
+        context["local_only_surveys"] = list(local_only.values("title")[:20])
         context["failed_results"] = list(
             ResultUpload.objects.filter(status=ResultUpload.Status.FAILED)
             .select_related("survey")
@@ -33,6 +41,8 @@ class ConnectionView(NodeConsoleMixin, TemplateView):
             .values("survey__title", "publish_sequence", "last_error")[:20]
         )
         context.setdefault("form", ConnectForm())
+        from node.models import NodeAuditEvent
+        context["backfill_errors"] = NodeAuditEvent.objects.filter(action="result.backfill_failed")[:20]
         return context
 
     def post(self, request, *args, **kwargs):
@@ -52,7 +62,9 @@ class ConnectionView(NodeConsoleMixin, TemplateView):
         if action == "sync-now":
             result = run_cycle(force=True)
             if result == "ok":
-                messages.success(request, "同步完成。")
+                messages.success(request, "已完成本次雲端同步；結果上傳狀態以下方各版本紀錄為準。")
+            elif result == "results_incomplete":
+                messages.warning(request, "雲端連線正常，但部分本機結果尚未上傳；請查看未綁定來源、補建或失敗紀錄。")
             else:
                 messages.error(request, f"同步未完成：{result}")
             return redirect("cloudsync:connection")

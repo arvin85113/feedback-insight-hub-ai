@@ -238,6 +238,7 @@ def claim_next_job(
     survey_ids=None,
     source_kind=None,
     source_ref=None,
+    job_ids=None,
 ):
     if not worker_id or len(worker_id) > 128:
         raise ValueError("worker_id 必須是 1 到 128 個字元")
@@ -272,6 +273,8 @@ def claim_next_job(
         ).order_by("available_at", "created_at", "id")
         if executor is not None:
             eligible = eligible.filter(executor=executor)
+        if job_ids is not None:
+            eligible = eligible.filter(pk__in=job_ids)
         if survey_ids is not None:
             survey_ids = tuple(survey_ids)
             if not survey_ids:
@@ -302,6 +305,8 @@ def claim_next_job(
         job.lease_expires_at = now + timedelta(seconds=lease_seconds)
         job.heartbeat_at = now
         job.attempt_count += 1
+        # A reclaimed attempt must not display a previous worker's checkpoints.
+        job.result_manifest = {key: value for key, value in (job.result_manifest or {}).items() if key != "_progress"}
         job.started_at = job.started_at or now
         job.error_code = ""
         job.save(
@@ -312,6 +317,7 @@ def claim_next_job(
                 "lease_expires_at",
                 "heartbeat_at",
                 "attempt_count",
+                "result_manifest",
                 "started_at",
                 "error_code",
                 "updated_at",
