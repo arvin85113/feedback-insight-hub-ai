@@ -1,0 +1,37 @@
+{% extends "feedback/dashboard_base.html" %}
+{% block title %}歷史資料接手 | 回饋洞察 AI 平台{% endblock %}
+{% block dashboard_content %}
+<section class="manager-panel">
+    <p class="section-kicker">Historical data · Copy only</p>
+    <h2>把既有問卷與回答保留到本機</h2>
+    <p>此處只建立歷史副本，不改雲端問卷指派、不刪雲端資料、不切換填答、不上傳或呼叫 Gemini。</p>
+    <p>先用唯讀匯出工具產生 ZIP，放到本機，再輸入檔案路徑。TripAdvisor 等外部資料請由<a href="{% url 'node:datasets' %}">資料集頁</a>接回既有 Parquet。</p>
+    <p>資料包含原始答案，仍可能含個資。預設不包含姓名、Email 或帳號；未知的歷史填答版本不會假稱已知。文字快取由後續分析另行建立。</p>
+    <form method="post" class="form-stack">
+        {% csrf_token %}{{ form.non_field_errors }}
+        <label for="{{ form.package_path.id_for_label }}">{{ form.package_path.label }}</label>
+        {{ form.package_path }}{{ form.package_path.errors }}{{ form.confirmation }}
+        <button type="submit" name="action" value="preview" class="button button-secondary">驗證並預覽（不寫入）</button>
+        {% if preview %}
+        <section aria-label="歷史資料預覽">
+            <p>來源 {{ preview.origin }} · 快照 {{ preview.captured_at }}</p>
+            <p>資料包 SHA-256 <code>{{ preview.sha256 }}</code></p>
+            {% if preview.contacts_included %}<p role="alert">此包包含姓名或 Email，請確認已獲准保存到本機。</p>{% endif %}
+            {% for row in preview.surveys %}<p><strong>{{ row.title }}</strong>：{{ row.submissions }} 筆回覆、{{ row.answers }} 筆答案 · 問卷定義版本 {{ row.definition_version }}</p>{% endfor %}
+            <p>確認後會寫入本機資料庫；相同回覆重送不重複，內容衝突則整批回退。歷史副本停用填答，分析需另行操作。</p>
+            <button type="submit" name="action" value="import" class="button button-primary">確認建立本機歷史副本</button>
+        </section>
+        {% endif %}
+    </form>
+</section>
+<section class="manager-panel">
+    <h2>已接手的歷史副本</h2>
+    {% for batch in batches %}
+    <article class="record-row"><strong>{{ batch.survey.title }}</strong>
+        <p>{{ batch.read_count }} 筆已逐筆核對 · 資料包 <code>{{ batch.input_file_sha256 }}</code></p>
+        <p>原問卷 {{ batch.summary.original_slug }} · {{ batch.completed_at|date:"Y/m/d H:i" }}</p>
+        <a href="{% url 'feedback:survey-manager' %}">回問卷管理查看</a>
+    </article>
+    {% empty %}<p>尚未匯入歷史資料。連結雲端或立即同步，不會自動搬移舊回答。</p>{% endfor %}
+</section>
+{% endblock %}

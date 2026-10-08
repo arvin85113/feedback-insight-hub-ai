@@ -1,0 +1,42 @@
+{% extends "feedback/dashboard_base.html" %}
+{% load static %}
+{% block title %}分析工作｜FeedBack IQ{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'css/node-jobs.css' %}?v=20261007-1">{% endblock %}
+{% block dashboard_content %}
+<div class="nj-workspace">
+  <header class="nj-heading"><div><p class="nj-eyebrow">LOCAL ANALYSIS → CLOUD</p><h2>從資料到洞察，掌握每一步</h2><p>完成雲端來源綁定後，本機發布自動排入上傳，背景同步送到網站。Gemini 只在你確認後執行；離線時結果與上傳紀錄保留。</p></div><div class="nj-toolbar"><a class="button" href="{% url 'node:gemini-settings' %}">Gemini 金鑰設定</a><a class="button" href="{% url 'cloudsync:connection' %}">雲端與上傳</a></div></header>
+  <div class="nj-refresh"><label><input id="nj-auto" type="checkbox" {% if auto_refresh %}checked{% else %}disabled{% endif %}> 自動更新狀態</label><span id="nj-refresh-status" role="status">{% if preview %}確認期間暫停更新{% else %}每 10 秒更新，不會重新排程{% endif %}</span><a href="{% url 'node:jobs' %}">手動重新整理</a></div>
+  {% if preview %}<section class="nj-confirm"><p class="nj-eyebrow">需要你的確認</p><h3>使用 Gemini 分析：{{ selected.title }}</h3><p>這會使用 API 額度。通常最多三段呼叫，含格式重試硬上限六次；快取可能減少呼叫。確認有效 15 分鐘。</p><details><summary>版本與計費注意事項</summary><p>Snapshot #{{ preview.snapshot }} · 模型 {{ preview.model }} · 輸入版本 {{ preview.input }} · 設定版本 {{ preview.config }}</p><p>逾時或崩潰造成結果不確定時會停止，不盲目重呼；不能保證供應商只計費一次。</p></details><form method="post">{% csrf_token %}<input type="hidden" name="survey" value="{{ selected.pk }}"><input type="hidden" name="confirmation" value="{{ confirmation }}"><button class="button button-primary" name="action" value="confirm-ai">確認使用額度並排程</button><a class="button" href="{% url 'node:jobs' %}">返回，不執行</a></form></section>{% endif %}
+  <div id="nj-live">
+    <div class="nj-metrics" aria-label="工作總覽"><div><span>正在執行</span><strong>{{ work_summary.running }}</strong><small>背景 Worker 處理中</small></div><div><span>排隊等待</span><strong>{{ work_summary.waiting }}</strong><small>等待 Worker 領取</small></div><div><span>本機結果最新</span><strong>{{ ready_count }}</strong><small>統計／文字，非雲端上傳數</small></div><div><span>需要處理</span><strong>{{ attention_count }}</strong><small>來源綁定、分析或上傳失敗</small></div></div>
+    {% if not key_configured %}<aside class="nj-notice">統計與文字分析不需要 Gemini 金鑰。若要接著產生 AI 解讀，請先設定金鑰。</aside>{% endif %}
+    <div class="nj-section-title"><h3>資料來源</h3><span>最多 100 份 · 不在此頁執行分析</span></div>
+    <div class="nj-sources">
+    {% for survey in surveys %}<article class="nj-card">
+      <header class="nj-card-header"><div><span class="nj-source">{{ survey.source_label }}</span><h3>{{ survey.title }}</h3></div><span class="nj-badge nj-{{ survey.ui_tone }}">{{ survey.ui_label }}</span></header>
+      <div class="nj-data"><strong>{{ survey.reply_count|floatformat:"0g" }}</strong><span>筆資料</span><span class="nj-date">最新資料時間 {{ survey.latest_reply|date:"Y/m/d H:i"|default:"尚無資料" }}</span></div>
+      <p class="nj-hint">{{ survey.ui_hint }}</p>
+      <aside class="nj-publication nj-{{ survey.ui_upload_tone }}" aria-label="雲端發布狀態"><strong>{{ survey.ui_upload_label }}</strong><p>{{ survey.ui_upload_hint }}</p>{% if not survey.cloud_bound and survey.cloud_setup_url %}<a class="button" href="{{ survey.cloud_setup_url }}">{{ survey.cloud_setup_label }}</a>{% endif %}</aside>
+      {% if survey.live_job %}{% include "node/_job_progress.html" with job=survey.live_job %}{% endif %}
+      {% if survey.live_ai_job %}{% include "node/_job_progress.html" with job=survey.live_ai_job %}{% endif %}
+      {% if survey.live_job %}<div class="nj-live-job"><span class="nj-dot" aria-hidden="true"></span><strong>工作 #{{ survey.live_job.pk }} · {{ survey.live_job.ui_label }}</strong><span>{% if survey.live_job.started_at %}開始於 {{ survey.live_job.started_at|date:"H:i:s" }}{% else %}排程於 {{ survey.live_job.created_at|date:"H:i:s" }}{% endif %}</span>{% if survey.live_job.heartbeat_at %}<span>最近回報 {{ survey.live_job.heartbeat_at|date:"H:i:s" }}</span>{% endif %}{% if survey.active_base_count > 1 %}<span>同版本共 {{ survey.active_base_count }} 份工作，請勿重複排程</span>{% endif %}<small>{% if survey.live_job.ui_progress_known %}階段進度不代表剩餘時間{% else %}目前沒有可靠的完成百分比{% endif %}；發布成功前保留上一份結果。</small></div>{% endif %}
+      <ol class="nj-steps" aria-label="分析階段"><li><span class="nj-step-number">1</span><div><strong>統計與文字</strong><small>{% if survey.base_current %}目前版本已在本機發布{% elif survey.live_job %}{{ survey.live_job.ui_label }}{% elif survey.has_published_base %}上一版可查看，等待更新{% else %}尚未發布{% endif %}</small></div></li><li><span class="nj-step-number">2</span><div><strong>Gemini 解讀 <em>選用</em></strong><small>{% if survey.live_ai_job %}工作 #{{ survey.live_ai_job.pk }} · {{ survey.live_ai_job.ui_label }}{% elif survey.ai_current %}目前版本已在本機發布{% elif not key_configured %}尚未設定金鑰{% elif not survey.base_current %}等待統計與文字完成{% else %}可預覽並確認 API 額度{% endif %}</small></div></li><li><span class="nj-step-number">3</span><div><strong>查看本機結果</strong><small>{% if survey.has_published_base %}已有本機發布的結果{% else %}完成第一階段後可查看{% endif %}</small></div></li><li><span class="nj-step-number">4</span><div><strong>{% if survey.cloud_local_only %}僅本機保存{% else %}自動上傳雲端{% endif %}</strong><small>{{ survey.ui_upload_label }}</small></div></li></ol>
+      <div class="nj-actions"><form method="post">{% csrf_token %}<input type="hidden" name="survey" value="{{ survey.pk }}"><button class="button button-primary" name="action" value="analyse" {% if not survey.can_analyse %}disabled{% endif %}>{{ survey.analyse_label }}</button><button class="button" name="action" value="preview-ai" {% if not survey.base_current or not key_configured or survey.live_ai_job %}disabled{% endif %}>預覽 Gemini 解讀</button></form>{% if survey.has_published_base %}<a class="button" href="{% url 'feedback:stats-overview' %}?survey={{ survey.slug|urlencode }}">查看已發布結果 →</a>{% endif %}</div>
+      {% if survey.ai_block_reason %}<p class="nj-footnote">{{ survey.ai_block_reason }}</p>{% endif %}
+      <details class="nj-details"><summary>版本與發布資訊</summary><p>資料版本 {{ survey.analysis_state.input_version|default:0 }} · 設定版本 {{ survey.analysis_state.config_version|default:0 }}</p><p>統計發布：{{ survey.analysis_state.publication_manifest.statistics.published_at|default:"尚未發布" }}</p><p>Gemini 完成：{{ survey.analysis_state.published_ai_stage.generated_at|date:"Y/m/d H:i"|default:"尚未完成" }}</p></details>
+    </article>{% empty %}<div class="nj-empty"><h3>先接入第一份資料</h3><p>同步問卷或登錄本機資料集後，即可開始分析。</p><a class="button button-primary" href="{% url 'node:datasets' %}">前往資料集</a></div>{% endfor %}
+    </div>
+    <section class="nj-history"><div class="nj-section-title"><h3>最近工作</h3><span>最新 50 筆 · 舊工作不代表目前結果狀態</span></div><div class="nj-table-wrap"><table><thead><tr><th>工作／資料來源</th><th>類型</th><th>狀態</th><th>時間</th><th>操作</th></tr></thead><tbody>
+    {% for job in jobs %}<tr>
+      <td><strong>{{ job.survey.title }}</strong><small>#{{ job.pk }} · 資料 v{{ job.input_version }} / 設定 v{{ job.config_version }}</small></td>
+      <td>{{ job.get_executor_display }}</td>
+      <td><span class="nj-badge nj-{{ job.ui_tone }}">{{ job.ui_label }}</span>{% include "node/_job_progress.html" with job=job %}{% if job.error_code %}<small class="nj-error">錯誤代碼：{{ job.error_code }}</small>{% endif %}</td>
+      <td>{{ job.created_at|date:"m/d H:i:s" }}{% if job.finished_at %}<small>結束 {{ job.finished_at|date:"H:i:s" }}</small>{% endif %}</td>
+      <td>{% if job.status == "pending" or job.status == "running" %}{% if not job.cancel_requested_at %}<form method="post">{% csrf_token %}<input type="hidden" name="job" value="{{ job.pk }}"><button class="button nj-cancel" name="action" value="cancel">{% if job.status == "running" %}要求停止{% else %}取消排隊{% endif %}</button></form>{% else %}等待停止{% endif %}{% else %}—{% endif %}</td>
+    </tr>{% empty %}<tr><td colspan="5">還沒有工作紀錄。從上方選擇資料來源開始分析。</td></tr>{% endfor %}
+    </tbody></table></div></section>
+    <details class="nj-grants"><summary>Gemini 額度與確認紀錄</summary><p>「已保留呼叫」不是供應商帳單；結果不確定時請先查核，不要盲目重呼。</p>{% for grant in grants %}<p>{{ grant.job.survey.title }} · 工作 #{{ grant.job_id }} · {{ grant.status }} · 已保留呼叫 {{ grant.calls_started }}/{{ grant.max_calls }}{% if grant.in_flight %} · 呼叫中或結果不確定{% endif %}{% if grant.error_code %} · {{ grant.error_code }}{% endif %}</p>{% empty %}<p>尚未授權 Gemini 分析。</p>{% endfor %}</details>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}<script src="{% static 'js/node-jobs.js' %}?v=20261006-2" defer></script>{% endblock %}

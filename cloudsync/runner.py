@@ -97,7 +97,7 @@ def run_cycle(*, force=False, now=None):
         _apply_abandoned(heartbeat)
         _apply_publish_sequences(heartbeat)
         backfill_publications()
-        upload_results(client)
+        uploads = upload_results(client)
     except NotLinked:
         return "not_linked"
     except StaleLink:
@@ -109,6 +109,11 @@ def run_cycle(*, force=False, now=None):
         return error.kind
     else:
         _record_success(link, now, heartbeat)
+        from .models import ResultUpload
+        from .publication_status import publication_issues
+        if uploads.get("failed") or ResultUpload.objects.filter(status="failed").exists() or publication_issues().exists():
+            # Connectivity succeeded, but the local-to-cloud workflow is incomplete.
+            return "results_incomplete"
         return "ok"
     finally:
         _cycle_lock.release()

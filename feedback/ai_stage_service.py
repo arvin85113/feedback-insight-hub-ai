@@ -768,7 +768,7 @@ def _complete_without_provider(stage, module, *, reason):
     return stage
 
 
-def generate_stage(snapshot, stage_type, *, force=False):
+def generate_stage(snapshot, stage_type, *, force=False, client_factory=None):
     stage, stage_input, evidence_by_id, cache_hit = prepare_stage(snapshot, stage_type, force=force)
     if cache_hit:
         return stage
@@ -780,7 +780,7 @@ def generate_stage(snapshot, stage_type, *, force=False):
     attempts = []
     last_error = None
     try:
-        client = create_gemini_client()
+        client = (client_factory or create_gemini_client)()
         for retry_count, profile in enumerate((STANDARD_PROFILE, COMPACT_PROFILE)):
             try:
                 validated, attempt_metrics = _run_stage_attempt(

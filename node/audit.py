@@ -18,6 +18,13 @@ ACTION_LABELS = {
     CLOUD_LINKED: "連結雲端",
     CLOUD_UNLINKED: "中斷雲端連線",
     DATASET_REGISTERED: "登錄外部資料集",
+    "ai.credential_changed": "變更 Gemini 憑證設定",
+    "ai.confirmed": "確認 Gemini 工作與呼叫上限",
+    "ai.completed": "完成 Gemini 分析",
+    "analysis.requested": "排程統計與文字分析",
+    "analysis.cancelled": "要求取消分析工作",
+    "result.backfill_failed": "歷史結果上傳建檔失敗",
+    "history.imported": "接手歷史資料副本",
 }
 
 

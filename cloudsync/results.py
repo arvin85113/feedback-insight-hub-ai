@@ -105,6 +105,10 @@ def record_publication(state):
         return None
     SurveySyncState.objects.get_or_create(survey=state.survey)
     sync_state = SurveySyncState.objects.select_for_update().get(survey=state.survey)
+    existing = ResultUpload.objects.filter(survey=state.survey, published_at=state.published_at).first()
+    if existing is not None:
+        # A retry/backfill reuses the frozen identity, never a second sequence.
+        return existing
     sequence = max(sync_state.cloud_publish_sequence, sync_state.local_publish_sequence) + 1
     sync_state.local_publish_sequence = sequence
     sync_state.save(update_fields=["local_publish_sequence"])
@@ -128,19 +132,34 @@ def backfill_publications():
         .distinct()
     )
     for survey_id in candidates:
-        with transaction.atomic():
-            state = (
-                SurveyAnalysisState.objects.select_for_update()
-                .select_related("survey", "published_snapshot", "published_ai_stage__snapshot")
-                .get(survey_id=survey_id)
-            )
-            if state.published_at is None:
-                continue
-            if ResultUpload.objects.filter(survey_id=survey_id, published_at=state.published_at).exists():
-                continue
-            if record_publication(state) is not None:
-                created += 1
+        try:
+            created += _backfill_one(survey_id)
+        except AnalysisSourceConfigurationError:
+            from node.models import NodeAuditEvent
+            from node.audit import record
+            state = SurveyAnalysisState.objects.get(survey_id=survey_id)
+            details = {"code": "invalid_publication_source", "published_at": state.published_at.isoformat()}
+            target = str(state.survey.uuid)
+            if not NodeAuditEvent.objects.filter(action="result.backfill_failed", target=target, details=details).exists():
+                record("result.backfill_failed", target=target, **details)
     return created
+
+
+def _backfill_one(survey_id):
+    # Catch configuration failures outside atomic(), rolling back sequence allocation.
+    with transaction.atomic():
+        state = (
+            SurveyAnalysisState.objects.select_for_update(of=("self",))
+            .select_related("survey", "published_snapshot", "published_ai_stage__snapshot")
+            .get(survey_id=survey_id)
+        )
+        if state.published_at is None:
+            return 0
+        if ResultUpload.objects.filter(survey_id=survey_id, published_at=state.published_at).exists():
+            return 0
+        if record_publication(state) is not None:
+            return 1
+    return 0
 
 
 RETRYABLE = (TRANSIENT, UNAUTHORIZED)

@@ -1,0 +1,7 @@
+<div class="nj-progress" data-job="{{ job.pk }}">
+  <div class="nj-progress-caption"><span>{{ job.ui_progress_phase }}</span>{% if job.ui_progress_known %}<strong>{{ job.ui_progress_percent }}%{% if job.status == "running" %} 階段進度{% endif %}</strong>{% elif job.ui_progress_busy %}<span>執行中 · 尚無可計算百分比</span>{% else %}<span>未完成</span>{% endif %}</div>
+  <div class="nj-progress-track" role="progressbar" aria-label="工作 {{ job.pk }} 進度" aria-valuemin="0" aria-valuemax="100" aria-valuetext="{{ job.ui_progress_phase }}{% if job.ui_progress_units %}，{{ job.ui_progress_units }}{% endif %}" {% if job.ui_progress_known %}aria-valuenow="{{ job.ui_progress_percent }}"{% endif %}>
+    {% if job.ui_progress_known %}<span class="nj-progress-fill nj-fill-{{ job.ui_tone }}{% if job.ui_progress_busy %} nj-progress-pulse{% endif %}" style="width:{{ job.ui_progress_percent }}%"></span>{% elif job.ui_progress_busy %}<span class="nj-progress-indeterminate"></span>{% endif %}
+  </div>
+  {% if job.ui_progress_units %}<small>{{ job.ui_progress_units }}</small>{% endif %}
+</div>

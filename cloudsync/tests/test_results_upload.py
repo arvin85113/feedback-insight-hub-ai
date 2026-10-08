@@ -28,7 +28,7 @@ class UploadResultsTests(TestCase):
         survey, _ = upsert_definition(definition(1))
         state = published_state(survey)
         record_publication(state)
-        record_publication(state)
+        record_publication(published_state(survey))  # a second publication, not a resend
 
     def test_identity_is_reused_and_statuses_follow_replies(self):
         client = FakeResultClient([CloudError(TRANSIENT), {"status": "applied"}, {"status": "stale"}])

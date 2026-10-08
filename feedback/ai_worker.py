@@ -11,6 +11,7 @@ from .analysis_jobs import (
     publish_analysis_stages,
 )
 from .models import AnalysisJob, SurveyAIAnalysisStage, SurveyAnalysisState
+from .job_progress import report_job_progress
 
 
 class AIWorkerExecutionError(RuntimeError):
@@ -49,7 +50,7 @@ def _checkpoint(job, lease_seconds):
         raise AIWorkerSuperseded
 
 
-def execute_ai_job(job, *, allow_paid_ai=False, lease_seconds=600, progress=None):
+def execute_ai_job(job, *, allow_paid_ai=False, lease_seconds=600, progress=None, stage_runner=None):
     """Generate the three existing AI stages and publish synthesis.
 
     The caller must explicitly authorize paid API use.  Provider uncertainty is
@@ -66,6 +67,7 @@ def execute_ai_job(job, *, allow_paid_ai=False, lease_seconds=600, progress=None
     }:
         raise AIWorkerExecutionError("unsupported_executor")
     _checkpoint(job, lease_seconds)
+    report_job_progress(job.pk, job.lease_token, phase="prepare", completed=0)
     state = (
         SurveyAnalysisState.objects.select_related("published_snapshot")
         .filter(survey=job.survey)
@@ -95,11 +97,14 @@ def execute_ai_job(job, *, allow_paid_ai=False, lease_seconds=600, progress=None
         (SurveyAIAnalysisStage.StageType.SYNTHESIS, "產生綜合解析", 68, 90),
     )
     try:
-        for stage_type, label, start_percent, end_percent in stage_steps:
+        for index, (stage_type, label, start_percent, end_percent) in enumerate(stage_steps):
             _checkpoint(job, lease_seconds)
+            report_job_progress(job.pk, job.lease_token, phase="ai_" + stage_type, completed=index)
             if progress:
                 progress(label, start_percent)
-            stages[stage_type] = generate_stage(snapshot, stage_type)
+            stages[stage_type] = (stage_runner or generate_stage)(snapshot, stage_type)
+            next_phase = "ai_" + stage_steps[index + 1][0] if index < 2 else "publish"
+            report_job_progress(job.pk, job.lease_token, phase=next_phase, completed=index + 1)
             if progress:
                 progress(f"{label}完成", end_percent)
     except StageError as exc:
@@ -108,6 +113,7 @@ def execute_ai_job(job, *, allow_paid_ai=False, lease_seconds=600, progress=None
         raise AIWorkerExecutionError(f"ai_{exc.error_code}", retryable=False) from exc
 
     _checkpoint(job, lease_seconds)
+    report_job_progress(job.pk, job.lease_token, phase="publish", completed=3)
     if progress:
         progress("驗證並發布 Gemini 結果", 95)
     publication = publish_analysis_stages(

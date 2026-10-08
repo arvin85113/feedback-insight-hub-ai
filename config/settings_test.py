@@ -24,3 +24,4 @@ LOGGING["loggers"]["feedback"]["level"] = "WARNING"  # noqa: F405
 
 # Existing suites exercise pages directly; node setup tests switch the gate back on.
 NODE_SETUP_GATE = False
+NODE_TEST_CREDENTIAL_STORE = True  # Only isolated fixtures may use an in-memory vault.

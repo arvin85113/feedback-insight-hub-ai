@@ -7,6 +7,8 @@ from django.contrib.staticfiles import finders
 # Features that exist only on the public cloud site (landing page, customer
 # sign-up, the shared login entry).  The local node CI job skips them.
 cloud_only = skipUnless(settings.DEPLOYMENT_MODE == "cloud", "雲端模式專用功能")
+# Features that need the node-only cloudsync app (result uploads to the cloud).
+node_only = skipUnless(settings.DEPLOYMENT_MODE == "node", "本機節點模式專用功能")
 
 
 def page_with_scripts(response):

@@ -10,6 +10,7 @@ from .ai_worker import AIWorkerExecutionError, execute_ai_job
 from .analysis_jobs import claim_next_job, publish_analysis_snapshot, schedule_survey_analysis
 from .models import AnalysisJob, Survey, SurveyAIAnalysisStage, SurveyAIReportSnapshot, SurveyAnalysisState
 from .test_ai_stages import provider_response, statistics_payload, synthesis_payload, text_payload
+from .test_utils import node_only
 from .tests import source_snapshot
 
 
@@ -95,6 +96,37 @@ class AIWorkerTests(TestCase):
         client_factory.assert_not_called()
         job.refresh_from_db()
         self.assertEqual(job.status, AnalysisJob.Status.RUNNING)
+
+    @node_only
+    @patch("feedback.ai_stage_service.create_gemini_client")
+    def test_bound_base_and_mock_ai_publish_automatically_queue_and_upload(self, client_factory):
+        from cloudapi.definition import serialize_definition
+        from cloudapi.models import SurveyDefinitionRevision
+        from cloudsync.models import ResultUpload
+        from cloudsync.results import backfill_publications, upload_results
+        SurveyDefinitionRevision.objects.create(survey=self.survey, version=0,
+                                                definition=serialize_definition(self.survey))
+        _, job = self.prepare_ai_claim()
+        self.assertEqual(ResultUpload.objects.count(), 1)
+        client_factory.return_value.models.generate_content.side_effect = [
+            provider_response(statistics_payload()), provider_response(text_payload()),
+            provider_response(synthesis_payload()),
+        ]
+        execute_ai_job(job, allow_paid_ai=True, lease_seconds=60)
+        self.assertEqual(ResultUpload.objects.count(), 2)
+        ai_upload = ResultUpload.objects.order_by("-publish_sequence").first()
+        self.assertTrue(ai_upload.content["stages"]["ai"]["current"])
+        self.assertTrue(ai_upload.content["ai_payload"])
+        self.assertEqual(backfill_publications(), 0)
+
+        class FakeCloud:
+            def post_raw(self, path, body):
+                assert path == "results/"
+                return {"status": "applied"}
+
+        self.assertEqual(upload_results(FakeCloud()), {"uploaded": 2, "stale": 0, "failed": 0})
+        self.assertEqual(ResultUpload.objects.filter(status="uploaded").count(), 2)
+        self.assertEqual(client_factory.return_value.models.generate_content.call_count, 3)
 
     def test_command_without_paid_flag_does_not_claim_pending_ai_job(self):
         _, job = self.prepare_ai_claim()

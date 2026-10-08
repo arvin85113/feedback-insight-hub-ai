@@ -58,6 +58,45 @@ class DatasetPageTests(ConsoleTestCase):
         self.assertContains(response, "驗證失敗")
         self.assertFalse(Survey.objects.exists())
 
+    def test_local_only_source_resumes_registration_then_recomputes_cloud_version_once(self):
+        import uuid
+        from cloudapi.definition import apply_definition
+        from feedback.analysis_jobs import suppress_analysis_scheduling
+        from feedback.external_dataset import validate_external_dataset
+        from feedback.importing.mapping import load_mapping
+        from feedback.importing.service import mapping_definition
+        from feedback.models import SurveyAnalysisState
+        from node.datasets import register_local_dataset
+        verified = validate_external_dataset(self.manifest, self.mapping)
+        identity = uuid.uuid5(uuid.NAMESPACE_URL, "feedback-external:" + ":".join(
+            verified.registration[key] for key in ("source_ref", "mapping_key", "schema_sha256")))
+        with suppress_analysis_scheduling():
+            survey = Survey(uuid=identity)
+            apply_definition(survey, mapping_definition(load_mapping(self.mapping), identity), version=0)
+            register_local_dataset(survey.pk, verified)
+        state, _ = SurveyAnalysisState.objects.get_or_create(survey=survey)
+        before = state.config_version
+        with patch("feedback.external_dataset.file_hash", side_effect=AssertionError("GET must not hash")):
+            response = self.client.get(self.url, {"survey": survey.pk})
+            self.assertEqual(response.context["form"].initial["manifest_path"], str(self.manifest))
+            self.assertEqual(response.context["form"].initial["mapping_path"], str(self.mapping))
+        confirmation = self.preview()
+
+        def post(path, body):
+            self.assertEqual(body["expected_version"], 0)
+            return self.cloud_reply(body["definition"], body["registration"])
+
+        with patch("cloudsync.datasets._client") as factory:
+            factory.return_value.post.side_effect = post
+            for _ in range(2):
+                self.assertEqual(self.client.post(self.url, {**self.data, "action": "register",
+                                                           "confirmation": confirmation}).status_code, 302)
+        state.refresh_from_db()
+        self.assertEqual(state.config_version, before + 1)
+        self.assertEqual(Survey.objects.count(), 1)
+        self.assertEqual(LocalDatasetLocation.objects.count(), 1)
+        self.assertEqual(AnalysisJob.objects.filter(survey=survey, status="pending", executor="deterministic").count(), 1)
+
     def test_register_then_retry_keeps_one_survey_and_audits_without_paths(self):
         confirmation = self.preview()
 
@@ -79,6 +118,98 @@ class DatasetPageTests(ConsoleTestCase):
         self.assertContains(self.client.get(self.url), "最近本機發布")
         from feedback.views import analysis_visible_surveys
         self.assertEqual(list(analysis_visible_surveys()), list(Survey.objects.all()))
+
+    def test_equal_version_local_copy_is_not_silently_treated_as_cloud_bound(self):
+        from cloudapi.errors import DefinitionError
+        from cloudapi.models import SurveyDefinitionRevision
+        from cloudsync.datasets import register_dataset
+        from feedback.external_dataset import validate_external_dataset
+        from feedback.importing.mapping import load_mapping
+        from feedback.importing.service import mapping_definition
+        import uuid
+
+        verified = validate_external_dataset(self.manifest, self.mapping)
+        identity = uuid.uuid5(uuid.NAMESPACE_URL, "feedback-external:" + ":".join(
+            verified.registration[key] for key in ("source_ref", "mapping_key", "schema_sha256")))
+        Survey.objects.create(uuid=identity, title="Unverified local definition", slug="local-conflict",
+                              definition_version=1)
+        definition = mapping_definition(load_mapping(self.mapping), identity)
+        with patch("cloudsync.datasets._client") as factory:
+            factory.return_value.post.side_effect = lambda path, body: self.cloud_reply(
+                body["definition"], body["registration"])
+            with self.assertRaises(DefinitionError):
+                register_dataset(verified, definition, expected_version=1, generation=self.link.generation)
+        self.assertFalse(SurveyDefinitionRevision.objects.exists())
+        self.assertFalse(LocalDatasetLocation.objects.exists())
+        self.assertEqual(Survey.objects.get().title, "Unverified local definition")
+
+    def test_dataset_list_does_not_reuse_previous_upload_acknowledgement(self):
+        from datetime import timedelta
+        from cloudsync.models import ResultUpload
+        from cloudsync.tests.test_results_local import published_state
+
+        confirmation = self.preview()
+        with patch("cloudsync.datasets._client") as factory:
+            factory.return_value.post.side_effect = lambda path, body: self.cloud_reply(
+                body["definition"], body["registration"])
+            self.client.post(self.url, {**self.data, "action": "register", "confirmation": confirmation})
+        survey = Survey.objects.get()
+        state = published_state(survey)
+        ResultUpload.objects.create(survey=survey, published_at=state.published_at - timedelta(minutes=1),
+                                   publish_sequence=1, status="uploaded", content_hash="fixture", content={})
+        response = self.client.get(self.url)
+        self.assertIsNone(list(response.context["sources"])[0].last_upload_status)
+        self.assertContains(response, "尚無本次上傳")
+
+    def test_registration_canonicalizes_timezone_and_accepts_equivalent_utc_reply_on_retry(self):
+        from datetime import datetime
+        from cloudsync.datasets import register_dataset
+        from feedback.external_dataset import validate_external_dataset
+        from feedback.importing.mapping import load_mapping
+        from feedback.importing.service import mapping_definition
+        import uuid
+
+        verified = validate_external_dataset(self.manifest, self.mapping)
+        verified.registration["source_latest_at"] = datetime.fromisoformat("2012-12-20T00:00:00+08:00")
+        definition = mapping_definition(load_mapping(self.mapping), uuid.uuid4())
+
+        def post(path, body):
+            self.assertEqual(body["registration"]["source_latest_at"], "2012-12-19T16:00:00+00:00")
+            reply = self.cloud_reply(body["definition"], copy.deepcopy(body["registration"]))
+            reply["definition"]["external_source"]["source_latest_at"] = "2012-12-19T16:00:00Z"
+            return reply
+
+        with patch("cloudsync.datasets._client") as factory:
+            factory.return_value.post.side_effect = post
+            for _ in range(2):
+                register_dataset(verified, definition, expected_version=0, generation=self.link.generation)
+        self.assertEqual(Survey.objects.count(), 1)
+        self.assertEqual(LocalDatasetLocation.objects.count(), 1)
+
+    def test_registration_rejects_a_genuinely_different_source_time(self):
+        from datetime import datetime
+        from cloudapi.errors import DefinitionError
+        from cloudsync.datasets import register_dataset
+        from feedback.external_dataset import validate_external_dataset
+        from feedback.importing.mapping import load_mapping
+        from feedback.importing.service import mapping_definition
+        import uuid
+
+        verified = validate_external_dataset(self.manifest, self.mapping)
+        verified.registration["source_latest_at"] = datetime.fromisoformat("2012-12-20T00:00:00+08:00")
+        definition = mapping_definition(load_mapping(self.mapping), uuid.uuid4())
+
+        def post(path, body):
+            reply = self.cloud_reply(body["definition"], copy.deepcopy(body["registration"]))
+            reply["definition"]["external_source"]["source_latest_at"] = "2012-12-20T00:00:00Z"
+            return reply
+
+        with patch("cloudsync.datasets._client") as factory:
+            factory.return_value.post.side_effect = post
+            with self.assertRaises(DefinitionError):
+                register_dataset(verified, definition, expected_version=0, generation=self.link.generation)
+        self.assertFalse(Survey.objects.exists())
+        self.assertFalse(LocalDatasetLocation.objects.exists())
 
     def test_changed_mapping_or_link_invalidates_confirmation_before_api(self):
         confirmation = self.preview()

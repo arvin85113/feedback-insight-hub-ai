@@ -99,6 +99,8 @@ ROLE_FLAGS = (
 
 
 def select_role(argv):
+    if "--legacy-workbench" in argv and os.getenv("FEEDBACK_HUB_NODE_ONLY") == "1":
+        raise ValueError("此封裝只支援本機節點，不支援舊工作台。")
     for flag, role in ROLE_FLAGS:
         if flag in argv:
             return role
@@ -119,7 +121,7 @@ def prepare_environment(role, environ=None):
     """Node roles run on local data only; the workbench keeps its cloud .env."""
 
     environ = os.environ if environ is None else environ
-    if role in {"launcher", "worker"}:
+    if role in {"launcher", "worker", "smoke"}:
         environ["DEPLOYMENT_MODE"] = "node"
         return None
     environ["DEPLOYMENT_MODE"] = "cloud"
@@ -134,26 +136,21 @@ def _run_smoke_test():
     import django
 
     django.setup()
-    _configure_file_logging()
-    import dearpygui.dearpygui as dpg
+    from django.conf import settings
+    _configure_file_logging(log_dir=settings.NODE_PATHS.logs_dir, filename="smoke.log")
     import pystray  # noqa: F401 - bundled for the node launcher
     from cheroot import wsgi  # noqa: F401 - bundled for the node launcher
     from django.template.loader import get_template
 
-    from desktop_app.app import FeedbackInsightDesktop
     from feedback.background_analysis import PROFILE_PATH, pipeline_version
 
-    for template in ("feedback/dashboard_base.html", "node/overview.html", "node/setup.html", "account/login.html"):
+    for template in ("feedback/dashboard_base.html", "node/overview.html", "node/setup.html", "account/login.html",
+                     "node/datasets.html", "node/jobs.html", "node/gemini_settings.html", "cloudsync/connection.html"):
         get_template(template)
     profile = json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
     pipeline_version(profile)
-    dpg.create_context()
-    try:
-        application = FeedbackInsightDesktop()
-        application._configure_style()
-        application._build()
-    finally:
-        dpg.destroy_context()
+    # Smoke validates bundled code/templates only: no server, migration, DB or API call.
+    from node import gemini  # noqa: F401
 
 
 def main():
