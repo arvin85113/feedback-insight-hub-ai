@@ -20,6 +20,7 @@ from feedback.models import Survey
 
 from .definition import apply_definition, frozen_fields_changed, serialize_definition, validate_definition
 from .errors import DefinitionError, PublishBlocked, PublishedLocked, VersionConflict
+from .inbox import inbox_scope_allows
 from .models import ChangeClock, SurveyChange, SurveyDefinitionRevision
 
 SLUG_ALPHABET = string.ascii_lowercase + string.digits
@@ -106,8 +107,11 @@ def _lifecycle(survey, definition):
     if definition["published"]:
         if not definition["questions"]:
             raise DefinitionError("至少需要一題才能發布")
-        if survey.owner_node_id and not current_source and not settings.CLOUD_INBOX_ENABLED:
-            raise PublishBlocked()
+        if survey.owner_node_id and not current_source:
+            if not settings.CLOUD_INBOX_ENABLED:
+                raise PublishBlocked()
+            if not inbox_scope_allows(survey):
+                raise PublishBlocked(PublishBlocked.SELF_TEST_MESSAGE)
         definition.update(
             published_version=next_version,
             published_at=timezone.now().isoformat(),

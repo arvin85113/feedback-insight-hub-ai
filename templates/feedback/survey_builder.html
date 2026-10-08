@@ -125,6 +125,9 @@
             <div class="builder-alert" role="alert"><strong>{{ card_error }}</strong></div>
         {% endif %}
 
+        {% if node_notice %}
+            <div class="builder-alert builder-alert-info" role="status">{{ node_notice }}</div>
+        {% endif %}
         {% if read_only %}
             <div class="builder-alert builder-alert-info">
                 已發布：題目、選項與刻度已固定。需要修改時請「複製為新草稿」。

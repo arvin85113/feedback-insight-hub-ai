@@ -1,5 +1,7 @@
 import random
+import uuid
 
+from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import connection, transaction
 
@@ -8,7 +10,9 @@ from feedback.models import FeedbackSubmission, Survey
 from feedback.seed_support import (
     answers_by_title,
     choice_question,
+    create_published_node_survey,
     create_published_survey,
+    inbox_answers,
     number_question,
     scale_question,
     text_question,
@@ -20,6 +24,8 @@ SURVEY_TITLE = "飲料店體驗回饋"
 SURVEY_DESCRIPTION = "蒐集顧客在不同門市的飲料體驗，作為服務優化與品項調整參考。"
 CATEGORY_NAME = "飲料店"
 NAME_PREFIX = "飲料店模擬填答"
+# Fixed so the cloud's self-test inbox allowlist can name it before the node creates it (spec §1, §4).
+BEVERAGE_NODE_SURVEY_UUID = uuid.uuid5(uuid.NAMESPACE_URL, "https://feedbackhub.local/demo/beverage-node")
 
 STORES = ["信義店", "台北車站店", "公館店", "士林店"]
 DINING = ["內用", "外帶"]
@@ -116,6 +122,43 @@ STORE_PROFILES = {
 }
 
 
+def simulated_responses(rng: random.Random, count: int) -> list[tuple[int, dict, bool]]:
+    """(number, {question title: value}, consent_follow_up) for each simulated reply; one rng order for every path."""
+
+    per_store = count // len(STORES)
+    store_cycle = [store for store in STORES for _ in range(per_store)]
+    store_cycle.extend(rng.choices(STORES, k=count - len(store_cycle)))
+    rng.shuffle(store_cycle)
+    responses = []
+    for i, store in enumerate(store_cycle, start=1):
+        profile = STORE_PROFILES[store]
+        dining = rng.choice(DINING)
+        lo, hi = profile["score_range"]
+        # Take-away customers wait less and are a little happier (Welch t / Mann-Whitney).
+        wait_minutes = round(max(0.5, rng.gauss(profile["wait_mean"], 1.5) - (1.5 if dining == "外帶" else 0)), 1)
+        score = min(10, max(1, rng.randint(lo, hi) + (1 if dining == "外帶" else 0) - int(wait_minutes // 6)))
+        spend = round(max(35.0, rng.gauss(55 + score * 6, 12)), 1)  # higher spend with higher satisfaction
+        wait_feeling = WAIT_LEVELS[min(3, int(wait_minutes // 3.5))]
+        if rng.random() < 0.05:
+            wait_feeling = NOT_APPLICABLE  # e.g. delivered by a friend: excluded from analysis
+        items = rng.sample(profile["item_pool"], k=rng.randint(1, min(profile["item_count"][1],
+                                                                 len(profile["item_pool"]))))
+        values = {
+            "門市": store,
+            "內用或外帶": dining,
+            "最常購買的品項（可複選）": items,
+            "整體滿意度": str(score),
+            "推薦意願": str(min(10, max(0, score + rng.randint(-2, 1)))),
+            "等候時間感受": wait_feeling,
+            "等候分鐘數": f"{wait_minutes}",
+            "消費金額": f"{spend}",
+            "過去 30 天來店次數": str(rng.randint(profile["visits"][0], profile["visits"][1])),
+            "希望改善的地方": rng.choice(profile["text_pool"]),
+        }
+        responses.append((i, values, bool(rng.getrandbits(1))))
+    return responses
+
+
 class Command(BaseCommand):
     help = (
         "建立並發布飲料店示範問卷（10 題、6 條關鍵字分類），灌入模擬填答（填答者名稱前綴「飲料店模擬填答」）。"
@@ -136,6 +179,16 @@ class Command(BaseCommand):
             help="先刪除整份示範問卷（含題目／關鍵字／所有填答）再重建",
         )
         parser.add_argument(
+            "--node-create",
+            action="store_true",
+            help="本機節點模式：經雲端 API 建立並發布節點擁有的飲料店問卷（固定 UUID）與關鍵字，不灌填答",
+        )
+        parser.add_argument(
+            "--inbox",
+            action="store_true",
+            help="雲端模式：把模擬填答送進節點飲料店問卷的收件匣（需 --seed；同一 seed 重跑視為重送）",
+        )
+        parser.add_argument(
             "--yes",
             action="store_true",
             help="cleanup / reset 時略過互動確認（CI / 腳本使用）",
@@ -144,6 +197,15 @@ class Command(BaseCommand):
     def handle(self, *args, **opts):
         if opts["cleanup"] and opts["reset"]:
             raise CommandError("--cleanup 與 --reset 不可同時使用")
+
+        if opts["node_create"] and opts["inbox"]:
+            raise CommandError("--node-create 與 --inbox 不可同時使用")
+        if opts["node_create"]:
+            self._node_create(opts)
+            return
+        if opts["inbox"]:
+            self._inbox(opts)
+            return
 
         if opts["cleanup"]:
             self._cleanup_only(opts)
@@ -168,46 +230,64 @@ class Command(BaseCommand):
         self._print_db_hint()
 
     def _seed_responses(self, survey: Survey, count: int, rng: random.Random) -> int:
-        per_store = count // len(STORES)
-        store_cycle = [store for store in STORES for _ in range(per_store)]
-        store_cycle.extend(rng.choices(STORES, k=count - len(store_cycle)))
-        rng.shuffle(store_cycle)
-
         with transaction.atomic():
-            for i, store in enumerate(store_cycle, start=1):
-                profile = STORE_PROFILES[store]
-                dining = rng.choice(DINING)
-                lo, hi = profile["score_range"]
-                # Take-away customers wait less and are a little happier (Welch t / Mann-Whitney).
-                wait_minutes = round(max(0.5, rng.gauss(profile["wait_mean"], 1.5) - (1.5 if dining == "外帶" else 0)), 1)
-                score = min(10, max(1, rng.randint(lo, hi) + (1 if dining == "外帶" else 0) - int(wait_minutes // 6)))
-                spend = round(max(35.0, rng.gauss(55 + score * 6, 12)), 1)  # higher spend with higher satisfaction
-                wait_feeling = WAIT_LEVELS[min(3, int(wait_minutes // 3.5))]
-                if rng.random() < 0.05:
-                    wait_feeling = NOT_APPLICABLE  # e.g. delivered by a friend: excluded from analysis
-                items = rng.sample(profile["item_pool"], k=rng.randint(1, min(profile["item_count"][1],
-                                                                         len(profile["item_pool"]))))
-                values = {
-                    "門市": store,
-                    "內用或外帶": dining,
-                    "最常購買的品項（可複選）": items,
-                    "整體滿意度": str(score),
-                    "推薦意願": str(min(10, max(0, score + rng.randint(-2, 1)))),
-                    "等候時間感受": wait_feeling,
-                    "等候分鐘數": f"{wait_minutes}",
-                    "消費金額": f"{spend}",
-                    "過去 30 天來店次數": str(rng.randint(profile["visits"][0], profile["visits"][1])),
-                    "希望改善的地方": rng.choice(profile["text_pool"]),
-                }
+            for i, values, consent in simulated_responses(rng, count):
                 submit_survey_payload(
                     survey,
                     user=None,
                     respondent_name=f"{NAME_PREFIX} #{i}",
                     respondent_email="",
-                    consent_follow_up=bool(rng.getrandbits(1)),
+                    consent_follow_up=consent,
                     answers=answers_by_title(survey, values),
                 )
         return count
+
+    def _node_create(self, opts):
+        if not settings.IS_NODE:
+            raise CommandError("--node-create 只能在本機節點模式執行")
+        if opts["reset"] or opts["cleanup"]:
+            raise CommandError("--node-create 不可與 --reset、--cleanup 併用")
+        survey = create_published_node_survey(
+            survey_uuid=BEVERAGE_NODE_SURVEY_UUID, title=SURVEY_TITLE, description=SURVEY_DESCRIPTION,
+            category=CATEGORY_NAME, questions=QUESTIONS, keywords=KEYWORDS,
+        )
+        self.stdout.write(self.style.SUCCESS(
+            f"完成：節點問卷已建立並發布（UUID {survey.uuid}，slug {survey.slug}）；"
+            "模擬填答請在雲端執行 --inbox"
+        ))
+
+    def _inbox(self, opts):
+        from cloudapi.inbox import InboxRejected, accept_submission, uses_inbox
+
+        if settings.IS_NODE:
+            raise CommandError("--inbox 只能在雲端模式執行")
+        if opts["reset"] or opts["cleanup"]:
+            raise CommandError("--inbox 不可與 --reset、--cleanup 併用")
+        if opts["seed"] is None:
+            raise CommandError("--inbox 需要 --seed，重跑才不會重複收件")
+        if opts["count"] < 1:
+            raise CommandError("--count 必須 >= 1")
+        survey = Survey.objects.filter(uuid=BEVERAGE_NODE_SURVEY_UUID).first()
+        if survey is None or survey.published_version is None:
+            raise CommandError("找不到已發布的節點飲料店問卷；請先在節點執行 --node-create")
+        if not uses_inbox(survey):
+            raise CommandError("這份問卷目前不收件：請確認 CLOUD_INBOX_ENABLED 已開啟且 CLOUD_INBOX_SELF_TEST_SURVEYS 含此問卷 UUID")
+        created = reused = 0
+        for i, values, consent in simulated_responses(random.Random(opts["seed"]), opts["count"]):
+            try:
+                result = accept_submission(
+                    survey, user=None, submission_uuid=uuid.uuid5(BEVERAGE_NODE_SURVEY_UUID, f"{opts['seed']}:{i}"),
+                    form_version=survey.published_version, consent_follow_up=consent,
+                    answers=inbox_answers(survey, values), simulated_name=f"{NAME_PREFIX} #{i}",
+                )
+            except InboxRejected as exc:
+                raise CommandError(f"第 {i} 筆未送出（{exc.user_message}）；已送出 {created} 筆、重送 {reused} 筆") from exc
+            if result.reused:
+                reused += 1
+            else:
+                created += 1
+        self.stdout.write(self.style.SUCCESS(f"完成：收件匣新收件 {created} 筆、重送 {reused} 筆（問卷 {survey.slug}）"))
+        self._print_db_hint()
 
     def _cleanup_only(self, opts):
         survey = Survey.objects.filter(slug=SURVEY_SLUG).first()

@@ -137,12 +137,12 @@
 |---|---|---|
 | 1 | 核對既有備份與還原證據；有新寫入或證據不足時重新備份並於隔離 DB 驗證還原 | 另行授權；還原不是唯讀操作 |
 | 2 | 重建本機節點 SQLite（舊檔改名保留）；開 EXE 經 `/setup/` 建立 OWNER | Claude／使用者 |
-| 3 | 確認伺服器端自測範圍限制已驗收；再依授權設定 Render 開關，不因全站 flag 開啟而接入真實資料 | 使用者（Dashboard） |
+| 3 | 確認伺服器端自測範圍限制已驗收；再依授權設定 Render 開關（`CLOUD_INBOX_SELF_TEST_SURVEYS` 只列自測問卷 UUID，`CLOUD_INBOX_REQUIRE_SELF_TEST` 保持預設），不因全站 flag 開啟而接入真實資料 | 使用者（Dashboard） |
 | 4 | 使用者在自己的終端機執行 `create_node_device --name <節點名稱>`，權杖貼進節點「雲端連線」頁 | 使用者 |
 | 5 | 節點「資料集」頁匯入 TripAdvisor：建立、發布、統計／文字、上傳 | 使用者或經授權的 Claude |
 | 6 | 「執行 Gemini 分析」（TripAdvisor） | 使用者，付費 |
 | 7 | 確認網站新結果後封存舊 TripAdvisor 問卷；使用者再次確認後另行授權 `purge_survey` | 授權 |
-| 8 | 飲料店：建立新節點問卷 → 限定自測的收件匣 → 收件／分析／上傳／展示驗收 → 經確認封存舊問卷；任何 purge 與 Gemini 另行批准 | 分階段授權 |
+| 8 | 飲料店：節點 `seed_demo_beverage --node-create` → 雲端 `seed_demo_beverage --inbox --count 100 --seed 7`（限定自測的收件匣）→ 收件／分析／上傳／展示驗收 → 經確認封存舊問卷；任何 purge 與 Gemini 另行批准 | 分階段授權 |
 | 9 | 草稿 `rlcpny8x` 指派給節點 | 授權 |
 
 ## 8. 測試

@@ -11,6 +11,7 @@ from feedback.local_service import build_stats_payload
 from feedback.management.commands.seed_demo_beverage import NAME_PREFIX, SURVEY_SLUG
 from feedback.models import AnalysisJob, Answer, FeedbackSubmission, Survey, SurveyAIAnalysisStage
 from feedback.published_analysis import get_published_analysis_payload
+from feedback.test_utils import cloud_only
 
 SEVEN = {"welch_t_test", "one_way_anova", "chi_square", "mann_whitney_u", "kruskal_wallis", "pearson", "spearman"}
 
@@ -95,3 +96,21 @@ class OtherSeedTests(TestCase):
         self.assertEqual(set(submissions.values_list("definition_version", flat=True)), {survey.published_version})
         self.assertTrue(Answer.objects.filter(submission__survey=survey, question__kind="single_choice")
                         .exclude(choice_codes=None).exists())
+
+
+class BeverageNodePathTests(TestCase):
+    def test_default_path_answers_unchanged(self):
+        import random
+
+        from feedback.management.commands.seed_demo_beverage import simulated_responses
+
+        number, values, consent = simulated_responses(random.Random(7), 100)[0]
+        self.assertEqual(number, 1)
+        self.assertEqual((values["門市"], values["最常購買的品項（可複選）"], values["整體滿意度"], values["等候分鐘數"]),
+                         ("台北車站店", ["紅茶"], "6", "10.9"))
+        self.assertTrue(consent)
+
+    @cloud_only
+    def test_node_create_refused_in_cloud_mode(self):
+        with self.assertRaisesMessage(CommandError, "本機節點模式"):
+            call_command("seed_demo_beverage", "--node-create", stdout=StringIO())
