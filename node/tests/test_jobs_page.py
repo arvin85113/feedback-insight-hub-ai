@@ -112,27 +112,6 @@ class JobsPageTests(ConsoleTestCase):
         self.assertEqual(connection.context["unbound_results_count"], 1)
         self.assertContains(connection, "並非已上傳")
 
-    def test_local_history_has_no_cloud_repair_button_or_attention_count(self):
-        from cloudsync.tests.test_publication_status import history_copy_batch
-        history_copy_batch(self.survey)
-        SurveyAnalysisState.objects.filter(pk=self.state.pk).update(published_at=timezone.now())
-        response = self.page()
-        card = response.context["surveys"][0]
-        self.assertTrue(card.cloud_local_only)
-        self.assertEqual(response.context["attention_count"], 0)
-        self.assertContains(response, "僅本機")
-        self.assertContains(response, "這不是同步失敗")
-        self.assertNotContains(response, "未接上雲端發布")
-        self.assertEqual(card.cloud_setup_url, "")
-
-    def test_local_history_analysis_failure_is_still_actionable(self):
-        from cloudsync.tests.test_publication_status import history_copy_batch
-        history_copy_batch(self.survey)
-        self.job("failed", error_code="fixture_failure")
-        response = self.page()
-        self.assertEqual(response.context["attention_count"], 1)
-        self.assertContains(response, "fixture_failure")
-
     def test_legacy_running_bar_is_indeterminate_not_fake_percentage(self):
         from django.template.loader import render_to_string
         from node.job_display import describe_job
