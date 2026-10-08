@@ -26,14 +26,11 @@ class ConnectionView(NodeConsoleMixin, TemplateView):
         context["inbox"] = context["link"].inbox_status or {}
         context["unconfirmed_acks"] = PendingAck.objects.exclude(last_status="").count()
         context["pending_results"] = ResultUpload.objects.filter(status=ResultUpload.Status.PENDING).count()
-        from .publication_status import local_history_surveys, publication_issues
+        from .publication_status import publication_issues
         issues = publication_issues()
         context["unbound_results_count"] = issues.filter(cloud_bound=False).count()
         context["unbound_results"] = list(issues.filter(cloud_bound=False).values("survey__title")[:20])
         context["unqueued_results_count"] = issues.filter(cloud_bound=True).count()
-        local_only = local_history_surveys().filter(analysis_enabled=True, archived_at__isnull=True)
-        context["local_only_count"] = local_only.count()
-        context["local_only_surveys"] = list(local_only.values("title")[:20])
         context["failed_results"] = list(
             ResultUpload.objects.filter(status=ResultUpload.Status.FAILED)
             .select_related("survey")

@@ -191,7 +191,7 @@ class AnalysisJobsView(NodeConsoleMixin, TemplateView):
         context["ready_count"] = sum(s.base_current for s in surveys)
         context["attention_count"] = sum(
             s.ui_tone == "failed" or s.ui_upload_tone == "failed"
-            or (not s.cloud_bound and not s.cloud_local_only) for s in surveys
+            or not s.cloud_bound for s in surveys
         )
         context["auto_refresh"] = not kwargs.get("preview")
         context["grants"] = NodeAIGrant.objects.select_related("job__survey").order_by("-pk")[:20]
