@@ -22,7 +22,9 @@ from .models import PendingAck, SyncedSubmissionSource, advance_and_schedule
 
 logger = logging.getLogger(__name__)
 PAGE_SIZE = 100
-ACK_BATCH = 200
+# The cloud ACKs one item per transaction (~0.4 s each on the free Render/Supabase tier);
+# a batch must finish well inside the client timeout or it is resent forever.
+ACK_BATCH = 10
 WRITTEN = "written"
 DUPLICATE = "duplicate"
 CONTENT_CONFLICT = "content_conflict"

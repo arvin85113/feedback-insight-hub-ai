@@ -3,7 +3,7 @@ from datetime import datetime, timezone as dt_timezone
 from django.test import TestCase
 
 from cloudapi.envelope import envelope_payload_hash
-from cloudsync.client import CLIENT, CloudError
+from cloudsync.client import CLIENT, TRANSIENT, CloudError
 from cloudsync.definitions import upsert_definition
 from cloudsync.inbox import intake, sync_inbox
 from cloudsync.models import PendingAck, SurveySyncState
@@ -43,8 +43,9 @@ def envelope(sequence, submission_uuid, answers, version=1, consent=False):
 
 
 class FakeInboxClient:
-    def __init__(self, pages, ack_status="acked", revisions=None):
+    def __init__(self, pages, ack_status="acked", revisions=None, fail_ack_after=None):
         self.pages, self.ack_status, self.revisions = list(pages), ack_status, revisions or {}
+        self.fail_ack_after = fail_ack_after
         self.posts = []
 
     def get(self, path, params=None):
@@ -59,6 +60,9 @@ class FakeInboxClient:
 
     def post(self, path, body=None):
         self.posts.append((path, body))
+        if path == "inbox/ack/" and self.fail_ack_after is not None:
+            if sum(1 for sent, _ in self.posts if sent == path) > self.fail_ack_after:
+                raise CloudError(TRANSIENT)
         status = self.ack_status if path == "inbox/ack/" else "quarantined"
         return {"results": [{"submission_uuid": item["submission_uuid"], "status": status} for item in body["items"]]}
 
@@ -120,6 +124,25 @@ class SyncInboxTests(TestCase):
         sync_inbox(client)
         self.assertEqual(client.posts[0][0], "inbox/ack/")
         self.assertFalse(PendingAck.objects.exists())
+
+    def test_acks_go_out_in_small_batches(self):
+        # A slow cloud spends ~0.4 s per ACK; one request for 100 items outlived the client
+        # timeout and was resent forever. Small batches finish and keep their progress.
+        for index in range(25):
+            PendingAck.objects.create(submission_uuid=f"d0000000-0000-0000-0000-{index:012d}", payload_hash="h" * 64)
+        client = FakeInboxClient([{"items": [], "has_more": False}])
+        sync_inbox(client)
+        batches = [len(body["items"]) for path, body in client.posts if path == "inbox/ack/"]
+        self.assertEqual(batches, [10, 10, 5])
+        self.assertFalse(PendingAck.objects.exists())
+
+    def test_confirmed_batches_are_kept_when_a_later_batch_times_out(self):
+        for index in range(15):
+            PendingAck.objects.create(submission_uuid=f"d0000000-0000-0000-0000-{index:012d}", payload_hash="h" * 64)
+        client = FakeInboxClient([{"items": [], "has_more": False}], fail_ack_after=1)
+        with self.assertRaises(CloudError):
+            sync_inbox(client)
+        self.assertEqual(PendingAck.objects.count(), 5)
 
     def test_quarantine_reason_is_reported_and_not_acked(self):
         client = FakeInboxClient([{"items": [envelope(1, U1, {Q1: "a"}, version=9)], "has_more": False}])
