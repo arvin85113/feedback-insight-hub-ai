@@ -48,23 +48,60 @@ def reset_survey(slug):
         raise CommandError(str(exc)) from exc
 
 
+def survey_definition(*, survey_uuid, title, questions, description="", category=None,
+                      thank_you_email_enabled=False):
+    definition = blank_definition(survey_uuid, title=title, description=description, category=category,
+                                  thank_you_email_enabled=thank_you_email_enabled)
+    for order, question in enumerate(questions, start=1):
+        add_question(definition, {**question, "order": order})
+    return definition
+
+
+def _create_keywords(survey, keywords):
+    for keyword, category_name in keywords:
+        KeywordCategory.objects.create(survey=survey, keyword=keyword, category=category_name, threshold=2)
+
+
 def create_published_survey(*, slug, title, questions, description="", category=None, keywords=(),
                             thank_you_email_enabled=False):
     """Create a draft with a fixed slug, add its questions, then publish it. Refuses an existing slug."""
 
     if Survey.objects.filter(slug=slug).exists():
         raise CommandError(f"問卷 {slug!r} 已存在；要重建請加 --reset")
-    definition = blank_definition(uuid.uuid4(), title=title, description=description, category=category,
-                                  thank_you_email_enabled=thank_you_email_enabled)
-    for order, question in enumerate(questions, start=1):
-        add_question(definition, {**question, "order": order})
+    definition = survey_definition(survey_uuid=uuid.uuid4(), title=title, questions=questions, description=description,
+                                   category=category, thank_you_email_enabled=thank_you_email_enabled)
     survey = create_survey(definition, slug=slug).survey
     published = serialize_definition(survey)
     published["published"] = True
     change_definition(survey.uuid, expected_version=survey.definition_version, definition=published)
-    for keyword, category_name in keywords:
-        KeywordCategory.objects.create(survey=survey, keyword=keyword, category=category_name, threshold=2)
+    _create_keywords(survey, keywords)
     return Survey.objects.get(pk=survey.pk)
+
+
+def create_published_node_survey(*, survey_uuid, title, questions, description="", category=None, keywords=()):
+    """Node mode: create and publish through the cloud API (the cloud stays the only definition writer).
+
+    Keywords are node-local data (cloud sync spec §1), created only after the publish succeeded.
+    """
+
+    from cloudapi.errors import DefinitionCommitError, DefinitionError
+
+    from .survey_lifecycle import commit, create_draft
+
+    if Survey.objects.filter(uuid=survey_uuid).exists():
+        raise CommandError(f"問卷 {survey_uuid} 已存在於本機；請在節點主控台處理後再執行")
+    definition = survey_definition(survey_uuid=survey_uuid, title=title, questions=questions,
+                                   description=description, category=category)
+    try:
+        survey = create_draft(definition)
+        published = serialize_definition(survey)
+        published["published"] = True
+        commit(survey, published, survey.definition_version)
+    except (DefinitionCommitError, DefinitionError) as exc:
+        raise CommandError(getattr(exc, "user_message", "") or str(exc)) from exc
+    survey = Survey.objects.get(uuid=survey_uuid)
+    _create_keywords(survey, keywords)
+    return survey
 
 
 def answers_by_title(survey, values):
