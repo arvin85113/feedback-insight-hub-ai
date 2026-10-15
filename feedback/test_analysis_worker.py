@@ -11,7 +11,13 @@ import duckdb
 
 from .analysis_jobs import claim_next_job, schedule_survey_analysis, suppress_analysis_scheduling
 from .analysis_sources import register_external_dataset_version
-from .analysis_worker import ExternalInputSpec, execute_deterministic_job
+from .analysis_worker import (
+    ExternalInputSpec,
+    current_implementation_version,
+    execute_deterministic_job,
+    published_base_is_outdated,
+    schedule_outdated_reruns,
+)
 from .importing.local_dataset import file_sha256
 from .models import (
     AnalysisJob,
@@ -76,6 +82,43 @@ class DeterministicWorkerTests(TestCase):
             executor=AnalysisJob.Executor.DETERMINISTIC,
             external_source_refs=(),
         )
+
+    def publish_base(self):
+        claimed = self.queue_and_claim()
+        with tempfile.TemporaryDirectory() as directory:
+            execute_deterministic_job(claimed, output_root=directory, lease_seconds=60)
+        return SurveyAnalysisState.objects.select_related("published_snapshot").get(survey=self.survey)
+
+    def test_base_built_by_current_code_is_not_outdated_and_needs_no_rerun(self):
+        state = self.publish_base()
+        scope = state.published_snapshot.source_snapshot["data_scope"]
+        self.assertEqual(scope["pipeline_implementation_version"], current_implementation_version())
+        self.assertFalse(published_base_is_outdated(state))
+        self.assertEqual(schedule_outdated_reruns(), [])
+        self.assertFalse(AnalysisJob.objects.filter(status=AnalysisJob.Status.PENDING).exists())
+
+    def test_base_built_by_older_code_gets_one_free_rerun(self):
+        state = self.publish_base()
+        snapshot = state.published_snapshot
+        snapshot.source_snapshot["data_scope"]["pipeline_implementation_version"] = "older-code"
+        snapshot.save(update_fields=["source_snapshot"])
+        state.refresh_from_db()
+        versions = (state.input_version, state.config_version)
+        self.assertTrue(published_base_is_outdated(state))
+        self.assertEqual(schedule_outdated_reruns(), [self.survey.pk])
+        self.assertEqual(schedule_outdated_reruns(), [])  # the pending rerun is not duplicated
+        job = AnalysisJob.objects.get(status=AnalysisJob.Status.PENDING)
+        self.assertEqual(job.executor, AnalysisJob.Executor.DETERMINISTIC)
+        state.refresh_from_db()
+        self.assertEqual((state.input_version, state.config_version), versions)
+
+    def test_outdated_base_of_archived_survey_is_left_alone(self):
+        state = self.publish_base()
+        snapshot = state.published_snapshot
+        snapshot.source_snapshot["data_scope"]["pipeline_implementation_version"] = "older-code"
+        snapshot.save(update_fields=["source_snapshot"])
+        Survey.objects.filter(pk=self.survey.pk).update(analysis_enabled=False)
+        self.assertEqual(schedule_outdated_reruns(), [])
 
     def test_native_job_publishes_bounded_snapshot_without_raw_text_and_reuses_cache(self):
         claimed = self.queue_and_claim()

@@ -49,3 +49,8 @@ class PromptRuleTests(SimpleTestCase):
         for instruction in (STATISTICS_INSTRUCTION, TEXT_INSTRUCTION, SYNTHESIS_INSTRUCTION):
             self.assertIn("資料描述型發現", instruction)
             self.assertIn("被比較項目", instruction)
+
+    def test_every_stage_states_how_to_write_p_values(self):
+        for instruction in (STATISTICS_INSTRUCTION, TEXT_INSTRUCTION, SYNTHESIS_INSTRUCTION):
+            self.assertIn("p < 0.001", instruction)
+            self.assertIn("不寫「p 值為 0」", instruction)

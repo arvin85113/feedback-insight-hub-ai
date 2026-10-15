@@ -244,3 +244,14 @@ class RunPeriodicallyTests(SimpleTestCase):
 
         run_periodically(stop, 0.01, work)
         self.assertEqual(len(calls), 3)
+
+
+class OutdatedRerunStartupTests(SimpleTestCase):
+    def test_check_failure_is_logged_and_does_not_block_startup(self):
+        from unittest.mock import patch
+
+        from desktop_app.node_launcher import queue_outdated_reruns
+
+        with patch("feedback.analysis_worker.schedule_outdated_reruns", side_effect=RuntimeError("db busy")), \
+                self.assertLogs("desktop_app.node", level="ERROR"):
+            self.assertEqual(queue_outdated_reruns(), [])

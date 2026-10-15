@@ -56,6 +56,17 @@ class GeminiTests(ConsoleTestCase):
         self.assertEqual(self.client.post(reverse("node:jobs"), data).status_code, 302)
         self.assertEqual(NodeAIGrant.objects.count(), 1)
 
+    def test_base_built_by_older_code_blocks_paid_confirmation(self):
+        source = dict(self.snapshot.source_snapshot)
+        source["data_scope"] = dict(source["data_scope"], pipeline_implementation_version="older-code")
+        type(self.snapshot).objects.filter(pk=self.snapshot.pk).update(source_snapshot=source)
+        with self.assertRaises(AIWorkerExecutionError) as raised:
+            current_identity(self.survey.pk)
+        self.assertEqual(raised.exception.code, "base_implementation_outdated")
+        response = self.client.post(reverse("node:jobs"), {"action": "preview-ai", "survey": self.survey.pk}, follow=True)
+        self.assertContains(response, "統計／文字結果是舊版程式產生的")
+        self.assertFalse(NodeAIGrant.objects.exists())
+
     def test_version_or_credential_change_invalidates_confirmation(self):
         identity = current_identity(self.survey.pk)
         set_key("replacement-fixture")

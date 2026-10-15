@@ -15,6 +15,7 @@ from feedback.ai_stage_service import STAGE_MODULES, generate_stage, stage_promp
 from feedback.ai_worker import AIWorkerExecutionError, execute_ai_job
 from feedback.analysis_jobs import check_claim_current, heartbeat_job, schedule_survey_analysis
 from feedback.analysis_sources import external_version_identity, resolve_analysis_source
+from feedback.analysis_worker import published_base_is_outdated
 from feedback.models import AnalysisJob, Survey, SurveyAnalysisState
 from .audit import record
 from .models import NodeAIGrant
@@ -62,6 +63,10 @@ def current_identity(survey_id):
             snapshot.pk, state.input_version, state.config_version, state.pipeline_version
         ):
             raise AIWorkerExecutionError("base_snapshot_not_current")
+    if published_base_is_outdated(state):
+        # Paid stages must not read statistics/text that older code produced; the
+        # launcher queues a free rerun on startup.
+        raise AIWorkerExecutionError("base_implementation_outdated")
     survey = Survey.objects.get(pk=survey_id)
     binding = resolve_analysis_source(survey)
     source = {"kind": "answers"}

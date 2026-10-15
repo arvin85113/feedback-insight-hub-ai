@@ -14,6 +14,24 @@ STARTUP_WAIT_SECONDS = 60
 CLOUD_SYNC_INTERVAL_SECONDS = 300
 
 
+def queue_outdated_reruns():
+    """Queue free statistics/text reruns for results that older node code built.
+
+    A failure here is logged and never blocks the console from starting.
+    """
+
+    from feedback.analysis_worker import schedule_outdated_reruns
+
+    try:
+        scheduled = schedule_outdated_reruns()
+    except Exception:
+        logger.exception("could not check published analyses for outdated code")
+        return []
+    if scheduled:
+        logger.info("queued statistics/text reruns for outdated results: surveys %s", scheduled)
+    return scheduled
+
+
 def run_worker(parent_pid=None):
     import django
 
@@ -81,6 +99,7 @@ def run_launcher():
 
     # The node owns its local database; bring the schema up to date before serving.
     call_command("migrate", interactive=False, verbosity=0)
+    queue_outdated_reruns()
     server, port = bind_server(get_wsgi_application(), server_factory=wsgi.Server)
     paths.port_file.write_text(str(port), encoding="utf-8")
     base_url = console_url(port)
