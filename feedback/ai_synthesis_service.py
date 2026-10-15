@@ -8,7 +8,7 @@ from .ai_grounding import UngroundedNumbers, ungrounded_numbers
 
 
 SCHEMA_VERSION = "3"
-PROMPT_VERSION = "5"
+PROMPT_VERSION = "6"
 STAGE_TYPE = "synthesis"
 PRIORITIES = {"high", "medium", "low"}
 
@@ -146,7 +146,8 @@ SYSTEM_INSTRUCTION = """你是企業營運決策分析師，整合已驗證的�
 摘要先講最重要的結論與其影響；改善草稿要具體、可由管理者執行並有可觀察的驗收方式，它只是可編輯的建議，不得聲稱已執行或已通知。
 依對營運決策的重要性排序，優先指出差異、異常、極端值與可行動的訊號；不要重述顯而易見的填答分布。rationale 說明這代表什麼、為何重要。data_limitations 只寫與該項發現直接相關的具體限制，沒有就留空陣列。
 可以引用數字，但只能照抄所引用 evidence 的數值、樣本數或標籤中的數字，並依 evidence 精度四捨五入；不要自行計算差距、比例或目標值。
-不寫資料描述型發現（例如文字長度、填答筆數或分布形狀本身），除非它直接改變營運決策；「最高、最低、最多、優於」等比較，只在同時引用被比較項目的 evidence 時才寫。"""
+不寫資料描述型發現（例如文字長度、填答筆數或分布形狀本身），除非它直接改變營運決策；「最高、最低、最多、優於」等比較，只在同時引用被比較項目的 evidence 時才寫。
+p 值依 evidence 寫成「p < 0.001」或「p = 0.03」這類格式；evidence 的 p 值小於 0.001 時寫「p < 0.001」，不寫「p 值為 0」。"""
 
 
 def build_input(statistics_stage, text_stage, improvements, data_scope):

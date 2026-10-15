@@ -14,7 +14,7 @@ from django.db import transaction
 from django.db.models import Max
 
 from .analysis_adapters import AnswerInput, ParquetInput
-from .analysis_jobs import heartbeat_job, publish_analysis_snapshot
+from .analysis_jobs import heartbeat_job, publish_analysis_snapshot, schedule_survey_analysis
 from .job_progress import report_job_progress
 from .ai_snapshot_service import SNAPSHOT_SCHEMA_VERSION, current_prompt_version
 from .background_analysis import (
@@ -26,7 +26,7 @@ from .background_analysis import (
     digest,
     pipeline_version,
 )
-from .models import AnalysisJob, SurveyAIAnalysisStage, SurveyAIReportSnapshot
+from .models import AnalysisJob, SurveyAIAnalysisStage, SurveyAIReportSnapshot, SurveyAnalysisState
 
 
 DISPLAY_SCHEMA_VERSION = "analysis-display-v1"
@@ -158,6 +158,55 @@ def _serialise_text(payload):
     }
 
 
+def current_implementation_version(profile=None):
+    """Identity of the statistics/text code; results built by other code are outdated."""
+
+    if profile is None:
+        profile = json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
+    return digest(
+        {
+            "analysis": pipeline_version(profile),
+            "worker": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        }
+    )
+
+
+def published_base_is_outdated(state, implementation_version=None):
+    """True when the published statistics/text Snapshot was built by older code."""
+
+    snapshot = state.published_snapshot
+    if snapshot is None:
+        return False
+    scope = (snapshot.source_snapshot or {}).get("data_scope") or {}
+    return scope.get("pipeline_implementation_version") != (implementation_version or current_implementation_version())
+
+
+def schedule_outdated_reruns():
+    """Queue one free statistics/text rerun per published base the current code did not build.
+
+    Versions are not bumped: the rerun rebuilds the same input with the new code, and
+    a new Snapshot (its fingerprint includes the code identity) replaces the old one.
+    """
+
+    implementation_version = current_implementation_version()
+    states = SurveyAnalysisState.objects.select_related("published_snapshot", "survey").filter(
+        published_snapshot__isnull=False, survey__analysis_enabled=True, survey__archived_at__isnull=True
+    )
+    scheduled = []
+    for state in states:
+        if not published_base_is_outdated(state, implementation_version):
+            continue
+        if AnalysisJob.objects.filter(
+            survey_id=state.survey_id,
+            executor=AnalysisJob.Executor.DETERMINISTIC,
+            status__in=(AnalysisJob.Status.PENDING, AnalysisJob.Status.RUNNING),
+        ).exists():
+            continue
+        if schedule_survey_analysis(state.survey_id, change="none") is not None:
+            scheduled.append(state.survey_id)
+    return scheduled
+
+
 def _target_identity(job, adapter, implementation_version):
     return {
         "survey_id": job.survey_id,
@@ -273,12 +322,7 @@ def execute_deterministic_job(
     adapter = _build_adapter(job, external_inputs)
     profile = json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
     try:
-        implementation_version = digest(
-            {
-                "analysis": pipeline_version(profile),
-                "worker": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-            }
-        )
+        implementation_version = current_implementation_version(profile)
     except FileNotFoundError as exc:
         raise WorkerExecutionError("pipeline_resource_missing") from exc
     target = _target_identity(job, adapter, implementation_version)

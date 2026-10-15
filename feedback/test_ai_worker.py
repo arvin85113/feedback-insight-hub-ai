@@ -8,6 +8,7 @@ from django.test import TestCase, override_settings
 from .ai_snapshot_service import SNAPSHOT_SCHEMA_VERSION, current_prompt_version
 from .ai_worker import AIWorkerExecutionError, execute_ai_job
 from .analysis_jobs import claim_next_job, publish_analysis_snapshot, schedule_survey_analysis
+from .analysis_worker import current_implementation_version
 from .models import AnalysisJob, Survey, SurveyAIAnalysisStage, SurveyAIReportSnapshot, SurveyAnalysisState
 from .test_ai_stages import provider_response, statistics_payload, synthesis_payload, text_payload
 from .test_utils import node_only
@@ -28,6 +29,7 @@ class AIWorkerTests(TestCase):
         )
         payload = source_snapshot(self.survey.slug)
         payload.update({"statistics": {}, "text_analysis": {}})
+        payload.setdefault("data_scope", {})["pipeline_implementation_version"] = current_implementation_version()
         snapshot = SurveyAIReportSnapshot.objects.create(
             survey=self.survey,
             data_fingerprint="a" * 64,

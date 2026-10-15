@@ -259,6 +259,7 @@ class AnalysisJobsView(NodeConsoleMixin, TemplateView):
                 "previous_call_uncertain": "先前 API 呼叫結果不確定，請先查核供應商紀錄；系統不會自動重呼。",
                 "paid_job_already_pending": "這份問卷已有已確認的 Gemini 工作，請查看工作狀態。",
                 "windows_vault_required": "Windows 憑證庫無法使用，不能啟動 Gemini。",
+                "base_implementation_outdated": "統計／文字結果是舊版程式產生的，正在自動重算；完成後再預覽確認 Gemini。",
             }.get(exc.code, "無法執行：請先設定金鑰、完成最新統計／文字分析，再重新預覽確認。"))
         except (AnalysisSourceConfigurationError, SurveyAnalysisState.DoesNotExist, signing.BadSignature, KeyError, ValueError):
             messages.error(request, "無法執行：請核對來源並完成最新統計／文字分析，再重新預覽確認。")
