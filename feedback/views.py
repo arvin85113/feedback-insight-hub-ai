@@ -884,8 +884,17 @@ class NoticeCenterView(DashboardBaseMixin, TemplateView):
             ).distinct().order_by("-created_at")
             if selected_survey else ImprovementUpdate.objects.none()
         )
+        survey_rows = list(notice_surveys)
+        from cloudapi.receipts import received_counts
+
+        counts = received_counts([row.pk for row in survey_rows])
+        for row in survey_rows:
+            row.response_count = counts.get(row.pk, row.response_count)
+        from .notice_service import notice_center_groups
+
         context["selected_survey"] = selected_survey
-        context["notice_survey_rows"] = notice_surveys
+        context["notice_survey_rows"] = survey_rows
+        context["notice_groups"] = notice_center_groups(selected_survey)
         context["notices"] = notices
         context["legacy_notices"] = legacy_notices
         context["categories"] = SurveyCategory.objects.all()
