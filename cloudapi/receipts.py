@@ -4,7 +4,7 @@ A reply is counted once by its uuid: receipts reuse FeedbackSubmission.idempoten
 and abandoned receipts are not counts.
 """
 
-from django.db.models import Count
+from django.db.models import Count, Max
 
 from feedback.local_service import format_payload_date, format_payload_datetime
 from feedback.models import FeedbackSubmission
@@ -14,6 +14,35 @@ from .models import SubmissionReceipt
 
 def _live_receipts():
     return SubmissionReceipt.objects.exclude(status=SubmissionReceipt.Status.ABANDONED)
+
+
+NOTIFIABLE_STATUSES = ("received", "synced")
+
+
+def notifiable_receipts(survey):
+    """Receipts whose owner agreed to follow-up and who has no FeedbackSubmission for the same reply."""
+
+    known = FeedbackSubmission.objects.values("idempotency_key")
+    return (
+        SubmissionReceipt.objects.filter(
+            survey=survey,
+            consent_follow_up=True,
+            user__isnull=False,
+            status__in=NOTIFIABLE_STATUSES,
+        )
+        .exclude(submission_uuid__in=known)
+        .select_related("user")
+        .order_by("-submitted_at", "-id")
+    )
+
+
+def has_notifiable_receipt(survey, user):
+    return SubmissionReceipt.objects.filter(
+        survey=survey,
+        user=user,
+        consent_follow_up=True,
+        status__in=NOTIFIABLE_STATUSES,
+    ).exists()
 
 
 def has_submitted(survey, user):
@@ -39,6 +68,31 @@ def received_counts(survey_ids):
     ):
         counts[row["survey_id"]] += row["total"]
     return counts
+
+
+def latest_received_at(survey_ids):
+    """survey_id -> newest reply time, using the same reply definition as received_counts()."""
+
+    survey_ids = list(survey_ids)
+    latest = dict.fromkeys(survey_ids)
+    for row in (
+        FeedbackSubmission.objects.filter(survey_id__in=survey_ids)
+        .values("survey_id")
+        .annotate(latest=Max("submitted_at"))
+    ):
+        latest[row["survey_id"]] = row["latest"]
+    known = FeedbackSubmission.objects.filter(survey_id__in=survey_ids).values("idempotency_key")
+    for row in (
+        _live_receipts()
+        .filter(survey_id__in=survey_ids)
+        .exclude(submission_uuid__in=known)
+        .values("survey_id")
+        .annotate(latest=Max("submitted_at"))
+    ):
+        current = latest[row["survey_id"]]
+        if current is None or row["latest"] > current:
+            latest[row["survey_id"]] = row["latest"]
+    return latest
 
 
 def receipt_rows(user):
@@ -73,3 +127,20 @@ def receipt_rows(user):
             "via_inbox": True,
         })
     return rows
+
+
+def receipt_states(user):
+    """survey_id -> receipt status for the user's inbox-only replies.
+
+    A survey reads "quarantined" only when every live receipt there is quarantined;
+    otherwise the status of the newest non-quarantined receipt wins.
+    """
+
+    known = FeedbackSubmission.objects.filter(user=user).values("idempotency_key")
+    states = {}
+    for receipt in (
+        _live_receipts().filter(user=user).exclude(submission_uuid__in=known).order_by("submitted_at", "id")
+    ):
+        if receipt.status != SubmissionReceipt.Status.QUARANTINED or receipt.survey_id not in states:
+            states[receipt.survey_id] = receipt.status
+    return states

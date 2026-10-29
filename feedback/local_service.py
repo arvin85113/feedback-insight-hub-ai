@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from django.db import transaction
 from django.db.models import Count, Max, Q
@@ -9,6 +9,7 @@ from .models import (
     Answer,
     FeedbackSubmission,
     ImprovementDispatch,
+    ImprovementNotice,
     ImprovementUpdate,
     Question,
     Survey,
@@ -22,6 +23,7 @@ from .models import (
 from .analysis_jobs import schedule_survey_analysis, suppress_analysis_scheduling
 
 STATISTICS_VERSION = "v1"
+HOME_ANNOUNCEMENT_LIMIT = 5
 
 
 def format_payload_date(value):
@@ -65,31 +67,6 @@ def serialize_submission(submission, answer_count=None):
     }
 
 
-def serialize_notice(notice):
-    survey = notice.submission.survey if notice.submission_id else notice.improvement.survey
-    title = notice.notice.subject if notice.notice_id else notice.improvement.title
-    summary = notice.notice.body if notice.notice_id else notice.improvement.summary
-    return {
-        "id": notice.id,
-        "sent_at": notice.sent_at.isoformat() if notice.sent_at else None,
-        "personalized_note": notice.personalized_note,
-        "is_read": notice.is_read,
-        "submission": {
-            "id": notice.submission_id,
-            "survey": (
-                {"id": survey.id, "title": survey.title, "slug": survey.slug}
-                if survey
-                else None
-            ),
-        },
-        "improvement": {
-            "id": notice.improvement.id,
-            "title": title,
-            "summary": summary,
-        },
-    }
-
-
 def build_submission_preview(submission):
     answers = sorted(
         submission.answers.all(),
@@ -120,72 +97,173 @@ def get_home_payload():
     }
 
 
-def get_customer_home_payload(user):
-    submissions = list(
-        FeedbackSubmission.objects.filter(user=user)
-        .select_related("survey", "survey__category")
-        .prefetch_related("answers__question")
-        .order_by("-submitted_at")
+def _notice_title_summary(dispatch):
+    if dispatch.notice_id:
+        return dispatch.notice.subject, dispatch.notice.body
+    return dispatch.improvement.title, dispatch.improvement.summary
+
+
+CUSTOMER_VISIBLE_IMPROVEMENT_STATUSES = (
+    ImprovementUpdate.Status.PLANNED,
+    ImprovementUpdate.Status.IN_PROGRESS,
+    ImprovementUpdate.Status.COMPLETED,
+)
+
+
+def serialize_notice_event(dispatch):
+    title, summary = _notice_title_summary(dispatch)
+    improvement = dispatch.improvement
+    status_label = (
+        improvement.get_status_display() if improvement.status in CUSTOMER_VISIBLE_IMPROVEMENT_STATUSES else None
     )
-    notices = list(
+    return {
+        "id": dispatch.id,
+        "title": title,
+        "summary": summary,
+        "sent_at": dispatch.sent_at.isoformat() if dispatch.sent_at else None,
+        "sent_date": format_payload_date(timezone.localtime(dispatch.sent_at)) if dispatch.sent_at else "",
+        "is_read": dispatch.is_read,
+        "improvement_status_label": status_label,
+    }
+
+
+def _survey_ref(survey):
+    category = survey.category
+    return {
+        "id": survey.id,
+        "title": survey.title,
+        "slug": survey.slug,
+        "category": {"id": category.id, "name": category.name} if category else None,
+    }
+
+
+def _is_global_notice(dispatch):
+    return dispatch.notice_id is not None and dispatch.notice.audience_type == ImprovementNotice.AudienceType.GLOBAL
+
+
+def _sent_dispatches(user):
+    return list(
         ImprovementDispatch.objects.filter(
             Q(recipient_user=user) | Q(submission__user=user),
             delivery_status=ImprovementDispatch.DeliveryStatus.SENT,
         )
-        .select_related("notice", "improvement", "improvement__survey", "submission", "submission__survey")
-        .order_by("-sent_at")
-    )
-    notices_by_submission = {}
-    for notice in notices:
-        notices_by_submission.setdefault(notice.submission_id, notice)
-
-    from cloudapi.receipts import receipt_rows
-
-    inbox_rows = receipt_rows(user)
-    submission_rows = []
-    for submission in submissions[:8]:
-        related_notice = notices_by_submission.get(submission.id)
-        answer_count = submission.answers.count()
-        submission_rows.append(
-            {
-                "submission": serialize_submission(submission, answer_count),
-                "answer_count": answer_count,
-                "answer_preview": build_submission_preview(submission),
-                "latest_notice": serialize_notice(related_notice) if related_notice else None,
-            }
+        .select_related(
+            "notice", "improvement", "improvement__survey", "improvement__survey__category"
         )
-    submission_rows.extend(
-        {"submission": row, "answer_count": None, "answer_preview": [], "latest_notice": None} for row in inbox_rows
+        .order_by("sent_at", "id")
     )
-    submission_rows.sort(key=lambda row: row["submission"]["submitted_at"], reverse=True)
-    submission_rows = submission_rows[:8]
+
+
+def get_customer_home_payload(user):
+    from cloudapi.receipts import receipt_rows, receipt_states
+
+    submissions = list(
+        FeedbackSubmission.objects.filter(user=user).select_related("survey", "survey__category")
+    )
+    surveys = {}
+    latest_submitted = {}
+    submission_survey_ids = set()
+    for submission in submissions:
+        surveys[submission.survey_id] = submission.survey
+        submission_survey_ids.add(submission.survey_id)
+        current = latest_submitted.get(submission.survey_id)
+        if current is None or submission.submitted_at > current:
+            latest_submitted[submission.survey_id] = submission.submitted_at
+    for row in receipt_rows(user):
+        survey_id = row["survey"]["id"]
+        submitted_at = datetime.fromisoformat(row["submitted_at"])
+        current = latest_submitted.get(survey_id)
+        if current is None or submitted_at > current:
+            latest_submitted[survey_id] = submitted_at
+        surveys.setdefault(survey_id, None)
+    missing = [survey_id for survey_id, survey in surveys.items() if survey is None]
+    if missing:
+        for survey in Survey.objects.filter(pk__in=missing).select_related("category"):
+            surveys[survey.id] = survey
+
+    states = receipt_states(user)
+    events_by_survey = {}
+    announcements = []
+    unread_count = 0
+    for dispatch in _sent_dispatches(user):
+        survey_id = dispatch.improvement.survey_id
+        if _is_global_notice(dispatch):
+            announcements.append(dispatch)
+        elif survey_id in surveys:
+            events_by_survey.setdefault(survey_id, []).append(dispatch)
+        else:
+            continue
+        if not dispatch.is_read:
+            unread_count += 1
+
+    cards = []
+    for survey_id, survey in surveys.items():
+        events = events_by_survey.get(survey_id, [])
+        if events:
+            state = "notified"
+        elif survey_id not in submission_survey_ids and states.get(survey_id) == "quarantined":
+            state = "processing"
+        else:
+            state = "waiting"
+        submitted_at = latest_submitted[survey_id]
+        last_sent = max((e.sent_at for e in events if e.sent_at), default=None)
+        activity = max(submitted_at, last_sent) if last_sent else submitted_at
+        cards.append(
+            (
+                activity,
+                {
+                    "survey": _survey_ref(survey),
+                    "submitted_date": format_payload_date(timezone.localtime(submitted_at)),
+                    "state": state,
+                    "events": [serialize_notice_event(e) for e in events],
+                },
+            )
+        )
+    cards.sort(key=lambda item: item[0], reverse=True)
     return {
-        "submissions": [serialize_submission(s, s.answers.count()) for s in submissions] + inbox_rows,
-        "notices": [serialize_notice(n) for n in notices[:10]],
-        "submission_rows": submission_rows,
-        "submission_count": len(submissions) + len(inbox_rows),
-        "active_follow_up_count": sum(1 for s in submissions if s.consent_follow_up)
-        + sum(1 for row in inbox_rows if row["consent_follow_up"]),
-        "latest_submission": serialize_submission(submissions[0], submissions[0].answers.count()) if submissions else None,
-        "latest_notice": serialize_notice(notices[0]) if notices else None,
-        "subscribed_survey_count": len({s.survey_id for s in submissions}),
+        "survey_cards": [card for _, card in cards],
+        "announcements": [serialize_notice_event(d) for d in reversed(announcements)][:HOME_ANNOUNCEMENT_LIMIT],
+        "unread_count": unread_count,
+        "notification_opt_in": user.notification_opt_in,
     }
 
 
 def get_customer_notifications_payload(user):
-    notices = (
-        ImprovementDispatch.objects.filter(
-            Q(recipient_user=user) | Q(submission__user=user),
-            delivery_status=ImprovementDispatch.DeliveryStatus.SENT,
-        )
-        .select_related("notice", "improvement", "improvement__survey", "submission", "submission__survey")
-        .order_by("-sent_at")
-    )
+    by_survey = {}
+    announcements = []
+    unread_count = 0
+    shown = 0
+    for dispatch in _sent_dispatches(user):
+        if _is_global_notice(dispatch):
+            announcements.append(dispatch)
+        elif dispatch.improvement.survey_id:
+            by_survey.setdefault(dispatch.improvement.survey_id, []).append(dispatch)
+        else:
+            announcements.append(dispatch)
+        shown += 1
+        if not dispatch.is_read:
+            unread_count += 1
+
+    def build(survey, items):
+        ordered = sorted(items, key=lambda d: (d.is_read, -(d.sent_at.timestamp() if d.sent_at else 0), -d.id))
+        newest = max((d.sent_at for d in items if d.sent_at), default=None)
+        return {
+            "survey": _survey_ref(survey) if survey else None,
+            "notices": [serialize_notice_event(d) for d in ordered],
+            "_unread": any(not d.is_read for d in items),
+            "_newest": newest.timestamp() if newest else 0,
+        }
+
+    groups = [build(items[0].improvement.survey, items) for items in by_survey.values()]
+    if announcements:
+        groups.append(build(None, announcements))
+    groups.sort(key=lambda g: (not g["_unread"], -g["_newest"]))
+    for group in groups:
+        del group["_unread"], group["_newest"]
     return {
-        "notices": [serialize_notice(notice) for notice in notices],
-        "notice_count": notices.count(),
-        "unread_count": notices.filter(is_read=False).count(),
-        "latest_notice": serialize_notice(notices.first()) if notices.exists() else None,
+        "groups": groups,
+        "notice_count": shown,
+        "unread_count": unread_count,
     }
 
 

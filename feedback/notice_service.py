@@ -7,7 +7,7 @@ from django.core.mail import send_mail
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.db import transaction
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.utils import timezone
 from django.utils.crypto import salted_hmac
 
@@ -98,7 +98,8 @@ def resolve_survey_respondents(survey):
         user = submission.user
         if user is not None:
             if not (
-                user.is_active
+                user.role == user.Role.CUSTOMER
+                and user.is_active
                 and user.is_email_verified
                 and user.notification_opt_in
             ):
@@ -117,6 +118,17 @@ def resolve_survey_respondents(survey):
                     submission_id=submission.id,
                 )
             )
+    from cloudapi.receipts import notifiable_receipts
+
+    for receipt in notifiable_receipts(survey).iterator():
+        user = receipt.user
+        if (
+            user.role == user.Role.CUSTOMER
+            and user.is_active
+            and user.is_email_verified
+            and user.notification_opt_in
+        ):
+            recipients.append(_recipient(user.email, user_id=user.id))
     return _deduplicate(recipients)
 
 
@@ -182,11 +194,17 @@ def prepare_notice_dispatches(notice_id, *, confirmation_token, content_version,
 
 
 def _current_dispatch_email(dispatch):
-    if (
-        dispatch.notice.audience_type == ImprovementNotice.AudienceType.SURVEY_RESPONDENTS
-        and (dispatch.submission is None or not dispatch.submission.consent_follow_up)
-    ):
-        return None
+    if dispatch.notice.audience_type == ImprovementNotice.AudienceType.SURVEY_RESPONDENTS:
+        if dispatch.submission is None:
+            from cloudapi.receipts import has_notifiable_receipt
+
+            survey = dispatch.notice.improvement.survey
+            if survey is None or dispatch.recipient_user is None:
+                return None
+            if not has_notifiable_receipt(survey, dispatch.recipient_user):
+                return None
+        elif not dispatch.submission.consent_follow_up:
+            return None
     user = dispatch.recipient_user
     if user is not None:
         if not (
@@ -378,3 +396,64 @@ def begin_notice_retry(notice_id):
     notice.sent_at = None
     notice.save(update_fields=["status", "sent_at", "updated_at"])
     return notice, True
+
+
+NOTICE_STAGES = (
+    ("draft", "草稿", ("draft",)),
+    ("sending", "寄送中", ("sending",)),
+    ("done", "已完成", ("sent",)),
+    ("attention", "需處理", ("partially_sent", "failed")),
+)
+
+
+def _read_percent(sent, read):
+    if not sent:
+        return None
+    return (read * 100 + sent // 2) // sent
+
+
+def notice_center_groups(survey):
+    """Per-improvement batch stages and site-read rates for one survey (aggregate queries only)."""
+    if survey is None:
+        return []
+    notices = list(
+        ImprovementNotice.objects.filter(improvement__survey=survey)
+        .select_related("improvement")
+        .order_by("-created_at", "-id")
+    )
+    if not notices:
+        return []
+    read_stats = {
+        row["notice_id"]: (row["sent"], row["read"])
+        for row in ImprovementDispatch.objects.filter(
+            notice__improvement__survey=survey,
+            delivery_status=ImprovementDispatch.DeliveryStatus.SENT,
+        )
+        .values("notice_id")
+        .annotate(sent=Count("id"), read=Count("id", filter=Q(is_read=True)))
+    }
+    groups = {}
+    for notice in notices:
+        group = groups.get(notice.improvement_id)
+        if group is None:
+            group = groups[notice.improvement_id] = {
+                "improvement": notice.improvement,
+                "batches": [],
+            }
+        sent, read = read_stats.get(notice.pk, (0, 0))
+        group["batches"].append(
+            {
+                "notice": notice,
+                "recipient_count": notice.recipient_count,
+                "sent_count": notice.sent_count,
+                "failed_count": notice.failed_count,
+                "site_read_rate": _read_percent(sent, read),
+            }
+        )
+    for group in groups.values():
+        statuses = [batch["notice"].status for batch in group["batches"]]
+        group["stages"] = [
+            {"key": key, "label": label, "count": sum(1 for s in statuses if s in members)}
+            for key, label, members in NOTICE_STAGES
+        ]
+    return sorted(groups.values(), key=lambda g: g["improvement"].created_at, reverse=True)

@@ -51,7 +51,7 @@ class InboxFillPageTests(TestCase):
     def test_receipt_appears_in_customer_home_and_counts(self):
         self.submit()
         home = self.client.get(reverse("feedback:customer-home"))
-        self.assertEqual(home.context["submission_count"], 1)
+        self.assertEqual(len(home.context["survey_cards"]), 1)
         self.assertEqual(received_counts([self.survey.pk]), {self.survey.pk: 1})
 
     @override_settings(CLOUD_INBOX_ENABLED=False)

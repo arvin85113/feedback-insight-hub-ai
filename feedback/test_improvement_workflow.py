@@ -546,8 +546,9 @@ class ImprovementNoticeDeliveryTests(TestCase):
         self.improvement.summary = "後續修改的改善摘要"
         self.improvement.save(update_fields=["title", "summary", "updated_at"])
         customer_payload = get_customer_notifications_payload(customer)
-        self.assertEqual(customer_payload["notices"][0]["improvement"]["title"], "已凍結通知主旨")
-        self.assertEqual(customer_payload["notices"][0]["improvement"]["summary"], "已凍結通知內容")
+        notice_event = customer_payload["groups"][0]["notices"][0]
+        self.assertEqual(notice_event["title"], "已凍結通知主旨")
+        self.assertEqual(notice_event["summary"], "已凍結通知內容")
 
     @patch("feedback.notice_service.send_mail")
     def test_stale_preview_and_empty_audience_do_not_send(self, send_mail):

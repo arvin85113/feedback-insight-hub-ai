@@ -280,38 +280,6 @@ class CustomerHomeView(CustomerRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         payload = local_service.get_customer_home_payload(self.request.user)
-        submission_rows = payload.get("submission_rows", [])
-        for row in submission_rows:
-            submission = row.get("submission", {})
-            if row.get("latest_notice"):
-                row["status_key"] = "improved"
-                row["status_label"] = "已促成改善"
-                row["status_class"] = "pill-active"
-            elif submission.get("consent_follow_up"):
-                row["status_key"] = "tracking"
-                row["status_label"] = "願意接收追蹤"
-                row["status_class"] = "pill-active"
-            else:
-                row["status_key"] = "pending"
-                row["status_label"] = "待處理"
-                row["status_class"] = ""
-
-        status_counts = {
-            "all": len(submission_rows),
-            "pending": sum(1 for row in submission_rows if row["status_key"] == "pending"),
-            "tracking": sum(1 for row in submission_rows if row["status_key"] == "tracking"),
-            "improved": sum(1 for row in submission_rows if row["status_key"] == "improved"),
-        }
-        active_status = self.request.GET.get("status", "all")
-        if active_status not in status_counts:
-            active_status = "all"
-        payload["submission_rows"] = (
-            submission_rows
-            if active_status == "all"
-            else [row for row in submission_rows if row["status_key"] == active_status]
-        )
-        payload["submission_status_counts"] = status_counts
-        payload["active_submission_status"] = active_status
         context.update(payload)
         return context
 
@@ -839,8 +807,6 @@ class ImprovementListView(DashboardBaseMixin, TemplateView):
             .select_related("category")
             .annotate(
                 improvement_count=Count("improvements", distinct=True),
-                response_count=Count("submissions", distinct=True),
-                latest_submission_at=Max("submissions__submitted_at"),
             )
         )
         if category_id:
@@ -853,7 +819,9 @@ class ImprovementListView(DashboardBaseMixin, TemplateView):
             improvement_surveys = improvement_surveys.order_by("-created_at")
 
         context["selected_survey"] = selected_survey
-        context["improvement_survey_rows"] = improvement_surveys
+        survey_rows = list(improvement_surveys)
+        _apply_received_stats(survey_rows)
+        context["improvement_survey_rows"] = survey_rows
         context["selected_improvements"] = (
             selected_survey.improvements.order_by("-created_at") if selected_survey else []
         )
@@ -864,6 +832,17 @@ class ImprovementListView(DashboardBaseMixin, TemplateView):
         context["current_sort"] = sort
         context["current_category"] = category_id
         return context
+
+
+def _apply_received_stats(survey_rows):
+    from cloudapi.receipts import latest_received_at, received_counts
+
+    ids = [row.pk for row in survey_rows]
+    counts = received_counts(ids)
+    latest = latest_received_at(ids)
+    for row in survey_rows:
+        row.response_count = counts.get(row.pk, 0)
+        row.latest_submission_at = latest.get(row.pk)
 
 
 class NoticeCenterView(DashboardBaseMixin, TemplateView):
@@ -890,8 +869,6 @@ class NoticeCenterView(DashboardBaseMixin, TemplateView):
                         distinct=True,
                     )
                 ),
-                response_count=Count("submissions", distinct=True),
-                latest_submission_at=Max("submissions__submitted_at"),
             )
         )
         if category_id:
@@ -916,8 +893,13 @@ class NoticeCenterView(DashboardBaseMixin, TemplateView):
             ).distinct().order_by("-created_at")
             if selected_survey else ImprovementUpdate.objects.none()
         )
+        survey_rows = list(notice_surveys)
+        _apply_received_stats(survey_rows)
+        from .notice_service import notice_center_groups
+
         context["selected_survey"] = selected_survey
-        context["notice_survey_rows"] = notice_surveys
+        context["notice_survey_rows"] = survey_rows
+        context["notice_groups"] = notice_center_groups(selected_survey)
         context["notices"] = notices
         context["legacy_notices"] = legacy_notices
         context["categories"] = SurveyCategory.objects.all()

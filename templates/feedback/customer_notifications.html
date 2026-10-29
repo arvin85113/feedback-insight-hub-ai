@@ -8,11 +8,8 @@
 <section class="customer-page-head customer-page-head-compact">
     <div>
         <p class="section-kicker">Notification History</p>
-        <h1>追蹤改善通知與更新紀錄。</h1>
-        <p>
-            當管理端根據問卷回饋建立改善任務並發出通知時，紀錄會集中在這裡。
-            點擊通知可標記已讀，並回到對應問卷查看脈絡。
-        </p>
+        <h1>通知紀錄</h1>
+        <p>店家針對你填過的問卷發出的回應，依問卷分組。點擊通知可標記已讀。</p>
     </div>
     <nav class="customer-page-actions" aria-label="通知操作">
         <a class="button button-ghost" href="{% url 'feedback:customer-home' %}">返回顧客端</a>
@@ -20,56 +17,45 @@
     </nav>
 </section>
 
-<section class="customer-kpi-grid customer-kpi-grid-three customer-notice-kpis" aria-label="通知摘要">
-    <article class="customer-kpi-card">
-        <span>通知總數</span>
-        <strong>{{ notice_count }}</strong>
-    </article>
-    <article class="customer-kpi-card">
-        <span>未讀通知</span>
-        <strong>{{ unread_count }}</strong>
-    </article>
-    <article class="customer-kpi-card">
-        <span>通知設定</span>
-        <strong>{% if notification_opt_in %}已開啟{% else %}已關閉{% endif %}</strong>
-    </article>
+<section class="customer-timeline-chips" aria-label="通知摘要">
+    <span class="customer-timeline-chip"><span>通知總數</span><strong>{{ notice_count }}</strong></span>
+    <span class="customer-timeline-chip"><span>未讀</span><strong>{{ unread_count }}</strong></span>
 </section>
 
-<section class="customer-panel">
-    <div class="customer-panel-head">
-        <div>
-            <p class="section-kicker">Latest Notifications</p>
-            <h2>最新通知</h2>
-        </div>
-    </div>
-    <div class="customer-record-list customer-notification-scroll-list">
-        {% for notice in notices %}
-            <div class="customer-record-row customer-record-clickable {% if not notice.is_read %}customer-record-unread{% endif %}"
-                 data-pk="{{ notice.id }}"
-                 data-is-read="{{ notice.is_read|yesno:'true,false' }}"
-                 data-survey-url="{% if notice.submission.survey %}{% url 'feedback:survey-detail' notice.submission.survey.slug %}{% endif %}">
-                <div>
-                    <div class="customer-row-title">
-                        <strong>{{ notice.improvement.title }}</strong>
-                        <span class="pill {% if notice.is_read %}pill-active{% endif %}">
-                            {% if notice.is_read %}已讀{% else %}未讀{% endif %}
-                        </span>
+<div class="customer-timeline-cards">
+    {% for group in groups %}
+        <section class="customer-panel customer-timeline-card">
+            <header class="customer-timeline-card-head">
+                <h2>{% if group.survey %}{{ group.survey.title }}{% else %}店家公告{% endif %}</h2>
+                {% if group.survey.category %}<span class="pill pill-category">{{ group.survey.category.name }}</span>{% endif %}
+            </header>
+            <div class="customer-record-list">
+                {% for notice in group.notices %}
+                    <div class="customer-record-row customer-record-clickable customer-timeline-row {% if not notice.is_read %}customer-record-unread{% endif %}"
+                         data-pk="{{ notice.id }}"
+                         data-is-read="{{ notice.is_read|yesno:'true,false' }}"
+                         data-read-url="{% url 'feedback:notice-mark-read' notice.id %}"
+                         data-survey-url="{% if group.survey %}{% url 'feedback:survey-detail' group.survey.slug %}{% endif %}">
+                        <div>
+                            <div class="customer-row-title">
+                                <strong>{{ notice.title }}</strong>
+                                <span class="pill customer-timeline-read-pill {% if notice.is_read %}pill-active{% endif %}">{% if notice.is_read %}已讀{% else %}未讀{% endif %}</span>
+                                {% if notice.improvement_status_label %}<span class="pill">{{ notice.improvement_status_label }}</span>{% endif %}
+                            </div>
+                            <p class="customer-timeline-meta">{{ notice.sent_date }}</p>
+                            {% if notice.summary %}<p>{{ notice.summary }}</p>{% endif %}
+                        </div>
                     </div>
-                    <p>{% if notice.submission.survey %}{{ notice.submission.survey.title }}，{% endif %}{{ notice.sent_at|date:"Y/m/d H:i" }}</p>
-                    <p>{{ notice.improvement.summary }}</p>
-                    {% if notice.personalized_note %}
-                        <p class="customer-note">{{ notice.personalized_note }}</p>
-                    {% endif %}
-                </div>
+                {% endfor %}
             </div>
-        {% empty %}
-            <div class="customer-empty">
-                <h3>目前沒有通知紀錄</h3>
-                <p>當管理端發出改善通知後，系統會依你的通知偏好整理在這裡。</p>
-            </div>
-        {% endfor %}
-    </div>
-</section>
+        </section>
+    {% empty %}
+        <div class="customer-panel customer-empty">
+            <h3>目前沒有通知紀錄</h3>
+            <p>當店家發出通知後，會依問卷整理在這裡。</p>
+        </div>
+    {% endfor %}
+</div>
 
-<script src="{% static 'js/customer-notifications.js' %}?v=20260929-ui2"></script>
+<script src="{% static 'js/customer-notifications.js' %}?v=20261029-tl1"></script>
 {% endblock %}
