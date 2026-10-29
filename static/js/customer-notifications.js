@@ -8,7 +8,7 @@ document.querySelectorAll('.customer-record-clickable').forEach(function(row) {
         if (!isRead) {
             const csrfMatch = document.cookie.match(/csrftoken=([^;]+)/);
             const csrf = csrfMatch ? csrfMatch[1] : '';
-            await fetch('/app/notifications/' + pk + '/read/', {
+            await fetch(this.dataset.readUrl || ('/app/notifications/' + pk + '/read/'), {
                 method: 'POST',
                 headers: {
                     'X-CSRFToken': csrf,
@@ -17,7 +17,7 @@ document.querySelectorAll('.customer-record-clickable').forEach(function(row) {
             });
             this.classList.remove('customer-record-unread');
             this.dataset.isRead = 'true';
-            const pill = this.querySelector('.pill');
+            const pill = this.querySelector('.customer-timeline-read-pill') || this.querySelector('.pill');
             if (pill) {
                 pill.classList.add('pill-active');
                 pill.textContent = '已讀';

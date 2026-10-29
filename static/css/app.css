@@ -6134,6 +6134,156 @@ input[type="checkbox"] {
     }
 }
 
+/* ── Customer timeline (home + notification history), designed at 375px ── */
+.customer-timeline-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 14px;
+}
+
+.customer-timeline-chip {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 8px 14px;
+    background: rgba(255, 255, 255, 0.72);
+    border: 1px solid var(--c-line);
+    border-radius: 999px;
+    color: var(--c-ink-500);
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.customer-timeline-chip strong {
+    color: var(--c-ink-900);
+    font-size: 16px;
+}
+
+.customer-timeline-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+    margin-bottom: 18px;
+}
+
+.customer-timeline-cards {
+    display: grid;
+    gap: 14px;
+    margin-bottom: 18px;
+}
+
+.customer-timeline-card,
+.customer-timeline-announcements {
+    margin-bottom: 0;
+    padding: 16px;
+    min-width: 0;
+}
+
+.customer-timeline-card-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 10px;
+    margin-bottom: 14px;
+}
+
+.customer-timeline-card-head h2 {
+    margin: 0;
+    font-size: 17px;
+    overflow-wrap: anywhere;
+}
+
+.customer-timeline {
+    margin: 0;
+    padding: 0 0 0 18px;
+    list-style: none;
+    border-left: 2px solid var(--c-line-strong);
+}
+
+.customer-timeline-item {
+    position: relative;
+    padding: 0 0 16px 14px;
+}
+
+.customer-timeline-item:last-child {
+    padding-bottom: 0;
+}
+
+.customer-timeline-item::before {
+    content: "";
+    position: absolute;
+    top: 5px;
+    left: -26px;
+    width: 10px;
+    height: 10px;
+    background: var(--c-brand-700);
+    border: 2px solid #fff;
+    border-radius: 50%;
+}
+
+.customer-timeline-item-pending::before {
+    background: var(--c-line-strong);
+}
+
+.customer-timeline-item-pending .customer-timeline-title {
+    color: var(--c-ink-500);
+    font-weight: 500;
+}
+
+.customer-timeline-title {
+    margin: 0;
+    color: var(--c-ink-900);
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+
+.customer-timeline-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 8px;
+    margin: 4px 0 0;
+    color: var(--c-ink-400);
+    font-size: 13px;
+}
+
+.customer-timeline-summary {
+    margin: 6px 0 0;
+    color: var(--c-ink-500);
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
+
+.customer-timeline-unread-pill {
+    background: var(--c-brand-700);
+    color: var(--c-on-brand);
+}
+
+.customer-timeline-row {
+    min-width: 0;
+}
+
+.customer-timeline-row p {
+    overflow-wrap: anywhere;
+}
+
+@media (min-width: 921px) {
+    .customer-timeline-cards {
+        max-width: 760px;
+    }
+
+    .customer-timeline-card,
+    .customer-timeline-announcements {
+        padding: 22px 26px;
+    }
+
+    .customer-timeline-announcements {
+        max-width: 760px;
+    }
+}
+
 /* ── Mobile: public / auth pages — keep header horizontal ── */
 @media (max-width: 640px) {
     .public-body .site-header-inner {

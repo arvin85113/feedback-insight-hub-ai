@@ -8,141 +8,78 @@
     <div>
         <p class="section-kicker">Customer Portal</p>
         <h1>歡迎你，{{ user.get_full_name|default:user.username }}。</h1>
-        <p>
-            這裡整理你提交過的問卷、改善通知與目前追蹤狀態。每一筆回饋都會保留在同一個流程裡，
-            方便你確認後續是否被採納或改善。
-        </p>
+        <p>你填過的問卷與店家的回應，會依時間整理在這裡。</p>
     </div>
 </section>
 
-<section class="customer-kpi-grid" aria-label="顧客端摘要">
-    <article class="customer-kpi-card">
-        <span>已填問卷</span>
-        <strong>{{ submission_count }}</strong>
-    </article>
-    <article class="customer-kpi-card">
-        <span>訂閱更新的問卷</span>
-        <strong>{{ subscribed_survey_count }}</strong>
-    </article>
-    <article class="customer-kpi-card">
-        <span>通知狀態</span>
-        <strong>{% if user.notification_opt_in %}已開啟{% else %}已關閉{% endif %}</strong>
-    </article>
+<section class="customer-timeline-chips" aria-label="顧客端摘要">
+    <span class="customer-timeline-chip"><span>已填問卷</span><strong>{{ survey_cards|length }}</strong></span>
+    <a class="customer-timeline-chip" href="{% url 'feedback:customer-notifications' %}"><span>未讀通知</span><strong>{{ unread_count }}</strong></a>
+    <a class="customer-timeline-chip" href="{% url 'accounts:preferences' %}"><span>通知設定</span><strong>{% if notification_opt_in %}已開啟{% else %}已關閉{% endif %}</strong></a>
 </section>
 
-<section class="customer-layout-grid customer-balanced-grid">
-    <article class="customer-panel">
-        <div class="customer-panel-head">
-            <div>
-                <p class="section-kicker">Notifications</p>
-                <h2>通知</h2>
-            </div>
-            <a class="text-link" href="{% url 'feedback:customer-notifications' %}">檢視全部</a>
-        </div>
-        <div class="customer-record-list customer-notice-preview-list">
-            {% for notice in notices|slice:":3" %}
-                <div class="customer-record-row customer-compact-row">
-                    <div>
-                        <strong>{{ notice.improvement.title }}</strong>
-                        {% if notice.submission.survey %}<p>{{ notice.submission.survey.title }}</p>{% endif %}
-                    </div>
-                    <span>{{ notice.sent_at|date:"Y/m/d" }}</span>
-                </div>
-            {% empty %}
-                <div class="customer-empty">
-                    <h3>尚無通知紀錄</h3>
-                    <p>當改善任務完成並對外發布後，系統會依你的偏好將更新整理在這裡。</p>
-                </div>
-            {% endfor %}
-        </div>
-    </article>
+<nav class="customer-timeline-links" aria-label="通知捷徑">
+    <a class="text-link" href="{% url 'feedback:customer-notifications' %}">檢視全部通知</a>
+    <a class="text-link" href="{% url 'accounts:preferences' %}">通知偏好</a>
+</nav>
 
-    <article class="customer-panel">
-        <div class="customer-panel-head">
-            <div>
-                <p class="section-kicker">Latest Status</p>
-                <h2>最新狀態</h2>
-            </div>
+<div class="customer-timeline-cards">
+    {% for card in survey_cards %}
+        <article class="customer-panel customer-timeline-card">
+            <header class="customer-timeline-card-head">
+                <h2>{{ card.survey.title }}</h2>
+                {% if card.survey.category %}<span class="pill pill-category">{{ card.survey.category.name }}</span>{% endif %}
+            </header>
+            <ol class="customer-timeline">
+                <li class="customer-timeline-item">
+                    <p class="customer-timeline-title">已填答</p>
+                    <p class="customer-timeline-meta">{{ card.submitted_date }}</p>
+                </li>
+                {% for event in card.events %}
+                    <li class="customer-timeline-item customer-timeline-item-event{% if not event.is_read %} customer-timeline-item-unread{% endif %}">
+                        <p class="customer-timeline-title">{{ event.title }}</p>
+                        <p class="customer-timeline-meta">
+                            {{ event.sent_at|slice:":10" }}
+                            <span class="pill">{{ event.improvement_status_label }}</span>
+                            {% if not event.is_read %}<span class="pill customer-timeline-unread-pill">未讀</span>{% endif %}
+                        </p>
+                        {% if event.summary %}<p class="customer-timeline-summary">{{ event.summary|truncatechars:90 }}</p>{% endif %}
+                    </li>
+                {% empty %}
+                    <li class="customer-timeline-item customer-timeline-item-pending">
+                        <p class="customer-timeline-title">{% if card.state == "processing" %}店家處理中{% else %}等待店家回應{% endif %}</p>
+                    </li>
+                {% endfor %}
+            </ol>
+        </article>
+    {% empty %}
+        <div class="customer-panel customer-empty">
+            <h3>尚未留下任何填答紀錄</h3>
+            <p>登入後填寫問卷，系統會在這裡整理你提交過的內容與後續通知。</p>
         </div>
-        <div class="customer-status-list">
-            <div>
-                <span>最近填寫的問卷</span>
-                <strong>
-                    {% if latest_submission %}
-                        {{ latest_submission.survey.title }}
-                    {% else %}
-                        尚未填寫問卷
-                    {% endif %}
-                </strong>
-            </div>
-            <div>
-                <span>最近收到的改善通知</span>
-                <strong>
-                    {% if latest_notice %}
-                        {{ latest_notice.improvement.title }}
-                    {% else %}
-                        尚未收到通知
-                    {% endif %}
-                </strong>
-            </div>
-            <p>
-                {% if latest_notice %}
-                    {{ latest_notice.improvement.summary|truncatechars:110 }}
-                {% else %}
-                    當管理端針對你填過的問卷完成改善後，這裡會優先顯示最近一次更新摘要。
-                {% endif %}
-            </p>
-        </div>
-    </article>
-</section>
+    {% endfor %}
+</div>
 
-<section class="customer-panel">
-    <div class="customer-panel-head customer-record-head">
+{% if announcements %}
+<section class="customer-panel customer-timeline-announcements">
+    <div class="customer-panel-head">
         <div>
-            <p class="section-kicker">Submissions</p>
-            <h2>填答紀錄</h2>
-            <p class="muted-text">最近 8 筆</p>
+            <p class="section-kicker">Announcements</p>
+            <h2>店家公告</h2>
         </div>
-        <nav class="customer-record-tabs" aria-label="填答紀錄篩選">
-            <a class="filter-pill {% if active_submission_status == 'all' %}filter-pill-active{% endif %}"
-               href="{% url 'feedback:customer-home' %}">全部 {{ submission_status_counts.all }}</a>
-            <a class="filter-pill {% if active_submission_status == 'pending' %}filter-pill-active{% endif %}"
-               href="{% url 'feedback:customer-home' %}?status=pending">待處理 {{ submission_status_counts.pending }}</a>
-            <a class="filter-pill {% if active_submission_status == 'tracking' %}filter-pill-active{% endif %}"
-               href="{% url 'feedback:customer-home' %}?status=tracking">願意追蹤 {{ submission_status_counts.tracking }}</a>
-            <a class="filter-pill {% if active_submission_status == 'improved' %}filter-pill-active{% endif %}"
-               href="{% url 'feedback:customer-home' %}?status=improved">已促成改善 {{ submission_status_counts.improved }}</a>
-        </nav>
     </div>
-
-    <div class="customer-record-list">
-        {% for row in submission_rows %}
-            <div class="customer-record-row customer-submission-row">
-                <div>
-                    <div class="customer-row-title">
-                        <strong>{{ row.submission.survey.title }}</strong>
-                        {% if row.submission.survey.category %}
-                            <span class="pill pill-category">{{ row.submission.survey.category.name }}</span>
-                        {% endif %}
-                    </div>
-                    <p>{% if row.submission.via_inbox %}已送出，內容由店家端保存{% else %}{{ row.answer_count }} 題已作答{% endif %}，提交時間：{{ row.submission.submitted_date }}</p>
-                    {% if row.latest_notice %}
-                        <p class="customer-note">最新改善：{{ row.latest_notice.improvement.title }}</p>
-                    {% endif %}
-                </div>
-                <div class="customer-record-meta">
-                    <span class="pill {{ row.status_class }}">{{ row.status_label }}</span>
-                    {% if row.latest_notice %}
-                        <span>通知 {{ row.latest_notice.sent_at|date:"Y/m/d" }}</span>
-                    {% endif %}
-                </div>
-            </div>
-        {% empty %}
-            <div class="customer-empty">
-                <h3>尚未留下任何填答紀錄</h3>
-                <p>登入後填寫問卷，系統會在這裡整理你提交過的內容與後續通知。</p>
-            </div>
+    <ol class="customer-timeline">
+        {% for event in announcements %}
+            <li class="customer-timeline-item customer-timeline-item-event{% if not event.is_read %} customer-timeline-item-unread{% endif %}">
+                <p class="customer-timeline-title">{{ event.title }}</p>
+                <p class="customer-timeline-meta">
+                    {{ event.sent_at|slice:":10" }}
+                    {% if not event.is_read %}<span class="pill customer-timeline-unread-pill">未讀</span>{% endif %}
+                </p>
+                {% if event.summary %}<p class="customer-timeline-summary">{{ event.summary|truncatechars:90 }}</p>{% endif %}
+            </li>
         {% endfor %}
-    </div>
+    </ol>
 </section>
+{% endif %}
 {% endblock %}

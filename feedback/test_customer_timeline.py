@@ -189,3 +189,64 @@ class CustomerTimelineTests(TestCase):
             consent_follow_up=True, idempotency_key=uuid.uuid4())
         self.receipt(status="quarantined")
         self.assertEqual(get_customer_home_payload(self.customer)["survey_cards"][0]["state"], "waiting")
+
+
+@cloud_only
+class CustomerTimelineTemplateTests(CustomerTimelineTests):
+    """Template rendering on top of the same fixtures (inherits helpers, re-runs payload tests too)."""
+
+    def get_page(self, name):
+        self.client.force_login(self.customer)
+        response = self.client.get(reverse(name))
+        self.assertEqual(response.status_code, 200)
+        return response.content.decode()
+
+    def test_home_renders_timeline_and_waiting_copy(self):
+        self.receipt()
+        html = self.get_page("feedback:customer-home")
+        self.assertIn("已填答", html)
+        self.assertIn("等待店家回應", html)
+        self.assertIn("customer-timeline", html)
+
+    def test_home_renders_processing_copy(self):
+        self.receipt(status="quarantined")
+        html = self.get_page("feedback:customer-home")
+        self.assertIn("店家處理中", html)
+
+    def test_home_renders_events_and_hides_internal_fields(self):
+        self.receipt()
+        self.dispatch(self.improvement(), subject="已修正洗手間")
+        html = self.get_page("feedback:customer-home")
+        self.assertIn("已修正洗手間", html)
+        self.assertIn("進行中", html)
+        self.assertIn("未讀", html)
+        self.assertNotIn("SECRET-INTERNAL", html)
+        self.assertNotIn("等待店家回應", html)
+
+    def test_announcements_section_rendered(self):
+        self.receipt()
+        self.dispatch(self.improvement(survey=self.other_survey), audience="global", subject="全店公告")
+        html = self.get_page("feedback:customer-home")
+        self.assertIn("店家公告", html)
+        self.assertIn("全店公告", html)
+
+    def test_announcements_section_hidden_when_empty(self):
+        self.receipt()
+        self.assertNotIn("店家公告", self.get_page("feedback:customer-home"))
+
+    def test_notification_row_keeps_mark_read_hook(self):
+        self.receipt()
+        dispatch = self.dispatch(self.improvement(), subject="分組通知")
+        html = self.get_page("feedback:customer-notifications")
+        self.assertIn(f'data-pk="{dispatch.pk}"', html)
+        self.assertIn('data-is-read="false"', html)
+        self.assertIn(reverse("feedback:notice-mark-read", args=[dispatch.pk]), html)
+        self.assertIn("分組通知", html)
+        self.assertIn(self.survey.title, html)
+
+    def test_notifications_page_groups_announcements(self):
+        self.receipt()
+        self.dispatch(self.improvement(survey=self.other_survey), audience="global", subject="全店公告")
+        html = self.get_page("feedback:customer-notifications")
+        self.assertIn("店家公告", html)
+        self.assertIn("全店公告", html)
