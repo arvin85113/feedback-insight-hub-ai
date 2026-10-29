@@ -190,6 +190,8 @@ TripAdvisor 完整分析（子專案 2）；機器學習窗口（子專案 3）�
    並更新 `SurveySyncState.synced_through_sequence`。
 3. 本機已有同 ID：以 `SyncedSubmissionSource.payload_hash` 比較；相同視為重複，只補 `PendingAck`；不同則回報隔離並在總覽警示。
 4. 提交後送 ACK；**只刪除回傳 `acked` 或 `already_acked` 的 `PendingAck`**。啟動時先重送殘留的 `PendingAck`。
+   雲端收到 ACK 即刪除正文，所以 ACK 只能在本機提交已耐久之後送出：節點 SQLite 使用 WAL＋`synchronous=FULL`（`NORMAL` 在斷電時
+   可能回退最後幾筆提交）；送出前若連線的耐久設定低於 FULL，扣留 ACK，`PendingAck.last_status` 記為 `not_durable` 並在連線頁警示。
 
 **結果上傳**：本機發布結果時，在**同一交易**內建立 `ResultUpload(pending)`；另於每次同步開始時，補排「已發布但沒有上傳紀錄」的版本。
 上傳失敗依錯誤分類處理，不影響本機發布。

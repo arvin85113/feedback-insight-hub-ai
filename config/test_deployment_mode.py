@@ -19,11 +19,21 @@ PROBE = (
 )
 
 
-def run_settings_probe(**overrides):
+DURABILITY_PROBE = (
+    "import json, django; django.setup();"
+    "from django.db import connection;"
+    "cursor = connection.cursor();"
+    "cursor.execute('PRAGMA synchronous'); synchronous = cursor.fetchone()[0];"
+    "cursor.execute('PRAGMA journal_mode'); journal_mode = cursor.fetchone()[0];"
+    "print(json.dumps({'synchronous': synchronous, 'journal_mode': journal_mode}))"
+)
+
+
+def run_settings_probe(probe=PROBE, **overrides):
     env = {key: value for key, value in os.environ.items() if key not in {"NODE_DATABASE_URL", "DJANGO_SETTINGS_MODULE"}}
     env.update({"DJANGO_SETTINGS_MODULE": "config.settings", "PYTHONIOENCODING": "utf-8"}, **overrides)
     return subprocess.run(
-        [sys.executable, "-c", PROBE],
+        [sys.executable, "-c", probe],
         cwd=settings.BASE_DIR,
         env=env,
         capture_output=True,
@@ -50,6 +60,15 @@ class NodeSettingsSubprocessTests(SimpleTestCase):
             self.assertIn("organizations", probe["apps"])
             self.assertEqual(probe["hosts"], ["127.0.0.1", "localhost"])
             self.assertTrue(probe["secret_from_file"])
+
+    def test_node_database_syncs_the_log_on_every_commit(self):
+        # The cloud drops its copy once the node ACKs, so a commit must survive power loss:
+        # SQLite synchronous 1 (NORMAL) lets the last WAL commits roll back, 2 (FULL) does not.
+        with tempfile.TemporaryDirectory() as home:
+            result = run_settings_probe(DURABILITY_PROBE, DEPLOYMENT_MODE="node", FEEDBACK_HUB_NODE_HOME=home)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            probe = json.loads(result.stdout.strip().splitlines()[-1])
+            self.assertEqual(probe, {"synchronous": 2, "journal_mode": "wal"})
 
     def test_unknown_mode_refuses_to_start(self):
         result = run_settings_probe(DEPLOYMENT_MODE="hybrid")
