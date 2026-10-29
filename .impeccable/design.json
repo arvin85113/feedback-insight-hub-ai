@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-29T00:00:00+08:00",
+  "title": "Design System: 回饋洞察 AI 平台",
+  "extensions": {
+    "colorMeta": {
+      "forest-ink": { "role": "primary", "displayName": "Forest Ink 深林墨綠", "tonalRamp": ["#133b2b", "#22614a", "#2c7659", "#4f6f61", "#8fc4a8", "#c8dacd", "#eef5f0", "#f7faf8"] },
+      "forest": { "role": "primary", "displayName": "Forest 森林綠", "tonalRamp": ["#133b2b", "#22614a", "#2c7659", "#4f6f61", "#8fc4a8", "#c8dacd", "#eef5f0", "#f7faf8"] },
+      "paper": { "role": "neutral", "displayName": "Paper 紙色", "tonalRamp": ["#1c1b18", "#45413a", "#676257", "#8a857a", "#d5cebf", "#e6e1d6", "#f0ede5", "#f6f4ee"] },
+      "ochre": { "role": "status", "displayName": "Ochre 赭黃", "tonalRamp": ["#4d3906", "#7a5a0a", "#9a7312", "#b58b19", "#d4b25a", "#ead79f", "#f6ecc9", "#fbf4e1"] },
+      "brick": { "role": "status", "displayName": "Brick 磚紅", "tonalRamp": ["#5a1f17", "#8a2f22", "#a03c2b", "#b44732", "#d07f6e", "#e6b4a8", "#f4d9d2", "#fbefec"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "公開首頁主標，最多 14 字寬。" },
+      "metric": { "displayName": "Metric", "purpose": "關鍵數字卡主數字，等寬數字。" },
+      "headline": { "displayName": "Headline", "purpose": "管理端頂欄頁面標題。" },
+      "title": { "displayName": "Title", "purpose": "面板與區段標題。" },
+      "body": { "displayName": "Body", "purpose": "內文，說明段落限寬 72ch。" },
+      "label": { "displayName": "Label", "purpose": "區段小標（kicker），等寬大寫。" }
+    },
+    "shadows": [
+      { "name": "rest", "value": "0 1px 2px rgba(28, 27, 24, 0.05)", "purpose": "面板、卡片、主按鈕的靜止狀態。" },
+      { "name": "raised", "value": "0 4px 16px rgba(28, 27, 24, 0.06), 0 1px 3px rgba(28, 27, 24, 0.04)", "purpose": "卡片懸停、吸附的分頁列。" },
+      { "name": "floating", "value": "0 16px 40px rgba(28, 27, 24, 0.08)", "purpose": "彈出訊息等浮在內容之上的元素。" },
+      { "name": "focus-ring", "value": "0 0 0 3px rgba(44, 118, 89, 0.28)", "purpose": "鍵盤聚焦。" }
+    ],
+    "motion": [
+      { "name": "state-change", "value": "140ms ease", "purpose": "顏色、邊框、陰影的狀態過場；不位移。" }
+    ],
+    "breakpoints": [
+      { "name": "compact", "value": "1100px" },
+      { "name": "stacked", "value": "860px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "每個畫面的主要行動。",
+      "html": "<button class=\"ds-btn-primary\">建立改善項目</button>",
+      "css": ".ds-btn-primary { min-height: 40px; padding: 9px 18px; border: 1px solid transparent; border-radius: 8px; background: #22614a; color: #fbfaf6; font-family: 'Noto Sans TC', sans-serif; font-size: 0.93rem; font-weight: 500; box-shadow: 0 1px 2px rgba(28,27,24,0.05); transition: background-color 140ms ease, box-shadow 140ms ease; cursor: pointer; } .ds-btn-primary:hover { background: #2c7659; } .ds-btn-primary:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(44,118,89,0.28); }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "次要行動。",
+      "html": "<button class=\"ds-btn-ghost\">查看依據</button>",
+      "css": ".ds-btn-ghost { min-height: 40px; padding: 9px 18px; border: 1px solid #d5cebf; border-radius: 8px; background: #ffffff; color: #45413a; font-family: 'Noto Sans TC', sans-serif; font-size: 0.93rem; font-weight: 500; transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease; cursor: pointer; } .ds-btn-ghost:hover { background: #faf9f5; border-color: #8a857a; color: #1c1b18; } .ds-btn-ghost:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(44,118,89,0.28); }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "表單文字欄位。",
+      "html": "<input class=\"ds-input\" type=\"text\" placeholder=\"改善項目標題\">",
+      "css": ".ds-input { min-height: 40px; padding: 8px 12px; border: 1px solid #d5cebf; border-radius: 8px; background: #ffffff; color: #1c1b18; font-family: 'Noto Sans TC', sans-serif; font-size: 15px; transition: border-color 140ms ease, box-shadow 140ms ease; } .ds-input:focus { outline: none; border-color: #2c7659; box-shadow: 0 0 0 3px rgba(44,118,89,0.28); }"
+    },
+    {
+      "name": "Sidebar Navigation",
+      "kind": "nav",
+      "refersTo": "nav-link",
+      "description": "管理端深林墨綠側邊欄。",
+      "html": "<nav class=\"ds-nav\"><a class=\"ds-nav-link ds-active\" href=\"#\">營運總覽</a><a class=\"ds-nav-link\" href=\"#\">統計分析</a><a class=\"ds-nav-link\" href=\"#\">改善追蹤</a></nav>",
+      "css": ".ds-nav { display: flex; flex-direction: column; gap: 2px; width: 220px; padding: 14px; background: #133b2b; border-radius: 12px; } .ds-nav-link { padding: 10px 12px; border-radius: 8px; color: rgba(251,250,246,0.72); font-family: 'Noto Sans TC', sans-serif; font-size: 0.94rem; text-decoration: none; transition: background-color 140ms ease, color 140ms ease; } .ds-nav-link:hover { color: #fbfaf6; background: rgba(251,250,246,0.07); } .ds-nav-link.ds-active { color: #fbfaf6; background: rgba(251,250,246,0.12); box-shadow: inset 3px 0 0 #8fc4a8; }"
+    },
+    {
+      "name": "Metric Card",
+      "kind": "card",
+      "refersTo": "metric-card",
+      "description": "一張卡只說一個關鍵數字。",
+      "html": "<div class=\"ds-metric\"><p>有效回覆</p><strong>201,295</strong><small>含 3 個缺失構面</small></div>",
+      "css": ".ds-metric { display: flex; flex-direction: column; gap: 4px; padding: 20px 22px; background: #ffffff; border: 1px solid #e6e1d6; border-radius: 16px; box-shadow: 0 1px 2px rgba(28,27,24,0.05); font-family: 'Noto Sans TC', sans-serif; } .ds-metric p { margin: 0; font-size: 0.86rem; font-weight: 500; color: #676257; } .ds-metric strong { font-size: 2rem; font-weight: 700; line-height: 1.15; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: #1c1b18; } .ds-metric small { font-size: 0.82rem; color: #8a857a; }"
+    },
+    {
+      "name": "Category Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "分類標籤，不可點擊。",
+      "html": "<span class=\"ds-chip\">服務態度</span>",
+      "css": ".ds-chip { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #f0ede5; color: #676257; font-family: 'Noto Sans TC', sans-serif; font-size: 0.74rem; font-weight: 600; }"
+    },
+    {
+      "name": "Flash Message",
+      "kind": "custom",
+      "description": "操作結果訊息，左側狀態色條。",
+      "html": "<div class=\"ds-flash\">改善項目已建立。</div>",
+      "css": ".ds-flash { padding: 12px 16px; border: 1px solid #e6e1d6; border-left: 4px solid #2c7659; border-radius: 12px; background: #ffffff; color: #1c1b18; font-family: 'Noto Sans TC', sans-serif; box-shadow: 0 16px 40px rgba(28,27,24,0.08); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "關鍵 → 決策 → 認同",
+    "overview": "整套介面服務一條路徑：先讓店家一眼看到關鍵數字，再把分析收斂成一個可以做的決策，最後把改善結果回饋給顧客，換來顧客的認同。視覺上是一本整理得很好的營運筆記：溫和的紙色底、白色紙張承載內容、深森林綠作為唯一的品牌聲音。層次以平面為主，元件手感沉穩內斂。",
+    "keyCharacteristics": [
+      "紙色底＋白紙內容＋森林綠單一品牌色",
+      "關鍵數字大而等寬，說明文字小而退後",
+      "平面為主，陰影只表達狀態",
+      "小圓角、沉穩過場、無位移動畫",
+      "全站繁體中文排版，Noto Sans TC 為主字體"
+    ],
+    "rules": [
+      { "name": "The One Voice Rule", "body": "品牌色只有森林綠一系。新增圖表、徽章或插圖不得引入第二個品牌色；文字雲與圖表配色也必須從森林綠、赭黃、磚紅與墨色推導。", "section": "colors" },
+      { "name": "The Color Means Something Rule", "body": "顏色只用來表達意義（行動、狀態、情緒），不用來裝飾。卡片家族一律同一條淡邊框，「顏色只承載意義」。", "section": "colors" },
+      { "name": "The Tabular Numbers Rule", "body": "表格、指標卡與任何會被比較的數字都用 font-variant-numeric: tabular-nums，讓數字對齊、可以直向比較。", "section": "typography" },
+      { "name": "The Plain Chinese Rule", "body": "介面文字一律白話繁體中文；中英文混排時英文與數字前後保留半形空格。", "section": "typography" },
+      { "name": "The Flat-By-Default Rule", "body": "表面靜止時是平的；陰影加深只回應狀態（懸停、浮出、聚焦），從不當裝飾。", "section": "elevation" }
+    ],
+    "dos": [
+      "Do 每個頁面先放關鍵數字或關鍵結論，再放細節（關鍵 → 決策 → 認同）。",
+      "Do 讓分析頁的終點是一個明確行動（建立改善項目），讓改善的終點是通知顧客。",
+      "Do 新樣式只引用 app.css :root 的 --c-*、--radius-*、--shadow-*、--font-* token。",
+      "Do 數字一律 tabular-nums；中英文混排保留空格。",
+      "Do 尊重 prefers-reduced-motion；過場維持 140ms ease，只變色不位移。"
+    ],
+    "donts": [
+      "Don't 在店家或顧客看得到的文字使用開發者用語（Supabase、snapshot、唯讀展示、版本號細節）。",
+      "Don't 引入第二個品牌色；文字雲現行的舊橘／藍配色、公開頁底部的橘色放射漸層都屬於待清除的舊樣式。",
+      "Don't 新增舊別名變數（--bg、--brand、--surface 等）的用法；它們只為相容舊規則而保留。",
+      "Don't 讓公開／顧客頁的樣式影響管理頁（管理頁規則一律收在 .manager-shell 之下）。",
+      "Don't 在靜止狀態使用 Raised 或 Floating 陰影。"
+    ]
+  }
+}
