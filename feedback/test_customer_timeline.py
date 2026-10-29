@@ -134,3 +134,58 @@ class CustomerTimelineTests(TestCase):
         self.assertIsNone(payload["groups"][1]["survey"])
         self.assertEqual(payload["notice_count"], 3)
         self.assertEqual(payload["unread_count"], 1)
+
+    def test_unanswered_survey_notice_not_on_home(self):
+        self.receipt()
+        self.dispatch(self.improvement(survey=self.other_survey))
+        payload = get_customer_home_payload(self.customer)
+        self.assertEqual(len(payload["survey_cards"]), 1)
+        self.assertEqual(payload["survey_cards"][0]["events"], [])
+        self.assertEqual(payload["announcements"], [])
+        self.assertEqual(payload["unread_count"], 0)
+
+    def test_notifications_history_groups_by_audience_not_membership(self):
+        self.receipt()
+        self.dispatch(self.improvement(survey=self.other_survey), subject="B-only")
+        self.dispatch(self.improvement(survey=self.survey), audience="global", subject="公告")
+        payload = get_customer_notifications_payload(self.customer)
+        by_slug = {(g["survey"] or {}).get("slug"): g for g in payload["groups"]}
+        self.assertEqual(set(by_slug), {"b", None})
+        self.assertEqual(by_slug["b"]["notices"][0]["title"], "B-only")
+        self.assertEqual(by_slug[None]["notices"][0]["title"], "公告")
+        self.assertEqual(payload["notice_count"], 2)
+
+    def test_multiple_replies_in_one_survey_make_one_card_with_all_events(self):
+        FeedbackSubmission.objects.create(
+            survey=self.survey, user=self.customer, respondent_email=self.customer.email,
+            consent_follow_up=True, idempotency_key=uuid.uuid4())
+        self.receipt()
+        improvement = self.improvement()
+        self.dispatch(improvement, subject="one")
+        self.dispatch(improvement, subject="two")
+        cards = get_customer_home_payload(self.customer)["survey_cards"]
+        self.assertEqual(len(cards), 1)
+        self.assertEqual(sorted(e["title"] for e in cards[0]["events"]), ["one", "two"])
+        self.assertEqual(cards[0]["state"], "notified")
+
+    def test_two_receipts_in_one_survey_make_one_card(self):
+        self.receipt()
+        self.receipt()
+        improvement = self.improvement()
+        self.dispatch(improvement, subject="one")
+        self.dispatch(improvement, subject="two")
+        cards = get_customer_home_payload(self.customer)["survey_cards"]
+        self.assertEqual(len(cards), 1)
+        self.assertEqual(len(cards[0]["events"]), 2)
+
+    def test_quarantined_plus_received_receipt_is_waiting(self):
+        self.receipt(status="quarantined")
+        self.receipt(status="received")
+        self.assertEqual(get_customer_home_payload(self.customer)["survey_cards"][0]["state"], "waiting")
+
+    def test_submission_plus_quarantined_receipt_is_waiting(self):
+        FeedbackSubmission.objects.create(
+            survey=self.survey, user=self.customer, respondent_email=self.customer.email,
+            consent_follow_up=True, idempotency_key=uuid.uuid4())
+        self.receipt(status="quarantined")
+        self.assertEqual(get_customer_home_payload(self.customer)["survey_cards"][0]["state"], "waiting")

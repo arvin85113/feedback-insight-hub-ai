@@ -149,12 +149,8 @@ def _survey_ref(survey):
     }
 
 
-def _is_survey_notice(dispatch):
-    """Survey-scoped notices (including legacy dispatches without a notice batch) belong to a survey timeline."""
-
-    if dispatch.notice_id is None:
-        return True
-    return dispatch.notice.audience_type == ImprovementNotice.AudienceType.SURVEY_RESPONDENTS
+def _is_global_notice(dispatch):
+    return dispatch.notice_id is not None and dispatch.notice.audience_type == ImprovementNotice.AudienceType.GLOBAL
 
 
 def _sent_dispatches(user):
@@ -202,13 +198,15 @@ def get_customer_home_payload(user):
     announcements = []
     unread_count = 0
     for dispatch in _sent_dispatches(user):
-        if not dispatch.is_read:
-            unread_count += 1
         survey_id = dispatch.improvement.survey_id
-        if _is_survey_notice(dispatch) and survey_id in surveys:
+        if _is_global_notice(dispatch):
+            announcements.append(dispatch)
+        elif survey_id in surveys:
             events_by_survey.setdefault(survey_id, []).append(dispatch)
         else:
-            announcements.append(dispatch)
+            continue
+        if not dispatch.is_read:
+            unread_count += 1
 
     cards = []
     for survey_id, survey in surveys.items():
@@ -246,14 +244,17 @@ def get_customer_notifications_payload(user):
     by_survey = {}
     announcements = []
     unread_count = 0
-    dispatches = _sent_dispatches(user)
-    for dispatch in dispatches:
-        if not dispatch.is_read:
-            unread_count += 1
-        if _is_survey_notice(dispatch) and dispatch.improvement.survey_id:
+    shown = 0
+    for dispatch in _sent_dispatches(user):
+        if _is_global_notice(dispatch):
+            announcements.append(dispatch)
+        elif dispatch.improvement.survey_id:
             by_survey.setdefault(dispatch.improvement.survey_id, []).append(dispatch)
         else:
-            announcements.append(dispatch)
+            continue
+        shown += 1
+        if not dispatch.is_read:
+            unread_count += 1
 
     def build(survey, items):
         ordered = sorted(items, key=lambda d: (d.is_read, -(d.sent_at.timestamp() if d.sent_at else 0), -d.id))
@@ -273,7 +274,7 @@ def get_customer_notifications_payload(user):
         del group["_unread"], group["_newest"]
     return {
         "groups": groups,
-        "notice_count": len(dispatches),
+        "notice_count": shown,
         "unread_count": unread_count,
     }
 
