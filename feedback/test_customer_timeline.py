@@ -13,8 +13,9 @@ from feedback.models import FeedbackSubmission, ImprovementDispatch, Improvement
 from feedback.test_utils import cloud_only
 
 
-@cloud_only
-class CustomerTimelineTests(TestCase):
+class TimelineFixtures:
+    """Shared fixtures and helpers (no tests)."""
+
     def setUp(self):
         self.manager = User.objects.create_user(username="tm", password="x", role=User.Role.MANAGER)
         self.node, _ = NodeDevice.issue("office")
@@ -51,6 +52,9 @@ class CustomerTimelineTests(TestCase):
             recipient_key=f"k{notice.pk}", delivery_status=status,
             sent_at=sent_at or timezone.now(), is_read=is_read)
 
+
+@cloud_only
+class CustomerTimelineTests(TimelineFixtures, TestCase):
     def test_receipt_card_shows_sent_notice(self):
         self.receipt()
         self.dispatch(self.improvement())
@@ -192,8 +196,8 @@ class CustomerTimelineTests(TestCase):
 
 
 @cloud_only
-class CustomerTimelineTemplateTests(CustomerTimelineTests):
-    """Template rendering on top of the same fixtures (inherits helpers, re-runs payload tests too)."""
+class CustomerTimelineTemplateTests(TimelineFixtures, TestCase):
+    """Template rendering of the customer home and notification pages."""
 
     def get_page(self, name):
         self.client.force_login(self.customer)
@@ -206,7 +210,8 @@ class CustomerTimelineTemplateTests(CustomerTimelineTests):
         html = self.get_page("feedback:customer-home")
         self.assertIn("已填答", html)
         self.assertIn("等待店家回應", html)
-        self.assertIn("customer-timeline", html)
+        self.assertIn('class="customer-timeline-item', html)
+        self.assertIn("customer-timeline-item-pending", html)
 
     def test_home_renders_processing_copy(self):
         self.receipt(status="quarantined")
@@ -219,9 +224,17 @@ class CustomerTimelineTemplateTests(CustomerTimelineTests):
         html = self.get_page("feedback:customer-home")
         self.assertIn("已修正洗手間", html)
         self.assertIn("進行中", html)
-        self.assertIn("未讀", html)
+        self.assertIn('class="pill customer-timeline-unread-pill"', html)
         self.assertNotIn("SECRET-INTERNAL", html)
         self.assertNotIn("等待店家回應", html)
+
+    def test_read_event_has_no_unread_pill(self):
+        self.receipt()
+        self.dispatch(self.improvement(), subject="已讀事件", is_read=True)
+        html = self.get_page("feedback:customer-home")
+        self.assertIn("已讀事件", html)
+        self.assertNotIn("customer-timeline-unread-pill", html)
+        self.assertNotIn("customer-timeline-item-unread", html)
 
     def test_announcements_section_rendered(self):
         self.receipt()
@@ -250,3 +263,12 @@ class CustomerTimelineTemplateTests(CustomerTimelineTests):
         html = self.get_page("feedback:customer-notifications")
         self.assertIn("店家公告", html)
         self.assertIn("全店公告", html)
+
+    def test_announcement_row_has_empty_survey_url_and_read_url(self):
+        self.receipt()
+        dispatch = self.dispatch(
+            self.improvement(survey=self.other_survey), audience="global", subject="全店公告")
+        html = self.get_page("feedback:customer-notifications")
+        self.assertIn('data-survey-url=""', html)
+        self.assertIn(
+            f'data-read-url="{reverse("feedback:notice-mark-read", args=[dispatch.pk])}"', html)
