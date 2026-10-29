@@ -39,8 +39,8 @@
                     <li class="customer-timeline-item customer-timeline-item-event{% if not event.is_read %} customer-timeline-item-unread{% endif %}">
                         <p class="customer-timeline-title">{{ event.title }}</p>
                         <p class="customer-timeline-meta">
-                            {{ event.sent_at|slice:":10" }}
-                            <span class="pill">{{ event.improvement_status_label }}</span>
+                            {{ event.sent_date }}
+                            {% if event.improvement_status_label %}<span class="pill">{{ event.improvement_status_label }}</span>{% endif %}
                             {% if not event.is_read %}<span class="pill customer-timeline-unread-pill">未讀</span>{% endif %}
                         </p>
                         {% if event.summary %}<p class="customer-timeline-summary">{{ event.summary|truncatechars:90 }}</p>{% endif %}
@@ -73,7 +73,7 @@
             <li class="customer-timeline-item customer-timeline-item-event{% if not event.is_read %} customer-timeline-item-unread{% endif %}">
                 <p class="customer-timeline-title">{{ event.title }}</p>
                 <p class="customer-timeline-meta">
-                    {{ event.sent_at|slice:":10" }}
+                    {{ event.sent_date }}
                     {% if not event.is_read %}<span class="pill customer-timeline-unread-pill">未讀</span>{% endif %}
                 </p>
                 {% if event.summary %}<p class="customer-timeline-summary">{{ event.summary|truncatechars:90 }}</p>{% endif %}

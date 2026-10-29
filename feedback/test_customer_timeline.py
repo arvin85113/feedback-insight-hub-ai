@@ -272,3 +272,71 @@ class CustomerTimelineTemplateTests(TimelineFixtures, TestCase):
         self.assertIn('data-survey-url=""', html)
         self.assertIn(
             f'data-read-url="{reverse("feedback:notice-mark-read", args=[dispatch.pk])}"', html)
+
+
+@cloud_only
+class CustomerTimelineReviewFixTests(TimelineFixtures, TestCase):
+    def get_page(self, name):
+        self.client.force_login(self.customer)
+        response = self.client.get(reverse(name))
+        self.assertEqual(response.status_code, 200)
+        return response.content.decode()
+
+    def test_internal_improvement_status_is_not_exposed(self):
+        self.receipt()
+        for status in ("draft", "archived"):
+            self.dispatch(self.improvement(status=status), subject=f"內部-{status}")
+        for payload in (
+            get_customer_home_payload(self.customer)["survey_cards"][0]["events"],
+            [n for g in get_customer_notifications_payload(self.customer)["groups"] for n in g["notices"]],
+        ):
+            self.assertEqual(len(payload), 2)
+            for event in payload:
+                self.assertIsNone(event["improvement_status_label"])
+        for name in ("feedback:customer-home", "feedback:customer-notifications"):
+            html = self.get_page(name)
+            self.assertNotIn("草稿", html)
+            self.assertNotIn("已封存", html)
+
+    def test_customer_visible_statuses_keep_label(self):
+        self.receipt()
+        for status, label in (("planned", "已規劃"), ("in_progress", "進行中"), ("completed", "已完成")):
+            self.dispatch(self.improvement(status=status))
+            events = get_customer_home_payload(self.customer)["survey_cards"][0]["events"]
+            self.assertIn(label, [e["improvement_status_label"] for e in events])
+
+    def test_dates_use_local_timezone(self):
+        from datetime import datetime, timezone as dt_timezone
+
+        sent = datetime(2026, 10, 28, 17, 30, tzinfo=dt_timezone.utc)
+        self.receipt(submitted_at=sent)
+        self.dispatch(self.improvement(), sent_at=sent)
+        self.dispatch(self.improvement(survey=self.other_survey), audience="global", sent_at=sent)
+        card = get_customer_home_payload(self.customer)["survey_cards"][0]
+        self.assertEqual(card["submitted_date"], "2026/10/29")
+        self.assertEqual(card["events"][0]["sent_date"], "2026/10/29")
+        for name in ("feedback:customer-home", "feedback:customer-notifications"):
+            html = self.get_page(name)
+            self.assertIn("2026/10/29", html)
+            self.assertNotIn("2026-10-28", html)
+
+    def test_non_global_dispatch_without_survey_is_grouped_and_counted(self):
+        self.receipt()
+        orphan = self.improvement()
+        ImprovementUpdate.objects.filter(pk=orphan.pk).update(survey=None)
+        dispatch = self.dispatch(orphan, audience="survey_respondents", subject="無問卷通知")
+        payload = get_customer_notifications_payload(self.customer)
+        self.assertEqual(payload["unread_count"], 1)
+        self.assertEqual(payload["notice_count"], 1)
+        self.assertIsNone(payload["groups"][0]["survey"])
+        self.assertEqual(payload["groups"][0]["notices"][0]["id"], dispatch.id)
+
+    def test_home_announcements_newest_first_and_capped(self):
+        self.receipt()
+        base = timezone.now() - timedelta(days=10)
+        for index in range(7):
+            self.dispatch(
+                self.improvement(survey=self.other_survey), audience="global", subject=f"公告{index}",
+                sent_at=base + timedelta(days=index))
+        titles = [a["title"] for a in get_customer_home_payload(self.customer)["announcements"]]
+        self.assertEqual(titles, ["公告6", "公告5", "公告4", "公告3", "公告2"])

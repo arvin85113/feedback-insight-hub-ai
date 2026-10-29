@@ -73,6 +73,21 @@ class ReceiptRecipientTests(TestCase):
         self.assertEqual(len(recipients), 1)
         self.assertEqual(recipients[0].submission_id, submission.id)
 
+    def test_manager_receipt_is_not_a_recipient(self):
+        manager = User.objects.create_user(
+            username="rmgr", password="x", role=User.Role.MANAGER, email="rmgr@example.com",
+            is_email_verified=True, notification_opt_in=True)
+        self.receipt(user=manager)
+        self.assertEqual(resolve_survey_respondents(self.survey), ())
+
+    def test_manager_submission_is_not_a_recipient(self):
+        manager = User.objects.create_user(
+            username="rmgr2", password="x", role=User.Role.MANAGER, email="rmgr2@example.com",
+            is_email_verified=True, notification_opt_in=True)
+        FeedbackSubmission.objects.create(
+            survey=self.survey, user=manager, respondent_email=manager.email, consent_follow_up=True)
+        self.assertEqual(resolve_survey_respondents(self.survey), ())
+
     @patch("feedback.notice_service.send_mail", return_value=1)
     def test_receipt_dispatch_is_sent(self, send_mail):
         self.receipt()
@@ -108,3 +123,4 @@ class ReceiptRecipientTests(TestCase):
         ImprovementUpdate.objects.filter(pk=self.improvement.pk).update(survey=None)
         with self.assertRaises(NoticeRecipientError):
             self.prepare(notice)
+

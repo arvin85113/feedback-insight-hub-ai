@@ -4,7 +4,7 @@ A reply is counted once by its uuid: receipts reuse FeedbackSubmission.idempoten
 and abandoned receipts are not counts.
 """
 
-from django.db.models import Count
+from django.db.models import Count, Max
 
 from feedback.local_service import format_payload_date, format_payload_datetime
 from feedback.models import FeedbackSubmission
@@ -68,6 +68,31 @@ def received_counts(survey_ids):
     ):
         counts[row["survey_id"]] += row["total"]
     return counts
+
+
+def latest_received_at(survey_ids):
+    """survey_id -> newest reply time, using the same reply definition as received_counts()."""
+
+    survey_ids = list(survey_ids)
+    latest = dict.fromkeys(survey_ids)
+    for row in (
+        FeedbackSubmission.objects.filter(survey_id__in=survey_ids)
+        .values("survey_id")
+        .annotate(latest=Max("submitted_at"))
+    ):
+        latest[row["survey_id"]] = row["latest"]
+    known = FeedbackSubmission.objects.filter(survey_id__in=survey_ids).values("idempotency_key")
+    for row in (
+        _live_receipts()
+        .filter(survey_id__in=survey_ids)
+        .exclude(submission_uuid__in=known)
+        .values("survey_id")
+        .annotate(latest=Max("submitted_at"))
+    ):
+        current = latest[row["survey_id"]]
+        if current is None or row["latest"] > current:
+            latest[row["survey_id"]] = row["latest"]
+    return latest
 
 
 def receipt_rows(user):

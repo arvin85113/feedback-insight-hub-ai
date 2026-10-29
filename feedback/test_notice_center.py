@@ -1,3 +1,4 @@
+from datetime import timedelta
 import uuid
 
 from django.test import TestCase
@@ -97,3 +98,38 @@ class NodeSurveyResponseCountTests(NoticeCenterBase):
         response = self.client.get(reverse("feedback:notice-center"))
         rows = {row.pk: row for row in response.context["notice_survey_rows"]}
         self.assertEqual(rows[survey.pk].response_count, 2)
+
+
+@cloud_only
+class NodeSurveyLatestReplyTests(NoticeCenterBase):
+    def _node_survey_with_receipts(self):
+        node, _ = NodeDevice.issue("office")
+        survey = assign_survey_to_node(Survey.objects.create(title="N", slug="n"), node).survey
+        customer = User.objects.create_user(username="nc2", password="x", role=User.Role.CUSTOMER)
+        times = [timezone.now() - timedelta(days=2), timezone.now() - timedelta(days=1)]
+        for sequence, submitted_at in enumerate(times, start=1):
+            SubmissionReceipt.objects.create(
+                submission_uuid=uuid.uuid4(), node=node, survey=survey, submitted_at=submitted_at,
+                definition_version=1, response_sequence=sequence, payload_hash="0" * 64,
+                status="received", user=customer, consent_follow_up=True)
+        SubmissionReceipt.objects.create(
+            submission_uuid=uuid.uuid4(), node=node, survey=survey, submitted_at=timezone.now(),
+            definition_version=1, response_sequence=3, payload_hash="0" * 64,
+            status="abandoned", user=customer, consent_follow_up=True)
+        return survey, times[-1]
+
+    def test_notice_center_latest_reply_uses_receipts(self):
+        survey, newest = self._node_survey_with_receipts()
+        self.client.force_login(self.manager)
+        response = self.client.get(reverse("feedback:notice-center"))
+        rows = {row.pk: row for row in response.context["notice_survey_rows"]}
+        self.assertEqual(rows[survey.pk].latest_submission_at, newest)
+        self.assertEqual(rows[survey.pk].response_count, 2)
+
+    def test_improvement_list_counts_and_latest_use_receipts(self):
+        survey, newest = self._node_survey_with_receipts()
+        self.client.force_login(self.manager)
+        response = self.client.get(reverse("feedback:improvement-list"))
+        rows = {row.pk: row for row in response.context["improvement_survey_rows"]}
+        self.assertEqual(rows[survey.pk].response_count, 2)
+        self.assertEqual(rows[survey.pk].latest_submission_at, newest)

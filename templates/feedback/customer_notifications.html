@@ -40,9 +40,9 @@
                             <div class="customer-row-title">
                                 <strong>{{ notice.title }}</strong>
                                 <span class="pill customer-timeline-read-pill {% if notice.is_read %}pill-active{% endif %}">{% if notice.is_read %}已讀{% else %}未讀{% endif %}</span>
-                                <span class="pill">{{ notice.improvement_status_label }}</span>
+                                {% if notice.improvement_status_label %}<span class="pill">{{ notice.improvement_status_label }}</span>{% endif %}
                             </div>
-                            <p class="customer-timeline-meta">{{ notice.sent_at|slice:":10" }}</p>
+                            <p class="customer-timeline-meta">{{ notice.sent_date }}</p>
                             {% if notice.summary %}<p>{{ notice.summary }}</p>{% endif %}
                         </div>
                     </div>

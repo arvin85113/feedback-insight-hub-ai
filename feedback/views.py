@@ -807,8 +807,6 @@ class ImprovementListView(DashboardBaseMixin, TemplateView):
             .select_related("category")
             .annotate(
                 improvement_count=Count("improvements", distinct=True),
-                response_count=Count("submissions", distinct=True),
-                latest_submission_at=Max("submissions__submitted_at"),
             )
         )
         if category_id:
@@ -821,7 +819,9 @@ class ImprovementListView(DashboardBaseMixin, TemplateView):
             improvement_surveys = improvement_surveys.order_by("-created_at")
 
         context["selected_survey"] = selected_survey
-        context["improvement_survey_rows"] = improvement_surveys
+        survey_rows = list(improvement_surveys)
+        _apply_received_stats(survey_rows)
+        context["improvement_survey_rows"] = survey_rows
         context["selected_improvements"] = (
             selected_survey.improvements.order_by("-created_at") if selected_survey else []
         )
@@ -832,6 +832,17 @@ class ImprovementListView(DashboardBaseMixin, TemplateView):
         context["current_sort"] = sort
         context["current_category"] = category_id
         return context
+
+
+def _apply_received_stats(survey_rows):
+    from cloudapi.receipts import latest_received_at, received_counts
+
+    ids = [row.pk for row in survey_rows]
+    counts = received_counts(ids)
+    latest = latest_received_at(ids)
+    for row in survey_rows:
+        row.response_count = counts.get(row.pk, 0)
+        row.latest_submission_at = latest.get(row.pk)
 
 
 class NoticeCenterView(DashboardBaseMixin, TemplateView):
@@ -858,8 +869,6 @@ class NoticeCenterView(DashboardBaseMixin, TemplateView):
                         distinct=True,
                     )
                 ),
-                response_count=Count("submissions", distinct=True),
-                latest_submission_at=Max("submissions__submitted_at"),
             )
         )
         if category_id:
@@ -885,11 +894,7 @@ class NoticeCenterView(DashboardBaseMixin, TemplateView):
             if selected_survey else ImprovementUpdate.objects.none()
         )
         survey_rows = list(notice_surveys)
-        from cloudapi.receipts import received_counts
-
-        counts = received_counts([row.pk for row in survey_rows])
-        for row in survey_rows:
-            row.response_count = counts.get(row.pk, row.response_count)
+        _apply_received_stats(survey_rows)
         from .notice_service import notice_center_groups
 
         context["selected_survey"] = selected_survey

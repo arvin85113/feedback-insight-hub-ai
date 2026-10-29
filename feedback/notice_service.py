@@ -98,7 +98,8 @@ def resolve_survey_respondents(survey):
         user = submission.user
         if user is not None:
             if not (
-                user.is_active
+                user.role == user.Role.CUSTOMER
+                and user.is_active
                 and user.is_email_verified
                 and user.notification_opt_in
             ):
@@ -121,7 +122,12 @@ def resolve_survey_respondents(survey):
 
     for receipt in notifiable_receipts(survey).iterator():
         user = receipt.user
-        if user.is_active and user.is_email_verified and user.notification_opt_in:
+        if (
+            user.role == user.Role.CUSTOMER
+            and user.is_active
+            and user.is_email_verified
+            and user.notification_opt_in
+        ):
             recipients.append(_recipient(user.email, user_id=user.id))
     return _deduplicate(recipients)
 
