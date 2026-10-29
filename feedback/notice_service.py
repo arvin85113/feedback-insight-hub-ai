@@ -117,6 +117,12 @@ def resolve_survey_respondents(survey):
                     submission_id=submission.id,
                 )
             )
+    from cloudapi.receipts import notifiable_receipts
+
+    for receipt in notifiable_receipts(survey).iterator():
+        user = receipt.user
+        if user.is_active and user.is_email_verified and user.notification_opt_in:
+            recipients.append(_recipient(user.email, user_id=user.id))
     return _deduplicate(recipients)
 
 
@@ -182,11 +188,17 @@ def prepare_notice_dispatches(notice_id, *, confirmation_token, content_version,
 
 
 def _current_dispatch_email(dispatch):
-    if (
-        dispatch.notice.audience_type == ImprovementNotice.AudienceType.SURVEY_RESPONDENTS
-        and (dispatch.submission is None or not dispatch.submission.consent_follow_up)
-    ):
-        return None
+    if dispatch.notice.audience_type == ImprovementNotice.AudienceType.SURVEY_RESPONDENTS:
+        if dispatch.submission is None:
+            from cloudapi.receipts import has_notifiable_receipt
+
+            survey = dispatch.notice.improvement.survey
+            if survey is None or dispatch.recipient_user is None:
+                return None
+            if not has_notifiable_receipt(survey, dispatch.recipient_user):
+                return None
+        elif not dispatch.submission.consent_follow_up:
+            return None
     user = dispatch.recipient_user
     if user is not None:
         if not (

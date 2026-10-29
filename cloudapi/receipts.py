@@ -16,6 +16,35 @@ def _live_receipts():
     return SubmissionReceipt.objects.exclude(status=SubmissionReceipt.Status.ABANDONED)
 
 
+NOTIFIABLE_STATUSES = ("received", "synced")
+
+
+def notifiable_receipts(survey):
+    """Receipts whose owner agreed to follow-up and who has no FeedbackSubmission for the same reply."""
+
+    known = FeedbackSubmission.objects.values("idempotency_key")
+    return (
+        SubmissionReceipt.objects.filter(
+            survey=survey,
+            consent_follow_up=True,
+            user__isnull=False,
+            status__in=NOTIFIABLE_STATUSES,
+        )
+        .exclude(submission_uuid__in=known)
+        .select_related("user")
+        .order_by("-submitted_at", "-id")
+    )
+
+
+def has_notifiable_receipt(survey, user):
+    return SubmissionReceipt.objects.filter(
+        survey=survey,
+        user=user,
+        consent_follow_up=True,
+        status__in=NOTIFIABLE_STATUSES,
+    ).exists()
+
+
 def has_submitted(survey, user):
     if FeedbackSubmission.objects.filter(survey=survey, user=user).exists():
         return True
