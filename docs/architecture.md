@@ -33,6 +33,10 @@
 
 ## Service Architecture
 
+![Feedback Insight Hub 系統架構：雲端 Render 與 Supabase、本機節點、Gemini 與同步路徑](images/architecture.png)
+
+下方文字圖為簡化版；圖中雲端收件匣（C2）為原型、正式站未開啟，未畫入。
+
 ```
 Browser
   |
