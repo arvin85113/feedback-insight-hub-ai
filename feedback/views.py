@@ -280,38 +280,6 @@ class CustomerHomeView(CustomerRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         payload = local_service.get_customer_home_payload(self.request.user)
-        submission_rows = payload.get("submission_rows", [])
-        for row in submission_rows:
-            submission = row.get("submission", {})
-            if row.get("latest_notice"):
-                row["status_key"] = "improved"
-                row["status_label"] = "已促成改善"
-                row["status_class"] = "pill-active"
-            elif submission.get("consent_follow_up"):
-                row["status_key"] = "tracking"
-                row["status_label"] = "願意接收追蹤"
-                row["status_class"] = "pill-active"
-            else:
-                row["status_key"] = "pending"
-                row["status_label"] = "待處理"
-                row["status_class"] = ""
-
-        status_counts = {
-            "all": len(submission_rows),
-            "pending": sum(1 for row in submission_rows if row["status_key"] == "pending"),
-            "tracking": sum(1 for row in submission_rows if row["status_key"] == "tracking"),
-            "improved": sum(1 for row in submission_rows if row["status_key"] == "improved"),
-        }
-        active_status = self.request.GET.get("status", "all")
-        if active_status not in status_counts:
-            active_status = "all"
-        payload["submission_rows"] = (
-            submission_rows
-            if active_status == "all"
-            else [row for row in submission_rows if row["status_key"] == active_status]
-        )
-        payload["submission_status_counts"] = status_counts
-        payload["active_submission_status"] = active_status
         context.update(payload)
         return context
 

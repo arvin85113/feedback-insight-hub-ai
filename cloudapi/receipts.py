@@ -102,3 +102,20 @@ def receipt_rows(user):
             "via_inbox": True,
         })
     return rows
+
+
+def receipt_states(user):
+    """survey_id -> receipt status for the user's inbox-only replies.
+
+    A survey reads "quarantined" only when every live receipt there is quarantined;
+    otherwise the status of the newest non-quarantined receipt wins.
+    """
+
+    known = FeedbackSubmission.objects.filter(user=user).values("idempotency_key")
+    states = {}
+    for receipt in (
+        _live_receipts().filter(user=user).exclude(submission_uuid__in=known).order_by("submitted_at", "id")
+    ):
+        if receipt.status != SubmissionReceipt.Status.QUARANTINED or receipt.survey_id not in states:
+            states[receipt.survey_id] = receipt.status
+    return states
