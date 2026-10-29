@@ -1,16 +1,17 @@
 """Pull the cloud inbox into the node (spec §5 收件, §6).
 
 Each reply is written in its own transaction together with its provenance and a
-PendingAck; ACKs go out only after commit, and a PendingAck is removed only when
-the cloud answers `acked` or `already_acked` for that item.  A crash anywhere in
-between leaves either nothing or a row plus a PendingAck that the next cycle resends.
+PendingAck; ACKs go out only after commit and only while commits are durable (the cloud
+drops its copy on ACK), and a PendingAck is removed only when the cloud answers `acked`
+or `already_acked` for that item.  A crash anywhere in between leaves either nothing or
+a row plus a PendingAck that the next cycle resends.
 """
 
 import logging
 from dataclasses import dataclass
 from datetime import datetime
 
-from django.db import transaction
+from django.db import connection, transaction
 
 from cloudapi.envelope import ANSWERS_FORMAT, HASH_VERSION, answer_text, answers_hash, envelope_payload_hash
 from feedback.analysis_jobs import suppress_analysis_scheduling
@@ -31,6 +32,22 @@ CONTENT_CONFLICT = "content_conflict"
 DEFINITION_UNAVAILABLE = "definition_unavailable"
 ANSWERS_FORMAT_REASON = "answers_format"
 ACK_DONE = ("acked", "already_acked")
+NOT_DURABLE = "not_durable"
+SQLITE_SYNCHRONOUS_FULL = 2  # NORMAL is 1; in WAL mode only FULL (2) and EXTRA (3) fsync the log on every commit
+
+
+def commits_are_durable():
+    """True when a commit on this connection has reached disk by the time it returns.
+
+    The cloud deletes its copy on ACK, so the ACK is only safe behind such a commit.  PostgreSQL waits for
+    the log flush by default and is not inspected.
+    """
+
+    if connection.vendor != "sqlite":
+        return True
+    with connection.cursor() as cursor:
+        cursor.execute("PRAGMA synchronous")
+        return cursor.fetchone()[0] >= SQLITE_SYNCHRONOUS_FULL
 
 
 @dataclass
@@ -149,6 +166,13 @@ def _write_reply(envelope, uid, incoming, respondent, decoded):
 def _send_acks(client, pending, result):
     """POST ACKs in batches; returns how many items the cloud confirmed."""
 
+    if not commits_are_durable():
+        # A commit that can roll back on power loss must not be acknowledged: the cloud would drop its only other copy.
+        withheld = pending.update(last_status=NOT_DURABLE)
+        if withheld:
+            result.problems += withheld
+            logger.error("inbox ack withheld for %s replies: database commits are not durable", withheld)
+        return 0
     confirmed = 0
     pending = list(pending)
     for start in range(0, len(pending), ACK_BATCH):

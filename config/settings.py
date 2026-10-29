@@ -229,7 +229,9 @@ if IS_NODE:
             "ENGINE": "django.db.backends.sqlite3",
             "NAME": NODE_PATHS.database_file,
             "OPTIONS": {
-                "init_command": "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;",
+                # FULL, not NORMAL: the cloud deletes its copy of a reply once the node ACKs it, and in WAL mode
+                # NORMAL lets the last commits roll back on power loss (cloudsync/inbox.py withholds ACKs otherwise).
+                "init_command": "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;",
                 "transaction_mode": "IMMEDIATE",
                 "timeout": 20,
             },
