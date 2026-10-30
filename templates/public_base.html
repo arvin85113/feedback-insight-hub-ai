@@ -4,23 +4,24 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{% block title %}FeedBack IQ{% endblock %}</title>
+    <title>{% block title %}回饋洞察 AI 平台{% endblock %}</title>
     <meta name="description" content="{% block meta_description %}登入制顧客回饋與改善追蹤平台。{% endblock %}">
     <link rel="stylesheet" href="{% static 'css/app.css' %}?v=20261004-gforms3">
     <link rel="stylesheet" href="{% static 'css/ui.css' %}?v=20260930-node1">
+    {% block extra_css %}{% endblock %}
 </head>
 <body class="{% block body_class %}public-body{% endblock %}">
     <nav class="public-nav-shell" aria-label="公開頁導覽">
         <div class="public-nav-inner">
             <a class="public-nav-brand" href="{% url 'feedback:home' %}">
                 <span class="public-nav-mark">FI</span>
-                Feedback IQ
+                回饋洞察 AI 平台
             </a>
 
             <div class="public-nav-links">
-                <a href="{% url 'feedback:home' %}#capabilities">產品功能</a>
-                <a href="{% url 'feedback:home' %}#workflow">流程</a>
-                <a href="{% url 'feedback:home' %}#roles">角色入口</a>
+                <a href="{% url 'feedback:home' %}?mode=store">給店家</a>
+                <a href="{% url 'feedback:home' %}?mode=customer">給顧客</a>
+                <a href="{% url 'feedback:case-study' %}">案例說明</a>
             </div>
 
             <div class="public-nav-actions">

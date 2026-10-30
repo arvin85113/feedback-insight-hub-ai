@@ -1,0 +1,127 @@
+{% extends "public_base.html" %}
+
+{% block title %}案例說明｜回饋洞察 AI 平台{% endblock %}
+{% block meta_description %}回饋洞察 AI 平台的架構、AI 數字驗證、統計方法與資料處理方式。{% endblock %}
+{% block body_class %}public-body landing{% endblock %}
+{% block extra_css %}{% include "feedback/_landing_head.html" %}{% endblock %}
+
+{% block content %}
+<main class="lp" data-mode="store">
+    <header class="lp-doc-hero">
+        <div class="lp-wrap">
+            <h1>這個系統怎麼運作，AI 的數字為什麼可信</h1>
+            <p>
+                給想了解技術細節的讀者：架構怎麼切分、AI 寫出的數字怎麼驗證、用了哪些統計方法、資料怎麼處理。
+                店家日常使用不需要知道這些。
+            </p>
+            <a class="lp-btn lp-btn-quiet" href="{% url 'feedback:home' %}">回到首頁</a>
+        </div>
+    </header>
+
+    <div class="lp-wrap lp-doc">
+        <nav class="lp-toc" aria-label="本頁目錄">
+            <a href="#problem">要解決的問題</a>
+            <a href="#architecture">架構</a>
+            <a href="#grounding">AI 數字驗證</a>
+            <a href="#methods">分析方法</a>
+            <a href="#data">資料與隱私</a>
+            <a href="#practices">工程實踐</a>
+        </nav>
+
+        <div class="lp-doc-body">
+            <section id="problem">
+                <h2>要解決的問題</h2>
+                <p>
+                    小型店家收得到問卷回饋，但統計要另外做、開放式回答沒人讀完、看完也不知道從哪裡改。
+                    這個系統把四件事串成一條線：
+                </p>
+                <ol>
+                    <li><strong>收集：</strong>登入制問卷，回覆與填答者綁定，改善完成後能回頭通知當初提出意見的顧客。</li>
+                    <li><strong>分析：</strong>依題目資料型態自動做統計檢定與中文文字分析，再由 LLM 寫成營運摘要與改善草稿。</li>
+                    <li><strong>追蹤：</strong>改善草稿經管理者確認才轉成改善項目，有狀態流程。</li>
+                    <li><strong>通知：</strong>改善完成後，管理者可選擇通知相關且同意接收通知的顧客。</li>
+                </ol>
+            </section>
+
+            <section id="architecture">
+                <h2>架構：網站收資料，本機算，版本化發布</h2>
+                <p>
+                    Django 是唯一的後端。網站（Render）負責問卷、填答與顯示結果，不在 request 裡做任何統計、NLP 或 LLM 運算；
+                    運算由店家電腦上的本機節點完成後發布。
+                </p>
+                <ul>
+                    <li><strong>本機節點：</strong>同一套 Django 程式以本機模式打包成 Windows EXE（系統匣＋本機主控台），定時收件並執行統計與文字分析。</li>
+                    <li><strong>版本化發布：</strong>發布前核對輸入版本、管線版本與工作租約，過期的 Worker 不能覆蓋較新的結果；離線時網站沿用最後一次成功結果。</li>
+                    <li><strong>分段發布：</strong>統計與文字結果先發布，AI 解讀之後再發布；AI 失敗不會覆蓋已發布的統計結果。</li>
+                </ul>
+            </section>
+
+            <section id="grounding">
+                <h2>AI 數字驗證：讓 LLM 寫的數字可以被信任</h2>
+                <p>
+                    營運摘要裡只要出現一個編造的數字，整份報告就失去可信度。Gemini 分三個階段（統計、文字、綜合）產生結構化輸出，
+                    後端再逐項驗證：文字中的每個數字都必須對應到所引用證據的數值、樣本數或標籤。
+                </p>
+                <div class="lp-doc-table">
+                    <table>
+                        <thead>
+                            <tr><th scope="col">做法</th><th scope="col">內容</th><th scope="col">優點</th><th scope="col">問題</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><th scope="row">禁止數字</th><td>文字出現任何數字就拒絕，精確數值只由網頁依引用的證據卡片顯示</td><td>結構上不可能編造</td><td>文字空泛；題目名稱帶數字也被誤擋</td></tr>
+                            <tr><th scope="row">照抄＋查核（現行）</th><td>數字必須對應所引用證據中的數字，對不上就擋下</td><td>文字具體可讀</td><td>依賴查核規則的正確性</td></tr>
+                            <tr><th scope="row">引用代號（實驗中）</th><td>模型寫代號，程式依證據填入實際數值並自動補上引用</td><td>來源明確，可自動補引用</td><td>引用清單有上限；模型不會完全只寫代號</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <ul>
+                    <li><strong>失敗局部化：</strong>單一不合格的發現或改善草稿只捨棄該項，原因記錄下來，不讓整份報告失敗。</li>
+                    <li><strong>可診斷：</strong>驗證失敗時只記錄被擋下的數字（不存文字），不必多花一次付費呼叫就能查出原因。</li>
+                    <li><strong>版本化：</strong>prompt、schema 與上限的內容雜湊構成階段版本，修改 prompt 不會誤用舊結果。</li>
+                    <li><strong>人做決定：</strong>付費的 AI 解讀需要店家在本機主控台確認才執行；AI 草稿要管理者確認才會成為改善項目。</li>
+                </ul>
+            </section>
+
+            <section id="methods">
+                <h2>分析方法：依資料型態選檢定</h2>
+                <p>統計值一律由程式計算，不交給語言模型推測。每項結果都報告有效樣本數、缺失與排除原因。</p>
+                <ul>
+                    <li><strong>平均數比較：</strong>名目分組 × 連續結果，2 組用 Welch t 檢定，3–5 組用單因子 ANOVA，附效果量。</li>
+                    <li><strong>類別關聯：</strong>單選名目題之間用卡方檢定；多選題只做多重回應頻率，不當分組。</li>
+                    <li><strong>排序與相關：</strong>名目 × 順序用非母數檢定；涉及順序資料用 Spearman，連續 × 連續用 Pearson。評分題視為順序資料。</li>
+                    <li><strong>中文文字分析：</strong>關鍵字、分類與情緒分析針對繁體中文；結果標示為分析結果，未知情緒不當成中立。</li>
+                </ul>
+            </section>
+
+            <section id="data">
+                <h2>資料與隱私：評論原文留在店家電腦</h2>
+                <p>
+                    主要展示資料是 TripAdvisor 飯店評論 201,295 筆，存放在本機 Parquet，經本機節點登錄後分析；評論正文不上傳。
+                </p>
+                <ul>
+                    <li>雲端資料庫只存問卷定義、收件收據與發布的彙總結果。</li>
+                    <li>交給 AI 的是匿名彙總證據，不含姓名、email 或使用者代號；證據與公開輸出會遮蔽個資。</li>
+                    <li>外部資料記錄來源版本、內容雜湊與清理口徑；同鍵不同內容列為衝突，不覆寫。</li>
+                    <li>不生成、翻譯或改寫真實評論；首頁的飲料店畫面是示範資料。</li>
+                </ul>
+            </section>
+
+            <section id="practices">
+                <h2>工程實踐</h2>
+                <p>
+                    這原本是產學課程的分組結業作品（作者擔任 PM 並完成大部分前端），結業後獨立成個人專案，
+                    加入 LLM 分析、版本化發布、真實資料與本機分析節點。
+                </p>
+                <ul>
+                    <li><strong>工作佇列：</strong>租約、心跳、有限重試與取消；PostgreSQL 併發測試驗證兩個 Worker 不會同時領到同一份工作。</li>
+                    <li><strong>兩種模式都測：</strong>CI 以雲端模式與本機節點模式各跑一次完整測試。</li>
+                    <li><strong>AI 評估：</strong>用固定測試案例與正式驗證函式比較不同寫法的合格率，原始輸出保存在本機，規則調整後可免費重新評分。</li>
+                    <li><strong>設計先於實作：</strong>較大的功能先寫規格、經過多輪審查，再寫實作計畫。</li>
+                </ul>
+            </section>
+        </div>
+    </div>
+</main>
+
+{% include "feedback/_public_footer.html" %}
+{% endblock %}

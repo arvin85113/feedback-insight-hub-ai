@@ -84,18 +84,29 @@ class PublicHomeTests(TestCase):
         get_home.assert_not_called()
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, "feedback/home.html")
-        self.assertContains(response, "回饋洞察 AI 平台｜Feedback Insight Hub AI")
-        self.assertContains(response, "把顧客回饋，")
-        self.assertContains(response, "Gemini 三階段營運分析")
-        self.assertContains(response, "Supabase 快取與改善追蹤")
-        self.assertContains(response, "管理者確認後才建立改善項目")
-        self.assertContains(response, "EVIDENCE-GROUNDED AI OPERATIONS")
-        self.assertContains(
-            response,
-            "整合問卷管理、統計分析、文字洞察、Gemini 三階段營運分析與改善追蹤的 AI 回饋管理平台。",
-        )
+        self.assertContains(response, "回饋洞察 AI 平台｜Feedback Insight Hub")
+        # Store mode is the default; each mode carries its own headline and entry point.
+        self.assertEqual(response.context["mode"], "store")
+        self.assertContains(response, "看懂顧客在說什麼，")
+        self.assertContains(response, "你說的話，")
+        self.assertContains(response, 'href="?mode=customer"')
+        self.assertContains(response, "AI 寫的每個數字，都有依據")
+        self.assertContains(response, "改善完成，通知提出意見的顧客")
+        self.assertContains(response, f'href="{reverse("feedback:case-study")}"')
         for legacy_copy in ("v0.4", "開發中", "三個核心模組", "四個階段，同一個資料模型"):
             self.assertNotContains(response, legacy_copy)
+        # Store-facing copy stays free of developer jargon; it lives on the case study page.
+        for jargon in ("Supabase", "input hash", "evidence refs", "snapshot", "Spearman", "gemini-", "Feedback IQ"):
+            self.assertNotContains(response, jargon)
+
+    def test_case_study_page_holds_the_technical_details(self):
+        response = self.client.get(reverse("feedback:case-study"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "feedback/case_study.html")
+        self.assertContains(response, "版本化發布")
+        self.assertContains(response, "Spearman")
+        self.assertContains(response, "201,295")
 
     def test_anonymous_homepage_uses_existing_login_signup_and_role_urls(self):
         response = self.client.get(self.home_url)
@@ -126,17 +137,23 @@ class PublicHomeTests(TestCase):
             self.assertNotIn(forbidden, rendered)
         self.assertIsNone(re.search(r"AIza[0-9A-Za-z_-]{20,}", rendered))
 
+    def test_homepage_mode_comes_from_the_query_string(self):
+        self.assertEqual(self.client.get(self.home_url, {"mode": "customer"}).context["mode"], "customer")
+        self.assertEqual(self.client.get(self.home_url, {"mode": "bogus"}).context["mode"], "store")
+
     def test_homepage_css_is_scoped_away_from_manager_workspace(self):
         project_root = Path(__file__).resolve().parents[1]
-        css = (project_root / "static" / "css" / "app.css").read_text(encoding="utf-8")
-        homepage_css = css.split("/* Public homepage: Feedback Insight Hub AI edition */", 1)[1]
+        landing_css = (project_root / "static" / "css" / "landing.css").read_text(encoding="utf-8")
+        app_css = (project_root / "static" / "css" / "app.css").read_text(encoding="utf-8")
 
-        self.assertIn(".public-home .public-hero-grid", homepage_css)
-        self.assertIn("@media (max-width: 1040px)", homepage_css)
-        self.assertIn("@media (max-width: 720px)", homepage_css)
-        self.assertIn("@media (prefers-reduced-motion: reduce)", homepage_css)
-        self.assertNotIn(".manager-shell", homepage_css)
-        self.assertNotIn(".manager-main", homepage_css)
+        self.assertIn("@media (max-width: 720px)", landing_css)
+        self.assertIn("@media (prefers-reduced-motion: reduce)", landing_css)
+        self.assertNotIn(".manager-shell", landing_css)
+        self.assertNotIn(".manager-main", landing_css)
+        # The page-specific stylesheet is only linked from the public landing pages.
+        self.assertNotIn(".lp-", app_css)
+        base = (project_root / "templates" / "base.html").read_text(encoding="utf-8")
+        self.assertNotIn("landing.css", base)
 
 
 class DashboardSurveySummaryTests(TestCase):

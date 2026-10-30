@@ -25,13 +25,24 @@ colors:
   brick-deep: "#8a2f22"
   brick: "#b44732"
   brick-wash: "#fbefec"
+  public-ink: "#0b1f33"
+  public-ink-soft: "#34485c"
+  public-ink-muted: "#56687a"
+  public-line: "#e2e8ee"
+  public-band: "#f5f7fa"
+  store-green: "#0d7a52"
+  store-green-deep: "#0a6343"
+  store-green-soft: "#e5f4ec"
+  customer-amber: "#b4530a"
+  customer-amber-deep: "#93430a"
+  customer-amber-soft: "#fdf0e1"
 typography:
   display:
     fontFamily: "Noto Sans TC, Segoe UI, Microsoft JhengHei, sans-serif"
-    fontSize: "clamp(50px, 5.3vw, 76px)"
-    fontWeight: 700
-    lineHeight: 1.08
-    letterSpacing: "-0.045em"
+    fontSize: "clamp(38px, 4.4vw, 60px)"
+    fontWeight: 900
+    lineHeight: 1.14
+    letterSpacing: "-0.02em"
   metric:
     fontFamily: "Noto Sans TC, Segoe UI, Microsoft JhengHei, sans-serif"
     fontSize: "2rem"
@@ -143,6 +154,8 @@ components:
 - 小圓角、沉穩過場、無位移動畫
 - 全站繁體中文排版，Noto Sans TC 為主字體
 
+**公開頁是另一套視覺。** 首頁（`/`）與案例說明頁（`/case-study/`）採一般 SaaS 首頁做法（以 Stripe 的完成度為標竿）：白底與冷灰帶狀區、深海軍藍墨色、店家模式用綠、顧客模式用琥珀。規則見下方〈Public Pages〉，樣式只在 `static/css/landing.css`（`body.landing` 範圍內）。管理端仍是上述紙色／森林綠系統。
+
 ## Colors
 
 溫暖紙色中性底，森林綠是唯一品牌聲音，赭黃與磚紅只用來表達警示與錯誤。
@@ -179,7 +192,7 @@ components:
 **Character:** 單一中文無襯線字族撐起所有層級，靠字重與大小建立層次；等寬字只用在小標與代碼，給介面一點「筆記本的索引」感。
 
 ### Hierarchy
-- **Display** (700, clamp(50px, 5.3vw, 76px), 1.08)：只用在公開首頁主標，最多 14 字寬。
+- **Display** (900, clamp(38px, 4.4vw, 60px), 1.14)：只用在公開首頁主標，兩到三行，用 `<br>` 控制斷行。
 - **Metric** (700, 2rem, 1.15, tabular-nums)：關鍵數字卡的主數字。這是「抓住關鍵」的主角。
 - **Headline** (700, 1.25rem, 1.3)：管理端頂欄的頁面標題。
 - **Title** (700, 1.15rem)：面板與區段標題。
@@ -194,7 +207,7 @@ components:
 ## Layout
 
 - **管理端**：左側 248px 固定側邊欄＋右側工作區；頂欄吸附並帶半透明紙色模糊底；內容區最寬 1320px，內距 28px 32px 56px。
-- **公開頁**：內容容器 `min(1180px, 100% - 32px)` 置中。
+- **公開頁**：內容容器 `.lp-wrap` 為 `min(1180px, 100% - 48px)` 置中；斷點 1040px 與 720px。
 - **間距節奏**：4／8／16／24／32px；卡片間距 16px，面板內距 24px。
 - **指標卡格線**：`repeat(auto-fit, minmax(200px, 1fr))`，寬螢幕一列排完，自然換行。
 - **斷點**：1100px（內距縮為 22px 20px）、860px（側邊欄改為頂部橫向捲動導覽，頁尾資訊隱藏）。
@@ -262,7 +275,32 @@ components:
 
 ### Don't:
 - **Don't** 在店家或顧客看得到的文字使用開發者用語（Supabase、snapshot、唯讀展示、版本號細節）。
-- **Don't** 引入第二個品牌色；文字雲現行的舊橘／藍配色、公開頁底部的橘色放射漸層都屬於待清除的舊樣式。
+- **Don't** 在管理端引入第二個品牌色；文字雲現行的舊橘／藍配色屬於待清除的舊樣式。公開頁的店家綠／顧客琥珀是〈Public Pages〉的模式色，不得帶進管理端。
 - **Don't** 新增舊別名變數（`--bg`、`--brand`、`--surface` 等）的用法；它們只為相容舊規則而保留。
 - **Don't** 讓公開／顧客頁的樣式影響管理頁（管理頁規則一律收在 `.manager-shell` 之下）。
 - **Don't** 在靜止狀態使用 Raised 或 Floating 陰影。
+
+## Public Pages
+
+首頁與案例說明頁共用 `templates/feedback/_landing_head.html`（字型與 `landing.css`）和 `_public_footer.html`。`app.css` 不放任何 `.lp-` 規則，`base.html`（管理端）不載入 `landing.css`。
+
+### 雙模式首頁
+- **一頁兩種讀者**：首屏有「給店家／給顧客」切換鈕，整頁內容跟著換；每個模式只講自己的重點，不寫「適用所有人」的通用文案。
+- **切換機制**：`<main class="lp" data-mode="store|customer">`，區塊用 `data-mode-panel` 標記。沒有 JS 時切換鈕就是 `?mode=` 連結，由 `HomeView` 讀參數（預設 store）；有 JS 時 `static/js/landing.js` 原地切換、用 `history.replaceState` 改網址並記住選擇。
+- **模式色**：`--lp-accent` 在店家模式是 store-green，在顧客模式是 customer-amber；按鈕、重點數字、首屏斜切色塊都跟著換。兩色都只當「目前是誰在看」的訊號，不另作裝飾。
+
+### 色彩與層次
+- 白底（paper）與冷灰帶狀區（public-band）交替切出段落；深色收尾帶用 public-ink。文字三階 public-ink／soft／muted，邊框 public-line。
+- 首屏右側是一個大型產品畫面，壓在依模式著色的斜切色塊上（`clip-path` 多邊形），不再用整片淡綠底。
+
+### 產品畫面（Signature）
+- 每個區段最多一個產品畫面，內容要真的看得懂（分店比較表、AI 發現與被擋下的一項、手機上的處理進度），不放空白假卡片。
+- 白底、12px 圓角、1px public-line 邊框、柔和的偏移陰影（`--lp-shadow`；首屏用 `--lp-shadow-lg`）。
+- 每個產品畫面都標「示範資料」，頁尾再註明一次。
+
+### 文案
+- 首頁不出現開發者用語；架構、AI 數字驗證、統計方法與資料處理一律放案例說明頁。
+- 案例說明頁是閱讀頁：左側吸附目錄、右側正文與比較表。
+
+### 動態
+- 只有切換模式時，新顯示的內容做一次 520ms 的淡入上移（`.lp.is-switched`）；首次載入不播。按鈕與連結過場 140ms 只變色。`prefers-reduced-motion` 下全部關閉。
