@@ -256,8 +256,10 @@ class HomeView(TemplateView):
         else:
             workspace_url = reverse("accounts:login")
 
+        mode = self.request.GET.get("mode")
         context.update(
             {
+                "mode": mode if mode in ("store", "customer") else "store",
                 "workspace_url": workspace_url,
                 "manager_entry_url": (
                     dashboard_url
@@ -272,6 +274,10 @@ class HomeView(TemplateView):
             }
         )
         return context
+
+
+class CaseStudyView(TemplateView):
+    template_name = "feedback/case_study.html"
 
 
 class CustomerHomeView(CustomerRequiredMixin, TemplateView):

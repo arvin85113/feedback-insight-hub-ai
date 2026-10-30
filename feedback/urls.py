@@ -6,6 +6,7 @@ from .views import (
     AIReportStatusView,
     AIStagePipelineStatusView,
     AnalysisOperationsView,
+    CaseStudyView,
     CustomerHomeView,
     CustomerNotificationsView,
     DashboardView,
@@ -44,6 +45,7 @@ app_name = "feedback"
 
 urlpatterns = [
     path("", HomeView.as_view(), name="home"),
+    path("case-study/", CaseStudyView.as_view(), name="case-study"),
     path("app/", CustomerHomeView.as_view(), name="customer-home"),
     path("app/notifications/", CustomerNotificationsView.as_view(), name="customer-notifications"),
     path("app/notifications/<int:pk>/read/", MarkNoticeReadView.as_view(), name="notice-mark-read"),

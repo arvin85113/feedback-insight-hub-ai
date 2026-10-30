@@ -1,331 +1,287 @@
 {% extends "public_base.html" %}
+{% load static %}
 
-{% block title %}回饋洞察 AI 平台｜Feedback Insight Hub AI{% endblock %}
-{% block meta_description %}整合問卷管理、統計分析、文字洞察、Gemini 三階段營運分析與改善追蹤的 AI 回饋管理平台。{% endblock %}
-{% block body_class %}public-body public-home{% endblock %}
+{% block title %}回饋洞察 AI 平台｜Feedback Insight Hub{% endblock %}
+{% block meta_description %}收集顧客回饋，自動整理成統計數字和評論重點，由 AI 提出附依據的改善建議；改善完成後通知提出意見的顧客。{% endblock %}
+{% block body_class %}public-body landing{% endblock %}
+{% block extra_css %}{% include "feedback/_landing_head.html" %}{% endblock %}
 
 {% block content %}
-<main>
-    <header class="public-hero">
-        <div class="public-hero-grid">
-            <div class="public-hero-copy">
-                <div class="public-hero-tag">
-                    <span class="public-version">AI Edition · 2026</span>
-                    <span>EVIDENCE-GROUNDED AI OPERATIONS</span>
+<main class="lp" data-mode="{{ mode }}" id="top">
+    <section class="lp-hero" aria-labelledby="lp-hero-title-{{ mode }}">
+        <div class="lp-field" aria-hidden="true"></div>
+        <div class="lp-wrap lp-hero-grid">
+            <div class="lp-hero-copy">
+                <nav class="lp-switch" aria-label="選擇你的身分">
+                    <a href="?mode=store" data-set-mode="store" {% if mode == "store" %}aria-current="page"{% endif %}>我是店家</a>
+                    <a href="?mode=customer" data-set-mode="customer" {% if mode == "customer" %}aria-current="page"{% endif %}>我是顧客</a>
+                </nav>
+
+                <div data-mode-panel="store">
+                    <h1 id="lp-hero-title-store">看懂顧客在說什麼，<br>知道下一步該改什麼。</h1>
+                    <p class="lp-lead">
+                        問卷回覆會自動整理成統計數字和評論重點，AI 再依這些結果提出改善建議，每一點都附上依據。
+                        要改哪些由你決定；改善完成後，系統會幫你通知當初提出意見的顧客。
+                    </p>
+                    <div class="lp-actions">
+                        <a class="lp-btn lp-btn-primary" href="{{ manager_entry_url }}">登入管理後台</a>
+                        <a class="lp-btn lp-btn-quiet" href="#store-detail">看分析範例</a>
+                    </div>
                 </div>
-                <p class="public-product-name">回饋洞察 AI 平台</p>
-                <h1>
-                    <span>把顧客回饋，</span>
-                    <span>轉化為可追溯的</span>
-                    <span>營運決策。</span>
-                </h1>
-                <p class="public-hero-lead">
-                    整合問卷管理、統計分析、文字洞察與 Gemini 三階段分析，從匿名聚合證據產生營運發現與改善追蹤草稿。
-                    資料未改變時直接讀取 Supabase 最新成功報告，重要決策仍由管理者確認。
-                </p>
-                <div class="public-hero-actions">
-                    <a class="public-btn" href="#workflow">查看產品流程</a>
-                    <a class="public-btn-link" href="{{ workspace_url }}">登入平台</a>
+
+                <div data-mode-panel="customer">
+                    <h1 id="lp-hero-title-customer">你說的話，<br>店家看得到，也會回覆。</h1>
+                    <p class="lp-lead">
+                        花幾分鐘填完問卷，你的意見會整理好交給店家。
+                        店家根據意見做了改善，你會在「我的回饋」收到通知。
+                    </p>
+                    <div class="lp-actions">
+                        <a class="lp-btn lp-btn-primary" href="{{ customer_entry_url }}">登入填問卷</a>
+                        <a class="lp-btn lp-btn-quiet" href="#customer-detail">看通知範例</a>
+                    </div>
                 </div>
             </div>
 
-            <article class="public-ai-preview" aria-label="AI 營運分析示範預覽">
-                <div class="public-preview-head">
-                    <div>
-                        <span class="public-preview-overline">DEMO ANALYSIS</span>
-                        <h2>AI 營運分析</h2>
+            <div class="lp-hero-visual">
+                <figure class="lp-panel lp-shot" data-mode-panel="store" aria-label="分析結果示範畫面（示範資料）">
+                    <header class="lp-shot-head">
+                        <div>
+                            <strong>飲料店體驗回饋</strong>
+                            <span>100 份回覆・分析已更新</span>
+                        </div>
+                        <span class="lp-tag">示範資料</span>
+                    </header>
+                    <div class="lp-shot-body">
+                        <p class="lp-shot-label">優先處理</p>
+                        <p class="lp-shot-title">尖峰時段等候太久</p>
+                        <ol class="lp-bars" aria-label="評論中最常被提到的事">
+                            <li><span>等候</span><span class="lp-bar"><i style="--w: 100%"></i></span><b>34 則</b></li>
+                            <li><span>服務</span><span class="lp-bar"><i style="--w: 76%"></i></span><b>26 則</b></li>
+                            <li><span>價格</span><span class="lp-bar"><i style="--w: 53%"></i></span><b>18 則</b></li>
+                        </ol>
+                        <div class="lp-suggest">
+                            <p class="lp-shot-label">AI 改善建議</p>
+                            <p>尖峰時段加開一個取餐窗口。覺得等候越久的顧客，整體滿意度越低。</p>
+                            <p class="lp-source">依據：等候感受與滿意度的相關分析・評論 34 則</p>
+                        </div>
                     </div>
-                    <span class="public-preview-current">目前為最新資料</span>
-                </div>
+                    <footer class="lp-shot-foot">
+                        <span>確認後才會建立</span>
+                        <span class="lp-btn lp-btn-primary lp-btn-sm" aria-hidden="true">建立改善項目</span>
+                    </footer>
+                </figure>
 
-                <div class="public-preview-stages" aria-label="Gemini 三階段狀態">
-                    <div><span>統計分析</span><strong>已完成</strong></div>
-                    <div><span>文字洞察</span><strong>已完成</strong></div>
-                    <div><span>綜合營運決策</span><strong>已完成</strong></div>
-                </div>
-
-                <dl class="public-preview-meta">
-                    <div><dt>問卷</dt><dd>飲料店體驗回饋</dd></div>
-                    <div><dt>涵蓋回覆</dt><dd>103 份 <small>示範資料</small></dd></div>
-                    <div><dt>分析覆蓋率</dt><dd>99% <small>示範資料</small></dd></div>
-                    <div><dt>模型</dt><dd>gemini-3.6-flash</dd></div>
-                </dl>
-
-                <section class="public-preview-finding" aria-labelledby="preview-finding-title">
-                    <span class="public-preview-label">重點發現</span>
-                    <h3 id="preview-finding-title">等候時間與服務品質為優先改善議題</h3>
-                    <div class="public-preview-evidence">
-                        <span>Spearman ρ = -0.624，p &lt; 0.001</span>
-                        <span>「服務」共提及 26 次</span>
+                <figure class="lp-phone" data-mode-panel="customer" aria-label="顧客頁面示範畫面（示範資料）">
+                    <div class="lp-phone-screen">
+                        <header class="lp-phone-head">
+                            <strong>我的回饋</strong>
+                            <span class="lp-tag">示範資料</span>
+                        </header>
+                        <article class="lp-phone-card">
+                            <strong>飲料店體驗回饋</strong>
+                            <ol class="lp-timeline">
+                                <li><b>已填答</b><span>10 月 2 日</span></li>
+                                <li><b>店家開始改善：尖峰時段的等候</b><span>10 月 9 日・進行中</span></li>
+                                <li class="is-new">
+                                    <b>改善完成：加開一個取餐窗口</b>
+                                    <span>10 月 20 日・新通知</span>
+                                    <p>謝謝你提出等候太久的意見，我們調整了尖峰時段的人力和取餐動線。</p>
+                                </li>
+                            </ol>
+                        </article>
                     </div>
-                </section>
-
-                <div class="public-preview-foot">
-                    <span>來源：Supabase 快取</span>
-                    <strong>管理者確認後帶入改善追蹤</strong>
-                </div>
-            </article>
-        </div>
-    </header>
-
-    <section class="public-section" id="capabilities">
-        <div class="public-section-head">
-            <div class="public-label-col">
-                <span class="public-kicker">產品能力</span>
-                <h2>四個能力，串成一條 AI 營運工作流。</h2>
+                </figure>
             </div>
-            <p>
-                AI 不取代統計計算，也不直接替管理者做決策。平台先建立可驗證的統計與文字結果，
-                再由 Gemini 整合分析，最後交由管理者確認改善行動。
-            </p>
-        </div>
-
-        <div class="public-capability-list">
-            <article class="public-cap-row">
-                <div class="public-cap-num">01</div>
-                <div class="public-cap-text">
-                    <h3>問卷與回饋管理</h3>
-                    <p>
-                        建立單選、多選、量表、文字與數值題型，透過分享連結或 QR Code 收集回覆。
-                        每份問卷獨立管理與分析，不混合不同問卷資料。
-                    </p>
-                    <ul>
-                        <li>多種題型與資料型態</li>
-                        <li>問卷啟用及分享流程</li>
-                        <li>每份問卷獨立分析</li>
-                    </ul>
-                </div>
-                <div class="public-cap-vis public-survey-preview" aria-label="問卷題型示範">
-                    <div class="public-mock-toolbar">
-                        <div><span>問卷建置</span><strong>飲料店體驗回饋</strong></div>
-                        <span class="public-mock-state">已啟用</span>
-                    </div>
-                    <div class="public-question-preview">
-                        <span class="public-question-number">01</span>
-                        <div><small>量表題</small><strong>整體服務體驗的滿意程度？</strong></div>
-                    </div>
-                    <div class="public-mock-scale" aria-hidden="true">
-                        <span>1</span><span>2</span><span>3</span><span class="public-selected">4</span><span>5</span>
-                    </div>
-                    <div class="public-question-preview">
-                        <span class="public-question-number">02</span>
-                        <div><small>單選題</small><strong>希望優先改善哪一項？</strong></div>
-                    </div>
-                    <div class="public-mock-options" aria-hidden="true">
-                        <span class="public-selected">等候時間</span><span>服務說明</span><span>門市環境</span>
-                    </div>
-                </div>
-            </article>
-
-            <article class="public-cap-row">
-                <div class="public-cap-num">02</div>
-                <div class="public-cap-text">
-                    <h3>統計分析與文字洞察</h3>
-                    <p>
-                        後端依資料型態產生描述統計、群組差異、相關分析與文字洞察。
-                        統計值由程式計算，不交由語言模型自行推測。
-                    </p>
-                    <ul>
-                        <li>描述統計與分布</li>
-                        <li>ANOVA、Kruskal-Wallis、相關分析</li>
-                        <li>關鍵字、情緒分類與分析覆蓋率</li>
-                    </ul>
-                </div>
-                <div class="public-cap-vis public-analysis-preview" aria-label="統計與文字洞察示範">
-                    <div class="public-metric-strip">
-                        <div><span>平均滿意度</span><strong>6.04</strong><small>樣本 103</small></div>
-                        <div><span>Spearman ρ</span><strong>-0.624</strong><small>p &lt; 0.001</small></div>
-                        <div><span>文字覆蓋率</span><strong>99%</strong><small>示範資料</small></div>
-                    </div>
-                    <div class="public-analysis-line">
-                        <div><strong>門市 × 整體滿意度</strong><span>單因子變異數分析，p &lt; 0.001</span></div>
-                        <span class="public-analysis-badge">ANOVA</span>
-                    </div>
-                    <div class="public-sentiment-row">
-                        <div><strong>價格策略</strong><span>負面回饋 12 份／共分析 29 份</span></div>
-                        <div class="public-sentiment-bar" aria-hidden="true"><span></span></div>
-                    </div>
-                    <div class="public-keywords" aria-label="關鍵字示範">
-                        <span>等候 · 18 次</span><span>服務 · 26 次</span><span>價格 · 34 次</span>
-                    </div>
-                </div>
-            </article>
-
-            <article class="public-cap-row">
-                <div class="public-cap-num">03</div>
-                <div class="public-cap-text">
-                    <h3>Gemini 三階段營運分析</h3>
-                    <p>
-                        statistics、text、synthesis 三個階段依序分析。綜合階段只讀取已驗證的上游輸出，
-                        產生營運摘要、跨來源發現與改善追蹤草稿。
-                    </p>
-                    <ul>
-                        <li>Structured Output 與後端二次驗證</li>
-                        <li>Evidence refs 與數值來源追溯</li>
-                        <li>階段狀態、版本與失敗 fallback</li>
-                        <li>不傳送姓名、email 或 user ID</li>
-                    </ul>
-                </div>
-                <div class="public-cap-vis public-stage-preview" aria-label="Gemini 三階段流程示範">
-                    <div class="public-stage-list">
-                        <div><span>01</span><strong>statistics</strong><small>completed</small></div>
-                        <div><span>02</span><strong>text</strong><small>completed</small></div>
-                        <div><span>03</span><strong>synthesis</strong><small>completed</small></div>
-                    </div>
-                    <div class="public-grounded-finding">
-                        <span>Evidence-grounded finding</span>
-                        <strong>等候時間感受與整體滿意度呈現負相關</strong>
-                        <small>依據：Spearman ρ = -0.624，p &lt; 0.001</small>
-                    </div>
-                    <div class="public-grounded-finding">
-                        <span>Evidence-grounded finding</span>
-                        <strong>價格與服務品質是文字回饋的主要議題</strong>
-                        <small>依據：已驗證的關鍵字與情緒聚合結果</small>
-                    </div>
-                </div>
-            </article>
-
-            <article class="public-cap-row">
-                <div class="public-cap-num">04</div>
-                <div class="public-cap-text">
-                    <h3>Supabase 快取與改善追蹤</h3>
-                    <p>
-                        系統透過 input hash 判斷資料是否更新。沒有新資料時直接讀取 Supabase 最新成功報告；
-                        只有最新且驗證成功的 AI 草稿才能由管理者帶入改善追蹤。
-                    </p>
-                    <ul>
-                        <li>Supabase/PostgreSQL 成功報告快取</li>
-                        <li>Freshness 與跨 snapshot reuse</li>
-                        <li>AI provenance 與重複匯入防護</li>
-                        <li>管理者確認後才建立改善項目</li>
-                        <li>未選擇通知時不建立 dispatch、不寄送 email</li>
-                    </ul>
-                </div>
-                <div class="public-cap-vis public-draft-preview" aria-label="AI 改善追蹤草稿示範">
-                    <div class="public-draft-head">
-                        <div><span>AI 改善草稿</span><strong>優化尖峰時段等候流程</strong></div>
-                        <span class="public-priority">高優先</span>
-                    </div>
-                    <p>重新檢視點餐、製作與取餐節點，建立尖峰時段可驗收的流程改善方案。</p>
-                    <div class="public-draft-evidence">
-                        <span>分析依據</span>
-                        <strong>等候時間感受 × 整體滿意度</strong>
-                        <small>Spearman ρ = -0.624，p &lt; 0.001</small>
-                    </div>
-                    <span class="public-mock-button" aria-hidden="true">帶入改善追蹤</span>
-                </div>
-            </article>
         </div>
     </section>
 
-    <section class="public-workflow-band" id="workflow">
-        <div class="public-workflow-inner">
-            <div class="public-section-head">
-                <div class="public-label-col">
-                    <span class="public-kicker">產品流程</span>
-                    <h2>從回饋收集，到可執行改善。</h2>
+    <div data-mode-panel="store">
+        <section class="lp-section" id="store-detail" aria-labelledby="store-a">
+            <div class="lp-wrap lp-feature">
+                <div class="lp-feature-copy">
+                    <h2 id="store-a">一打開就知道該先處理什麼</h2>
+                    <p>
+                        平均分數、各門市的差異、哪些事和滿意度最有關，系統都會先算好；
+                        評論中最常出現的抱怨也會整理成清單，不必一則一則看。
+                    </p>
+                    <ul class="lp-checks">
+                        <li>統計數字由程式計算，不是 AI 推測</li>
+                        <li>每項結果都註明樣本數</li>
+                        <li>評論的正負面判斷會標示為分析結果</li>
+                    </ul>
                 </div>
-                <p>
-                    每一步都有明確資料邊界。統計由後端計算、Gemini 解讀匿名聚合證據，
-                    最後由管理者檢視限制並確認改善行動。
-                </p>
+                <figure class="lp-panel lp-figure" aria-label="各門市比較示範（示範資料）">
+                    <header class="lp-figure-head"><strong>各門市滿意度</strong><span class="lp-tag">示範資料</span></header>
+                    <table class="lp-table">
+                        <thead><tr><th scope="col">門市</th><th scope="col">回覆</th><th scope="col">平均（1–5）</th><th scope="col">最常被提到</th></tr></thead>
+                        <tbody>
+                            <tr><th scope="row">站前店</th><td>38</td><td>3.2</td><td>等候</td></tr>
+                            <tr><th scope="row">學府店</th><td>35</td><td>3.7</td><td>服務</td></tr>
+                            <tr><th scope="row">河濱店</th><td>27</td><td>4.0</td><td>價格</td></tr>
+                        </tbody>
+                    </table>
+                    <p class="lp-figure-note">三家門市的滿意度差異達統計顯著，不是偶然。</p>
+                </figure>
             </div>
+        </section>
 
-            <ol class="public-workflow-list">
-                <li class="public-wf-row">
-                    <span class="public-wf-num">STEP 01</span>
-                    <h3 class="public-wf-title">建立問卷</h3>
-                    <p class="public-wf-desc">管理者設定題型、分類與資料型態，發布後產生分享入口。</p>
-                    <div class="public-wf-tags"><span>Manager</span></div>
-                </li>
-                <li class="public-wf-row">
-                    <span class="public-wf-num">STEP 02</span>
-                    <h3 class="public-wf-title">收集回覆</h3>
-                    <p class="public-wf-desc">顧客登入填答，系統保存問卷與回覆關聯。</p>
-                    <div class="public-wf-tags"><span>Customer</span></div>
-                </li>
-                <li class="public-wf-row">
-                    <span class="public-wf-num">STEP 03</span>
-                    <h3 class="public-wf-title">建立分析結果</h3>
-                    <p class="public-wf-desc">後端執行統計與文字分析，產生匿名聚合證據。</p>
-                    <div class="public-wf-tags"><span>Statistics</span><span>Evidence</span></div>
-                </li>
-                <li class="public-wf-row">
-                    <span class="public-wf-num">STEP 04</span>
-                    <h3 class="public-wf-title">Gemini 三階段分析</h3>
-                    <p class="public-wf-desc">依序執行統計分析、文字洞察與綜合營運決策；資料未改變時重用快取。</p>
-                    <div class="public-wf-tags"><span>Gemini</span><span>Supabase</span></div>
-                </li>
-                <li class="public-wf-row">
-                    <span class="public-wf-num">STEP 05</span>
-                    <h3 class="public-wf-title">確認改善行動</h3>
-                    <p class="public-wf-desc">管理者檢視證據與資料限制，將最新 AI 草稿帶入改善追蹤並自行編輯確認。</p>
-                    <div class="public-wf-tags"><span>Human Review</span></div>
-                </li>
-            </ol>
-        </div>
-    </section>
-
-    <section class="public-section public-architecture" id="architecture">
-        <div class="public-section-head">
-            <div class="public-label-col">
-                <span class="public-kicker">架構亮點</span>
-                <h2>AI 不只是摘要，而是可驗證的分析流程。</h2>
+        <section class="lp-section lp-band" aria-labelledby="store-b">
+            <div class="lp-wrap lp-feature lp-feature-flip">
+                <div class="lp-feature-copy">
+                    <h2 id="store-b">AI 寫的每個數字，都有依據</h2>
+                    <p>
+                        AI 根據算好的統計結果，寫出重點發現和改善建議。
+                        系統會逐一核對文中的數字，對不上分析結果的內容會直接剔除。
+                    </p>
+                    <ul class="lp-checks">
+                        <li>每項發現都附上依據</li>
+                        <li>顧客姓名和 email 不會傳給 AI</li>
+                        <li>經你同意才會執行 AI 分析</li>
+                    </ul>
+                </div>
+                <figure class="lp-panel lp-figure" aria-label="AI 建議核對示範（示範資料）">
+                    <header class="lp-figure-head"><strong>AI 重點發現</strong><span class="lp-tag">示範資料</span></header>
+                    <ul class="lp-findings">
+                        <li class="is-ok">
+                            <p>評論中「等候」被提到 <mark>34</mark> 次，是最常見的抱怨。</p>
+                            <span class="lp-verdict">已核對・評論關鍵字統計</span>
+                        </li>
+                        <li class="is-ok">
+                            <p>站前店的平均滿意度 <mark>3.2</mark>，是三家門市中最低。</p>
+                            <span class="lp-verdict">已核對・門市比較</span>
+                        </li>
+                        <li class="is-dropped">
+                            <p><s>改善後滿意度可望提升到 4.5。</s></p>
+                            <span class="lp-verdict">沒有依據，已剔除</span>
+                        </li>
+                    </ul>
+                </figure>
             </div>
-            <p>
-                平台把模型輸出放進可追溯的資料流程中，保留階段狀態、來源證據與人工決策邊界。
-            </p>
-        </div>
-        <div class="public-architecture-grid">
-            <article><span>01</span><h3>分階段分析</h3><p>大型問卷拆分為 statistics、text、synthesis，降低單次輸出的負擔並保留階段狀態。</p></article>
-            <article><span>02</span><h3>證據約束</h3><p>統計數值由後端提供，Gemini 輸出必須引用已存在的 evidence refs。</p></article>
-            <article><span>03</span><h3>資料新鮮度</h3><p>input hash、版本與 Supabase 快取共同判斷是否需要重新分析。</p></article>
-            <article><span>04</span><h3>人工確認</h3><p>AI 只產生營運洞察與改善草稿，正式改善項目及通知仍由管理者控制。</p></article>
-        </div>
-    </section>
+        </section>
 
-    <section class="public-section" id="roles">
-        <div class="public-section-head">
-            <div class="public-label-col">
-                <span class="public-kicker">角色入口</span>
-                <h2>依角色進入對應工作區。</h2>
+        <section class="lp-section" aria-labelledby="store-c">
+            <div class="lp-wrap lp-feature">
+                <div class="lp-feature-copy">
+                    <h2 id="store-c">改善完成，通知提出意見的顧客</h2>
+                    <p>
+                        從 AI 建議中挑出要做的項目，修改後建立改善項目並追蹤進度。
+                        完成後可以通知相關顧客，讓他們知道意見有被採納。
+                    </p>
+                    <ul class="lp-checks">
+                        <li>確認後才會建立改善項目</li>
+                        <li>發送前可以預覽通知內容</li>
+                        <li>只通知同意接收通知的顧客</li>
+                    </ul>
+                </div>
+                <figure class="lp-panel lp-figure" aria-label="改善項目示範（示範資料）">
+                    <header class="lp-figure-head"><strong>改善項目</strong><span class="lp-tag">示範資料</span></header>
+                    <div class="lp-item">
+                        <p class="lp-item-title">尖峰時段加開一個取餐窗口</p>
+                        <ol class="lp-steps" aria-label="進度">
+                            <li class="is-done">已規劃</li>
+                            <li class="is-done">進行中</li>
+                            <li class="is-done is-current">已完成</li>
+                        </ol>
+                        <div class="lp-notify">
+                            <div>
+                                <strong>通知相關顧客</strong>
+                                <span>12 位顧客反映過等候問題，並同意接收通知</span>
+                            </div>
+                            <span class="lp-btn lp-btn-primary lp-btn-sm" aria-hidden="true">預覽通知</span>
+                        </div>
+                    </div>
+                </figure>
             </div>
-            <p>平台沿用既有登入與角色權限，管理端與顧客端各自保有清楚的操作範圍。</p>
-        </div>
+        </section>
+    </div>
 
-        <div class="public-roles-grid">
-            <a class="public-role-card public-role-primary" href="{{ manager_entry_url }}">
-                <span class="public-role-label">MANAGER</span>
-                <h3>管理端</h3>
-                <p>管理問卷、查看統計與文字分析、執行或讀取 AI 營運報告，並將已驗證草稿帶入改善追蹤。</p>
-                <span class="public-role-cta">進入管理端</span>
-            </a>
+    <div data-mode-panel="customer">
+        <section class="lp-section" id="customer-detail" aria-labelledby="cust-a">
+            <div class="lp-wrap lp-feature">
+                <div class="lp-feature-copy">
+                    <h2 id="cust-a">幾分鐘就能填完</h2>
+                    <p>
+                        大多是選擇題，最後可以寫下你的想法。
+                        需要登入填答，店家改善後才能通知你。
+                    </p>
+                </div>
+                <figure class="lp-panel lp-figure" aria-label="問卷題目示範（示範資料）">
+                    <header class="lp-figure-head"><strong>飲料店體驗回饋</strong><span class="lp-tag">示範資料</span></header>
+                    <div class="lp-q">
+                        <p>整體服務體驗的滿意程度？</p>
+                        <div class="lp-scale" aria-hidden="true"><span>1</span><span>2</span><span>3</span><span class="is-on">4</span><span>5</span></div>
+                    </div>
+                    <div class="lp-q">
+                        <p>還有什麼想告訴店家的嗎？</p>
+                        <div class="lp-textarea" aria-hidden="true">尖峰時段等很久，希望可以快一點。</div>
+                    </div>
+                </figure>
+            </div>
+        </section>
 
-            <a class="public-role-card" href="{{ customer_entry_url }}">
-                <span class="public-role-label">CUSTOMER</span>
-                <h3>顧客端</h3>
-                <p>填寫可用問卷、查看自己的回饋紀錄與系統提供的相關通知。</p>
-                <span class="public-role-cta">進入顧客端</span>
-            </a>
+        <section class="lp-section lp-band" aria-labelledby="cust-b">
+            <div class="lp-wrap lp-feature lp-feature-flip">
+                <div class="lp-feature-copy">
+                    <h2 id="cust-b">每份回饋的後續都看得到</h2>
+                    <p>
+                        你填過的問卷都會列在「我的回饋」。店家開始處理或改善完成時，
+                        那份回饋下方會出現通知，說明店家做了哪些改變。
+                    </p>
+                </div>
+                <figure class="lp-panel lp-figure" aria-label="通知示範（示範資料）">
+                    <header class="lp-figure-head"><strong>新通知</strong><span class="lp-tag">示範資料</span></header>
+                    <div class="lp-notice">
+                        <p class="lp-item-title">改善完成：加開一個取餐窗口</p>
+                        <p>謝謝你提出等候太久的意見。我們在尖峰時段增加人手，並把取餐處移到門口右側。</p>
+                        <span class="lp-source">來自：飲料店體驗回饋・你在 10 月 2 日的回覆</span>
+                    </div>
+                </figure>
+            </div>
+        </section>
+
+        <section class="lp-section" aria-labelledby="cust-c">
+            <div class="lp-wrap lp-feature">
+                <div class="lp-feature-copy">
+                    <h2 id="cust-c">是否接收通知，由你決定</h2>
+                    <p>
+                        通知可以隨時在設定中開啟或關閉。店家使用 AI 分析時，
+                        只會提供整理後的統計結果，不包含你的姓名或 email。
+                    </p>
+                </div>
+                <figure class="lp-panel lp-figure" aria-label="通知設定示範">
+                    <header class="lp-figure-head"><strong>通知設定</strong></header>
+                    <div class="lp-setting">
+                        <div>
+                            <strong>改善完成時通知我</strong>
+                            <span>只會通知和你填過的問卷有關的改善</span>
+                        </div>
+                        <span class="lp-toggle" aria-hidden="true"><i></i></span>
+                    </div>
+                </figure>
+            </div>
+        </section>
+    </div>
+
+    <section class="lp-close" aria-labelledby="lp-close-title">
+        <div class="lp-wrap lp-close-inner">
+            <div data-mode-panel="store">
+                <h2 id="lp-close-title">用你的問卷試試看</h2>
+                <p>建立問卷、收集回覆，系統會自動完成分析。</p>
+            </div>
+            <div data-mode-panel="customer">
+                <h2>有話想對店家說嗎？</h2>
+                <p>登入後就能看到可填寫的問卷。</p>
+            </div>
+            <div class="lp-actions">
+                <a class="lp-btn lp-btn-onink" data-mode-panel="store" href="{{ manager_entry_url }}">登入管理後台</a>
+                <a class="lp-btn lp-btn-onink" data-mode-panel="customer" href="{{ customer_entry_url }}">登入填問卷</a>
+                {% if not is_node and not user.is_authenticated %}<a class="lp-btn lp-btn-ghost-onink" href="{% url 'accounts:signup' %}">建立帳號</a>{% endif %}
+            </div>
         </div>
     </section>
 </main>
 
-<footer class="public-foot">
-    <div class="public-foot-inner">
-        <div class="public-foot-identity">
-            <div class="public-foot-brand"><span class="public-nav-mark">FI</span>回饋洞察 AI 平台</div>
-            <span>Feedback Insight Hub AI</span>
-        </div>
-        <div class="public-foot-links">
-            <a href="#capabilities">產品功能</a>
-            <a href="#workflow">流程</a>
-            <a href="#roles">角色入口</a>
-        </div>
-        <div class="public-foot-meta">
-            <span>Evidence-grounded feedback operations.</span>
-            <span>2026</span>
-        </div>
-    </div>
-</footer>
+{% include "feedback/_public_footer.html" %}
 {% endblock %}
+
+{% block extra_js %}<script src="{% static 'js/landing.js' %}?v=20261030-1" defer></script>{% endblock %}

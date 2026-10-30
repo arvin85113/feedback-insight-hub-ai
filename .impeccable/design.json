@@ -1,35 +1,278 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-29T00:00:00+08:00",
+  "generatedAt": "2026-10-30T00:00:00+08:00",
   "title": "Design System: 回饋洞察 AI 平台",
   "extensions": {
     "colorMeta": {
-      "forest-ink": { "role": "primary", "displayName": "Forest Ink 深林墨綠", "tonalRamp": ["#133b2b", "#22614a", "#2c7659", "#4f6f61", "#8fc4a8", "#c8dacd", "#eef5f0", "#f7faf8"] },
-      "forest": { "role": "primary", "displayName": "Forest 森林綠", "tonalRamp": ["#133b2b", "#22614a", "#2c7659", "#4f6f61", "#8fc4a8", "#c8dacd", "#eef5f0", "#f7faf8"] },
-      "paper": { "role": "neutral", "displayName": "Paper 紙色", "tonalRamp": ["#1c1b18", "#45413a", "#676257", "#8a857a", "#d5cebf", "#e6e1d6", "#f0ede5", "#f6f4ee"] },
-      "ochre": { "role": "status", "displayName": "Ochre 赭黃", "tonalRamp": ["#4d3906", "#7a5a0a", "#9a7312", "#b58b19", "#d4b25a", "#ead79f", "#f6ecc9", "#fbf4e1"] },
-      "brick": { "role": "status", "displayName": "Brick 磚紅", "tonalRamp": ["#5a1f17", "#8a2f22", "#a03c2b", "#b44732", "#d07f6e", "#e6b4a8", "#f4d9d2", "#fbefec"] }
+      "forest-ink": {
+        "role": "primary",
+        "displayName": "Forest Ink 深林墨綠",
+        "tonalRamp": [
+          "#133b2b",
+          "#22614a",
+          "#2c7659",
+          "#4f6f61",
+          "#8fc4a8",
+          "#c8dacd",
+          "#eef5f0",
+          "#f7faf8"
+        ]
+      },
+      "forest": {
+        "role": "primary",
+        "displayName": "Forest 森林綠",
+        "tonalRamp": [
+          "#133b2b",
+          "#22614a",
+          "#2c7659",
+          "#4f6f61",
+          "#8fc4a8",
+          "#c8dacd",
+          "#eef5f0",
+          "#f7faf8"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Paper 紙色",
+        "tonalRamp": [
+          "#1c1b18",
+          "#45413a",
+          "#676257",
+          "#8a857a",
+          "#d5cebf",
+          "#e6e1d6",
+          "#f0ede5",
+          "#f6f4ee"
+        ]
+      },
+      "ochre": {
+        "role": "status",
+        "displayName": "Ochre 赭黃",
+        "tonalRamp": [
+          "#4d3906",
+          "#7a5a0a",
+          "#9a7312",
+          "#b58b19",
+          "#d4b25a",
+          "#ead79f",
+          "#f6ecc9",
+          "#fbf4e1"
+        ]
+      },
+      "brick": {
+        "role": "status",
+        "displayName": "Brick 磚紅",
+        "tonalRamp": [
+          "#5a1f17",
+          "#8a2f22",
+          "#a03c2b",
+          "#b44732",
+          "#d07f6e",
+          "#e6b4a8",
+          "#f4d9d2",
+          "#fbefec"
+        ]
+      },
+      "public-ink": {
+        "role": "neutral",
+        "displayName": "Public Ink 公開頁海軍墨",
+        "tonalRamp": [
+          "#0b1f33",
+          "#34485c",
+          "#56687a",
+          "#cfd8e1",
+          "#e2e8ee",
+          "#f5f7fa",
+          "#ffffff"
+        ]
+      },
+      "public-ink-soft": {
+        "role": "neutral",
+        "displayName": "Public Ink Soft 次要墨",
+        "tonalRamp": [
+          "#0b1f33",
+          "#34485c",
+          "#56687a",
+          "#cfd8e1",
+          "#e2e8ee",
+          "#f5f7fa",
+          "#ffffff"
+        ]
+      },
+      "public-ink-muted": {
+        "role": "neutral",
+        "displayName": "Public Ink Muted 說明墨",
+        "tonalRamp": [
+          "#0b1f33",
+          "#34485c",
+          "#56687a",
+          "#cfd8e1",
+          "#e2e8ee",
+          "#f5f7fa",
+          "#ffffff"
+        ]
+      },
+      "public-line": {
+        "role": "neutral",
+        "displayName": "Public Line 公開頁邊框",
+        "tonalRamp": [
+          "#0b1f33",
+          "#34485c",
+          "#56687a",
+          "#cfd8e1",
+          "#e2e8ee",
+          "#f5f7fa",
+          "#ffffff"
+        ]
+      },
+      "public-band": {
+        "role": "neutral",
+        "displayName": "Public Band 冷灰帶",
+        "tonalRamp": [
+          "#0b1f33",
+          "#34485c",
+          "#56687a",
+          "#cfd8e1",
+          "#e2e8ee",
+          "#f5f7fa",
+          "#ffffff"
+        ]
+      },
+      "store-green": {
+        "role": "primary",
+        "displayName": "Store Green 店家模式綠",
+        "tonalRamp": [
+          "#0a6343",
+          "#0d7a52",
+          "#e5f4ec"
+        ]
+      },
+      "store-green-deep": {
+        "role": "primary",
+        "displayName": "Store Green Deep",
+        "tonalRamp": [
+          "#0a6343",
+          "#0d7a52",
+          "#e5f4ec"
+        ]
+      },
+      "store-green-soft": {
+        "role": "primary",
+        "displayName": "Store Green Soft",
+        "tonalRamp": [
+          "#0a6343",
+          "#0d7a52",
+          "#e5f4ec"
+        ]
+      },
+      "customer-amber": {
+        "role": "primary",
+        "displayName": "Customer Amber 顧客模式琥珀",
+        "tonalRamp": [
+          "#93430a",
+          "#b4530a",
+          "#fdf0e1"
+        ]
+      },
+      "customer-amber-deep": {
+        "role": "primary",
+        "displayName": "Customer Amber Deep",
+        "tonalRamp": [
+          "#93430a",
+          "#b4530a",
+          "#fdf0e1"
+        ]
+      },
+      "customer-amber-soft": {
+        "role": "primary",
+        "displayName": "Customer Amber Soft",
+        "tonalRamp": [
+          "#93430a",
+          "#b4530a",
+          "#fdf0e1"
+        ]
+      }
     },
     "typographyMeta": {
-      "display": { "displayName": "Display", "purpose": "公開首頁主標，最多 14 字寬。" },
-      "metric": { "displayName": "Metric", "purpose": "關鍵數字卡主數字，等寬數字。" },
-      "headline": { "displayName": "Headline", "purpose": "管理端頂欄頁面標題。" },
-      "title": { "displayName": "Title", "purpose": "面板與區段標題。" },
-      "body": { "displayName": "Body", "purpose": "內文，說明段落限寬 72ch。" },
-      "label": { "displayName": "Label", "purpose": "區段小標（kicker），等寬大寫。" }
+      "display": {
+        "displayName": "Display",
+        "purpose": "公開首頁主標，兩到三行，字重 900。"
+      },
+      "metric": {
+        "displayName": "Metric",
+        "purpose": "關鍵數字卡主數字，等寬數字。"
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "管理端頂欄頁面標題。"
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "面板與區段標題。"
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "內文，說明段落限寬 72ch。"
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "區段小標（kicker），等寬大寫。"
+      }
     },
     "shadows": [
-      { "name": "rest", "value": "0 1px 2px rgba(28, 27, 24, 0.05)", "purpose": "面板、卡片、主按鈕的靜止狀態。" },
-      { "name": "raised", "value": "0 4px 16px rgba(28, 27, 24, 0.06), 0 1px 3px rgba(28, 27, 24, 0.04)", "purpose": "卡片懸停、吸附的分頁列。" },
-      { "name": "floating", "value": "0 16px 40px rgba(28, 27, 24, 0.08)", "purpose": "彈出訊息等浮在內容之上的元素。" },
-      { "name": "focus-ring", "value": "0 0 0 3px rgba(44, 118, 89, 0.28)", "purpose": "鍵盤聚焦。" }
+      {
+        "name": "rest",
+        "value": "0 1px 2px rgba(28, 27, 24, 0.05)",
+        "purpose": "面板、卡片、主按鈕的靜止狀態。"
+      },
+      {
+        "name": "raised",
+        "value": "0 4px 16px rgba(28, 27, 24, 0.06), 0 1px 3px rgba(28, 27, 24, 0.04)",
+        "purpose": "卡片懸停、吸附的分頁列。"
+      },
+      {
+        "name": "floating",
+        "value": "0 16px 40px rgba(28, 27, 24, 0.08)",
+        "purpose": "彈出訊息等浮在內容之上的元素。"
+      },
+      {
+        "name": "focus-ring",
+        "value": "0 0 0 3px rgba(44, 118, 89, 0.28)",
+        "purpose": "鍵盤聚焦。"
+      },
+      {
+        "name": "public-panel",
+        "value": "0 1px 2px rgba(11, 31, 51, 0.06), 0 12px 32px -12px rgba(11, 31, 51, 0.18)",
+        "purpose": "公開頁產品畫面（landing.css --lp-shadow）。"
+      },
+      {
+        "name": "public-hero",
+        "value": "0 2px 4px rgba(11, 31, 51, 0.06), 0 30px 60px -24px rgba(11, 31, 51, 0.32)",
+        "purpose": "公開首頁首屏產品畫面（--lp-shadow-lg）。"
+      }
     ],
     "motion": [
-      { "name": "state-change", "value": "140ms ease", "purpose": "顏色、邊框、陰影的狀態過場；不位移。" }
+      {
+        "name": "state-change",
+        "value": "140ms ease",
+        "purpose": "顏色、邊框、陰影的狀態過場；不位移。"
+      },
+      {
+        "name": "public-mode-settle",
+        "value": "520ms cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "只在切換首頁模式後播一次的淡入上移；減少動態時關閉。"
+      }
     ],
     "breakpoints": [
-      { "name": "compact", "value": "1100px" },
-      { "name": "stacked", "value": "860px" }
+      {
+        "name": "compact",
+        "value": "1100px"
+      },
+      {
+        "name": "stacked",
+        "value": "860px"
+      }
     ]
   },
   "components": [
@@ -100,11 +343,31 @@
       "全站繁體中文排版，Noto Sans TC 為主字體"
     ],
     "rules": [
-      { "name": "The One Voice Rule", "body": "品牌色只有森林綠一系。新增圖表、徽章或插圖不得引入第二個品牌色；文字雲與圖表配色也必須從森林綠、赭黃、磚紅與墨色推導。", "section": "colors" },
-      { "name": "The Color Means Something Rule", "body": "顏色只用來表達意義（行動、狀態、情緒），不用來裝飾。卡片家族一律同一條淡邊框，「顏色只承載意義」。", "section": "colors" },
-      { "name": "The Tabular Numbers Rule", "body": "表格、指標卡與任何會被比較的數字都用 font-variant-numeric: tabular-nums，讓數字對齊、可以直向比較。", "section": "typography" },
-      { "name": "The Plain Chinese Rule", "body": "介面文字一律白話繁體中文；中英文混排時英文與數字前後保留半形空格。", "section": "typography" },
-      { "name": "The Flat-By-Default Rule", "body": "表面靜止時是平的；陰影加深只回應狀態（懸停、浮出、聚焦），從不當裝飾。", "section": "elevation" }
+      {
+        "name": "The One Voice Rule",
+        "body": "品牌色只有森林綠一系。新增圖表、徽章或插圖不得引入第二個品牌色；文字雲與圖表配色也必須從森林綠、赭黃、磚紅與墨色推導。",
+        "section": "colors"
+      },
+      {
+        "name": "The Color Means Something Rule",
+        "body": "顏色只用來表達意義（行動、狀態、情緒），不用來裝飾。卡片家族一律同一條淡邊框，「顏色只承載意義」。",
+        "section": "colors"
+      },
+      {
+        "name": "The Tabular Numbers Rule",
+        "body": "表格、指標卡與任何會被比較的數字都用 font-variant-numeric: tabular-nums，讓數字對齊、可以直向比較。",
+        "section": "typography"
+      },
+      {
+        "name": "The Plain Chinese Rule",
+        "body": "介面文字一律白話繁體中文；中英文混排時英文與數字前後保留半形空格。",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat-By-Default Rule",
+        "body": "表面靜止時是平的；陰影加深只回應狀態（懸停、浮出、聚焦），從不當裝飾。",
+        "section": "elevation"
+      }
     ],
     "dos": [
       "Do 每個頁面先放關鍵數字或關鍵結論，再放細節（關鍵 → 決策 → 認同）。",
