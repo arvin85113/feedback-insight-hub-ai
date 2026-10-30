@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{% static 'css/customer.css' %}?v=20261030-2">
+    <link rel="stylesheet" href="{% static 'css/customer.css' %}?v=20261030-3">
 </head>
 {% with url_name=request.resolver_match.url_name %}
 <body class="cx{% block body_extra %}{% endblock %}">
@@ -29,7 +29,7 @@
                     <a href="{% url 'feedback:customer-notifications' %}" {% if url_name == 'customer-notifications' %}aria-current="page"{% endif %}>
                         通知{% if unread_notification_count %}<span class="cx-count" data-unread-badge>{{ unread_notification_count }}</span>{% endif %}
                     </a>
-                    <a href="{% url 'accounts:profile' %}" {% if url_name == 'profile' or url_name == 'preferences' %}aria-current="page"{% endif %}>帳號</a>
+                    <a href="{% url 'accounts:profile' %}" {% if url_name == 'profile' or url_name == 'preferences' or url_name == 'password_change' or url_name == 'password_change_done' %}aria-current="page"{% endif %}>帳號</a>
                 </nav>
             {% endif %}
             <form method="post" action="{% url 'accounts:logout' %}" class="cx-logout">
@@ -66,7 +66,7 @@
         <span>通知</span>
         {% if unread_notification_count %}<span class="cx-count" data-unread-badge>{{ unread_notification_count }}</span>{% endif %}
     </a>
-    <a href="{% url 'accounts:profile' %}" {% if url_name == 'profile' or url_name == 'preferences' %}aria-current="page"{% endif %}>
+    <a href="{% url 'accounts:profile' %}" {% if url_name == 'profile' or url_name == 'preferences' or url_name == 'password_change' or url_name == 'password_change_done' %}aria-current="page"{% endif %}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M4.5 20a7.5 7.5 0 0 1 15 0"/></svg>
         <span>帳號</span>
     </a>

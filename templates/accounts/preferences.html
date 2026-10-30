@@ -32,17 +32,28 @@
         <ul class="cx-card cx-rows">
             {% for row in survey_rows %}
                 <li>
-                    <form method="post" class="cx-switch-row" data-autosubmit>
-                        {% csrf_token %}
-                        <input type="hidden" name="action" value="toggle-survey">
-                        <input type="hidden" name="survey_id" value="{{ row.survey.id }}">
-                        <label class="cx-switch-label" for="survey-toggle-{{ row.survey.id }}">
-                            <strong>{{ row.survey.title }}</strong>
-                            <span>最近一次填答：{{ row.latest_submission.submitted_at|date:"Y/m/d" }}{% if row.submission_count > 1 %}（共 {{ row.submission_count }} 次）{% endif %}</span>
-                        </label>
-                        <span class="cx-switch"><input type="checkbox" id="survey-toggle-{{ row.survey.id }}" name="enabled" {% if row.consent_follow_up %}checked{% endif %}><i aria-hidden="true"></i></span>
-                        <noscript><button type="submit" class="cx-btn cx-btn-ghost cx-btn-sm">儲存</button></noscript>
-                    </form>
+                    {% if row.editable %}
+                        <form method="post" class="cx-switch-row" data-autosubmit>
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="toggle-survey">
+                            <input type="hidden" name="survey_id" value="{{ row.survey.id }}">
+                            <label class="cx-switch-label" for="survey-toggle-{{ row.survey.id }}">
+                                <strong>{{ row.survey.title }}</strong>
+                                <span>最近一次填答：{{ row.latest_submitted_at|date:"Y/m/d" }}{% if row.submission_count > 1 %}（共 {{ row.submission_count }} 次）{% endif %}</span>
+                            </label>
+                            <span class="cx-switch"><input type="checkbox" id="survey-toggle-{{ row.survey.id }}" name="enabled" {% if row.consent_follow_up %}checked{% endif %}><i aria-hidden="true"></i></span>
+                            <noscript><button type="submit" class="cx-btn cx-btn-ghost cx-btn-sm">儲存</button></noscript>
+                        </form>
+                    {% else %}
+                        <div class="cx-switch-row">
+                            <div class="cx-switch-label">
+                                <strong>{{ row.survey.title }}</strong>
+                                <span>最近一次填答：{{ row.latest_submitted_at|date:"Y/m/d" }}{% if row.submission_count > 1 %}（共 {{ row.submission_count }} 次）{% endif %}</span>
+                                <span>這份問卷的通知在填答時就已決定，這裡不能修改。</span>
+                            </div>
+                            <span class="cx-tag">{% if row.consent_follow_up %}會通知{% else %}不通知{% endif %}</span>
+                        </div>
+                    {% endif %}
                 </li>
             {% endfor %}
         </ul>

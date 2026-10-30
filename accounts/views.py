@@ -1,5 +1,6 @@
 import logging
 import re
+from datetime import datetime
 from urllib.parse import urlsplit
 
 from django.contrib import messages
@@ -184,15 +185,43 @@ def customer_preferences_view(request):
             submission.survey_id,
             {
                 "survey": submission.survey,
-                "latest_submission": submission,
+                "latest_submitted_at": submission.submitted_at,
                 "submission_count": 0,
                 "consent_follow_up": False,
+                "editable": True,
             },
         )
         row["submission_count"] += 1
         row["consent_follow_up"] = row["consent_follow_up"] or submission.consent_follow_up
-        if submission.submitted_at > row["latest_submission"].submitted_at:
-            row["latest_submission"] = submission
+        row["latest_submitted_at"] = max(row["latest_submitted_at"], submission.submitted_at)
+
+    # Replies that only exist as inbox receipts (node flow): shown read-only, since the consent was
+    # recorded with the reply and this page only changes FeedbackSubmission rows.
+    from cloudapi.receipts import receipt_rows
+
+    receipt_survey_ids = set()
+    for receipt in receipt_rows(request.user):
+        survey_id = receipt["survey"]["id"]
+        if survey_id in survey_rows_by_id and survey_id not in receipt_survey_ids:
+            continue
+        receipt_survey_ids.add(survey_id)
+        submitted_at = datetime.fromisoformat(receipt["submitted_at"])
+        row = survey_rows_by_id.setdefault(
+            survey_id,
+            {
+                "survey": None,
+                "latest_submitted_at": submitted_at,
+                "submission_count": 0,
+                "consent_follow_up": False,
+                "editable": False,
+            },
+        )
+        row["submission_count"] += 1
+        row["consent_follow_up"] = row["consent_follow_up"] or receipt["consent_follow_up"]
+        row["latest_submitted_at"] = max(row["latest_submitted_at"], submitted_at)
+    surveys = Survey.objects.select_related("category").in_bulk(receipt_survey_ids)
+    for survey_id in receipt_survey_ids:
+        survey_rows_by_id[survey_id]["survey"] = surveys[survey_id]
 
     survey_rows = list(survey_rows_by_id.values())
     if category_id:
@@ -201,11 +230,11 @@ def customer_preferences_view(request):
             if row["survey"].category_id and str(row["survey"].category_id) == category_id
         ]
     if sort == "oldest":
-        survey_rows.sort(key=lambda row: row["latest_submission"].submitted_at)
+        survey_rows.sort(key=lambda row: row["latest_submitted_at"])
     elif sort == "title":
         survey_rows.sort(key=lambda row: row["survey"].title)
     else:
-        survey_rows.sort(key=lambda row: row["latest_submission"].submitted_at, reverse=True)
+        survey_rows.sort(key=lambda row: row["latest_submitted_at"], reverse=True)
 
     return render(
         request,

@@ -307,7 +307,7 @@ components:
 
 ## Customer Pages
 
-顧客端（我的回饋 `/app/`、通知、填問卷與送出完成、帳號的個人資料與通知設定）沿用首頁顧客模式的視覺：白底卡片放在冷灰底上、海軍藍文字、琥珀色強調。樣式只在 `static/css/customer.css`（`body.cx` 範圍內），版型是 `templates/feedback/customer_base.html`，不載入 `app.css`。
+顧客端（我的回饋 `/app/`、通知、填問卷與送出完成、帳號的個人資料／通知設定／變更密碼）沿用首頁顧客模式的視覺：白底卡片放在冷灰底上、海軍藍文字、琥珀色強調。樣式只在 `static/css/customer.css`（`body.cx` 範圍內），版型是 `templates/feedback/customer_base.html`，不載入 `app.css`。
 
 - **手機優先**：內容欄最寬 720px。手機上主選單是底部三個分頁（我的回饋／通知／帳號），720px 以上改放在頂欄。
 - **進度時間軸（Signature）**：每份問卷一張卡片，節點用顏色表達狀態：綠色實心是已發生，琥珀空心環是新通知，虛線是等待店家。店家寫給顧客的內容放在淡琥珀底的引言框。
