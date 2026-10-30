@@ -721,6 +721,18 @@
     font-weight: 500;
 }
 
+.cx-help {
+    margin-top: 6px;
+    color: var(--cx-ink-3);
+    font-size: 13px;
+}
+
+.cx-help ul {
+    margin: 0;
+    padding-left: 18px;
+    list-style: disc;
+}
+
 .cx-static {
     display: flex;
     justify-content: space-between;
