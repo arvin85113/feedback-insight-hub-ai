@@ -39,7 +39,7 @@ colors:
 typography:
   display:
     fontFamily: "Noto Sans TC, Segoe UI, Microsoft JhengHei, sans-serif"
-    fontSize: "clamp(38px, 4.4vw, 60px)"
+    fontSize: "clamp(28px, 3.5vw, 50px)"
     fontWeight: 900
     lineHeight: 1.14
     letterSpacing: "-0.02em"
@@ -192,7 +192,7 @@ components:
 **Character:** 單一中文無襯線字族撐起所有層級，靠字重與大小建立層次；等寬字只用在小標與代碼，給介面一點「筆記本的索引」感。
 
 ### Hierarchy
-- **Display** (900, clamp(38px, 4.4vw, 60px), 1.14)：只用在公開首頁主標，兩到三行，用 `<br>` 控制斷行。
+- **Display** (900, clamp(28px, 3.5vw, 50px), 1.14)：只用在公開首頁主標，固定兩行，用 `<br>` 斷行；字級讓最長一行（11 字）放得下，不留單字成行。
 - **Metric** (700, 2rem, 1.15, tabular-nums)：關鍵數字卡的主數字。這是「抓住關鍵」的主角。
 - **Headline** (700, 1.25rem, 1.3)：管理端頂欄的頁面標題。
 - **Title** (700, 1.15rem)：面板與區段標題。
