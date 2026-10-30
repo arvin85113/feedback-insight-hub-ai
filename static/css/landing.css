@@ -268,8 +268,13 @@
 .lp-hero-grid {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1.02fr);
-    align-items: center;
+    /* Top-aligned: the two modes' visuals differ in height, and centring would move the switch. */
+    align-items: start;
     gap: 64px;
+}
+
+.lp-hero-copy {
+    padding-top: 32px;
 }
 
 .lp-switch {
@@ -1104,6 +1109,10 @@
     .lp-feature {
         grid-template-columns: minmax(0, 1fr);
         gap: 48px;
+    }
+
+    .lp-hero-copy {
+        padding-top: 0;
     }
 
     .lp-feature-flip .lp-feature-copy {
