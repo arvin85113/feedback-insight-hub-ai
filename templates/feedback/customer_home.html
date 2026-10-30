@@ -1,82 +1,77 @@
-{% extends "base.html" %}
+{% extends "feedback/customer_base.html" %}
 
-{% block title %}顧客端 | FeedBack IQ{% endblock %}
-{% block body_class %}site-body customer-workspace-body{% endblock %}
+{% block title %}我的回饋｜回饋洞察 AI 平台{% endblock %}
 
 {% block content %}
-<section class="customer-page-head customer-page-head-simple">
-    <div>
-        <p class="section-kicker">Customer Portal</p>
-        <h1>歡迎你，{{ user.get_full_name|default:user.username }}。</h1>
-        <p>你填過的問卷與店家的回應，會依時間整理在這裡。</p>
-    </div>
-</section>
+<header class="cx-head">
+    <p class="cx-hello">嗨，{{ user.get_full_name|default:user.username }}</p>
+    <h1>我的回饋</h1>
+    <p class="cx-sub">你填過的問卷，以及店家後續的處理進度。</p>
+</header>
 
-<section class="customer-timeline-chips" aria-label="顧客端摘要">
-    <span class="customer-timeline-chip"><span>已填問卷</span><strong>{{ survey_cards|length }}</strong></span>
-    <a class="customer-timeline-chip" href="{% url 'feedback:customer-notifications' %}"><span>未讀通知</span><strong>{{ unread_count }}</strong></a>
-    <a class="customer-timeline-chip" href="{% url 'accounts:preferences' %}"><span>通知設定</span><strong>{% if notification_opt_in %}已開啟{% else %}已關閉{% endif %}</strong></a>
-</section>
+{% if unread_count %}
+    <a class="cx-banner" href="{% url 'feedback:customer-notifications' %}">
+        <span class="cx-banner-dot" aria-hidden="true"></span>
+        <span>你有 <strong>{{ unread_count }}</strong> 則新通知</span>
+        <span class="cx-banner-go" aria-hidden="true"></span>
+    </a>
+{% endif %}
 
-<nav class="customer-timeline-links" aria-label="通知捷徑">
-    <a class="text-link" href="{% url 'feedback:customer-notifications' %}">檢視全部通知</a>
-    <a class="text-link" href="{% url 'accounts:preferences' %}">通知偏好</a>
-</nav>
+<p class="cx-setting-line">
+    改善通知：{% if notification_opt_in %}<strong>已開啟</strong>{% else %}<strong>已關閉</strong>{% endif %}
+    <a href="{% url 'accounts:preferences' %}">變更</a>
+</p>
 
-<div class="customer-timeline-cards">
+<div class="cx-stack">
     {% for card in survey_cards %}
-        <article class="customer-panel customer-timeline-card">
-            <header class="customer-timeline-card-head">
+        <article class="cx-card">
+            <header class="cx-card-head">
                 <h2>{{ card.survey.title }}</h2>
-                {% if card.survey.category %}<span class="pill pill-category">{{ card.survey.category.name }}</span>{% endif %}
+                {% if card.survey.category %}<span class="cx-tag">{{ card.survey.category.name }}</span>{% endif %}
             </header>
-            <ol class="customer-timeline">
-                <li class="customer-timeline-item">
-                    <p class="customer-timeline-title">已填答</p>
-                    <p class="customer-timeline-meta">{{ card.submitted_date }}</p>
+            <ol class="cx-tl">
+                <li class="cx-tl-item is-done">
+                    <p class="cx-tl-title">已填答</p>
+                    <p class="cx-tl-meta">{{ card.submitted_date }}</p>
                 </li>
                 {% for event in card.events %}
-                    <li class="customer-timeline-item customer-timeline-item-event{% if not event.is_read %} customer-timeline-item-unread{% endif %}">
-                        <p class="customer-timeline-title">{{ event.title }}</p>
-                        <p class="customer-timeline-meta">
+                    <li class="cx-tl-item{% if not event.is_read %} is-new{% else %} is-done{% endif %}">
+                        <p class="cx-tl-title">{{ event.title }}</p>
+                        <p class="cx-tl-meta">
                             {{ event.sent_date }}
-                            {% if event.improvement_status_label %}<span class="pill">{{ event.improvement_status_label }}</span>{% endif %}
-                            {% if not event.is_read %}<span class="pill customer-timeline-unread-pill">未讀</span>{% endif %}
+                            {% if event.improvement_status_label %}<span class="cx-tag">{{ event.improvement_status_label }}</span>{% endif %}
+                            {% if not event.is_read %}<span class="cx-tag cx-tag-new">新通知</span>{% endif %}
                         </p>
-                        {% if event.summary %}<p class="customer-timeline-summary">{{ event.summary|truncatechars:90 }}</p>{% endif %}
+                        {% if event.summary %}<p class="cx-tl-note">{{ event.summary|truncatechars:90 }}</p>{% endif %}
                     </li>
                 {% empty %}
-                    <li class="customer-timeline-item customer-timeline-item-pending">
-                        <p class="customer-timeline-title">{% if card.state == "processing" %}店家處理中{% else %}等待店家回應{% endif %}</p>
+                    <li class="cx-tl-item is-waiting">
+                        <p class="cx-tl-title">{% if card.state == "processing" %}店家處理中{% else %}等待店家回應{% endif %}</p>
+                        <p class="cx-tl-meta">店家有新的處理進度時，會出現在這裡。</p>
                     </li>
                 {% endfor %}
             </ol>
         </article>
     {% empty %}
-        <div class="customer-panel customer-empty">
-            <h3>尚未留下任何填答紀錄</h3>
-            <p>登入後填寫問卷，系統會在這裡整理你提交過的內容與後續通知。</p>
-        </div>
+        <section class="cx-empty">
+            <h2>還沒有填答紀錄</h2>
+            <p>店家會提供問卷連結或 QR code。登入後填寫，這裡就會顯示你的回饋和店家的處理進度。</p>
+        </section>
     {% endfor %}
 </div>
 
 {% if announcements %}
-<section class="customer-panel customer-timeline-announcements">
-    <div class="customer-panel-head">
-        <div>
-            <p class="section-kicker">Announcements</p>
-            <h2>店家公告</h2>
-        </div>
-    </div>
-    <ol class="customer-timeline">
+<section class="cx-section">
+    <h2 class="cx-section-title">店家公告</h2>
+    <ol class="cx-list">
         {% for event in announcements %}
-            <li class="customer-timeline-item customer-timeline-item-event{% if not event.is_read %} customer-timeline-item-unread{% endif %}">
-                <p class="customer-timeline-title">{{ event.title }}</p>
-                <p class="customer-timeline-meta">
+            <li class="cx-list-item{% if not event.is_read %} is-new{% endif %}">
+                <p class="cx-list-title">{{ event.title }}</p>
+                <p class="cx-tl-meta">
                     {{ event.sent_date }}
-                    {% if not event.is_read %}<span class="pill customer-timeline-unread-pill">未讀</span>{% endif %}
+                    {% if not event.is_read %}<span class="cx-tag cx-tag-new">新通知</span>{% endif %}
                 </p>
-                {% if event.summary %}<p class="customer-timeline-summary">{{ event.summary|truncatechars:90 }}</p>{% endif %}
+                {% if event.summary %}<p class="cx-tl-note">{{ event.summary|truncatechars:90 }}</p>{% endif %}
             </li>
         {% endfor %}
     </ol>

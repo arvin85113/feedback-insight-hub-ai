@@ -1,0 +1,81 @@
+{% load static %}<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}回饋洞察 AI 平台{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'css/customer.css' %}?v=20261030-2">
+</head>
+{% with url_name=request.resolver_match.url_name %}
+<body class="cx{% block body_extra %}{% endblock %}">
+{% block topbar %}
+<header class="cx-top">
+    <div class="cx-top-inner">
+        <a class="cx-brand" href="{% url 'feedback:home' %}">
+            <span class="cx-brand-mark" aria-hidden="true">FI</span>
+            <span>回饋洞察 AI 平台</span>
+        </a>
+        {% if user.is_authenticated %}
+            {% if user.is_manager %}
+                <nav class="cx-top-links" aria-label="主選單">
+                    <a href="{% url 'feedback:dashboard' %}">回到管理後台</a>
+                </nav>
+            {% else %}
+                <nav class="cx-top-links cx-wide-only" aria-label="主選單">
+                    <a href="{% url 'feedback:customer-home' %}" {% if url_name == 'customer-home' %}aria-current="page"{% endif %}>我的回饋</a>
+                    <a href="{% url 'feedback:customer-notifications' %}" {% if url_name == 'customer-notifications' %}aria-current="page"{% endif %}>
+                        通知{% if unread_notification_count %}<span class="cx-count" data-unread-badge>{{ unread_notification_count }}</span>{% endif %}
+                    </a>
+                    <a href="{% url 'accounts:profile' %}" {% if url_name == 'profile' or url_name == 'preferences' %}aria-current="page"{% endif %}>帳號</a>
+                </nav>
+            {% endif %}
+            <form method="post" action="{% url 'accounts:logout' %}" class="cx-logout">
+                {% csrf_token %}
+                <button type="submit">登出</button>
+            </form>
+        {% else %}
+            <a class="cx-top-login" href="{% url 'accounts:login' %}">登入</a>
+        {% endif %}
+    </div>
+</header>
+{% endblock %}
+
+<main class="cx-main{% block main_class %}{% endblock %}">
+    {% if messages %}
+        <div class="cx-flash-stack" aria-live="polite">
+            {% for message in messages %}
+                <p class="cx-flash cx-flash-{{ message.tags|default:'info' }}">{{ message }}</p>
+            {% endfor %}
+        </div>
+    {% endif %}
+    {% block content %}{% endblock %}
+</main>
+
+{% block tabs %}
+{% if user.is_authenticated and not user.is_manager %}
+<nav class="cx-tabs" aria-label="主選單">
+    <a href="{% url 'feedback:customer-home' %}" {% if url_name == 'customer-home' %}aria-current="page"{% endif %}>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5z M9 9h6 M9 13h6 M9 17h3"/></svg>
+        <span>我的回饋</span>
+    </a>
+    <a href="{% url 'feedback:customer-notifications' %}" {% if url_name == 'customer-notifications' %}aria-current="page"{% endif %}>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z M10 20.5h4"/></svg>
+        <span>通知</span>
+        {% if unread_notification_count %}<span class="cx-count" data-unread-badge>{{ unread_notification_count }}</span>{% endif %}
+    </a>
+    <a href="{% url 'accounts:profile' %}" {% if url_name == 'profile' or url_name == 'preferences' %}aria-current="page"{% endif %}>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M4.5 20a7.5 7.5 0 0 1 15 0"/></svg>
+        <span>帳號</span>
+    </a>
+</nav>
+{% endif %}
+{% endblock %}
+
+<script src="{% static 'js/customer.js' %}?v=20261030-1" defer></script>
+{% block extra_js %}{% endblock %}
+</body>
+{% endwith %}
+</html>

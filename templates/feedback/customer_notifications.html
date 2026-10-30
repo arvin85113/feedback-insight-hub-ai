@@ -1,61 +1,48 @@
-{% extends "base.html" %}
-{% load static %}
+{% extends "feedback/customer_base.html" %}
 
-{% block title %}通知紀錄 | FeedBack IQ{% endblock %}
-{% block body_class %}site-body customer-workspace-body{% endblock %}
+{% block title %}通知｜回饋洞察 AI 平台{% endblock %}
 
 {% block content %}
-<section class="customer-page-head customer-page-head-compact">
-    <div>
-        <p class="section-kicker">Notification History</p>
-        <h1>通知紀錄</h1>
-        <p>店家針對你填過的問卷發出的回應，依問卷分組。點擊通知可標記已讀。</p>
-    </div>
-    <nav class="customer-page-actions" aria-label="通知操作">
-        <a class="button button-ghost" href="{% url 'feedback:customer-home' %}">返回顧客端</a>
-        <a class="button button-primary" href="{% url 'accounts:preferences' %}">通知偏好</a>
-    </nav>
-</section>
+<header class="cx-head">
+    <h1>通知</h1>
+    <p class="cx-sub">
+        {% if unread_count %}{{ unread_count }} 則未讀，共 {{ notice_count }} 則。{% elif notice_count %}全部已讀，共 {{ notice_count }} 則。{% else %}店家回覆你的意見時，會通知你。{% endif %}
+        <a href="{% url 'accounts:preferences' %}">通知設定</a>
+    </p>
+</header>
 
-<section class="customer-timeline-chips" aria-label="通知摘要">
-    <span class="customer-timeline-chip"><span>通知總數</span><strong>{{ notice_count }}</strong></span>
-    <span class="customer-timeline-chip"><span>未讀</span><strong>{{ unread_count }}</strong></span>
-</section>
-
-<div class="customer-timeline-cards">
+<div class="cx-stack">
     {% for group in groups %}
-        <section class="customer-panel customer-timeline-card">
-            <header class="customer-timeline-card-head">
+        <section class="cx-card">
+            <header class="cx-card-head">
                 <h2>{% if group.survey %}{{ group.survey.title }}{% else %}店家公告{% endif %}</h2>
-                {% if group.survey.category %}<span class="pill pill-category">{{ group.survey.category.name }}</span>{% endif %}
+                {% if group.survey.category %}<span class="cx-tag">{{ group.survey.category.name }}</span>{% endif %}
             </header>
-            <div class="customer-record-list">
+            <ol class="cx-list">
                 {% for notice in group.notices %}
-                    <div class="customer-record-row customer-record-clickable customer-timeline-row {% if not notice.is_read %}customer-record-unread{% endif %}"
-                         data-pk="{{ notice.id }}"
-                         data-is-read="{{ notice.is_read|yesno:'true,false' }}"
-                         data-read-url="{% url 'feedback:notice-mark-read' notice.id %}"
-                         data-survey-url="{% if group.survey %}{% url 'feedback:survey-detail' group.survey.slug %}{% endif %}">
-                        <div>
-                            <div class="customer-row-title">
-                                <strong>{{ notice.title }}</strong>
-                                <span class="pill customer-timeline-read-pill {% if notice.is_read %}pill-active{% endif %}">{% if notice.is_read %}已讀{% else %}未讀{% endif %}</span>
-                                {% if notice.improvement_status_label %}<span class="pill">{{ notice.improvement_status_label }}</span>{% endif %}
-                            </div>
-                            <p class="customer-timeline-meta">{{ notice.sent_date }}</p>
-                            {% if notice.summary %}<p>{{ notice.summary }}</p>{% endif %}
-                        </div>
-                    </div>
+                    <li class="cx-list-item{% if not notice.is_read %} is-new{% endif %}" data-notice>
+                        <p class="cx-list-title">{{ notice.title }}</p>
+                        <p class="cx-tl-meta">
+                            {{ notice.sent_date }}
+                            {% if notice.improvement_status_label %}<span class="cx-tag">{{ notice.improvement_status_label }}</span>{% endif %}
+                            {% if not notice.is_read %}<span class="cx-tag cx-tag-new" data-new-tag>新通知</span>{% endif %}
+                        </p>
+                        {% if notice.summary %}<p class="cx-list-body">{{ notice.summary }}</p>{% endif %}
+                        {% if not notice.is_read %}
+                            <form method="post" action="{% url 'feedback:notice-mark-read' notice.id %}" class="cx-read-form" data-mark-read>
+                                {% csrf_token %}
+                                <button type="submit" class="cx-link-btn">標為已讀</button>
+                            </form>
+                        {% endif %}
+                    </li>
                 {% endfor %}
-            </div>
+            </ol>
         </section>
     {% empty %}
-        <div class="customer-panel customer-empty">
-            <h3>目前沒有通知紀錄</h3>
-            <p>當店家發出通知後，會依問卷整理在這裡。</p>
-        </div>
+        <section class="cx-empty">
+            <h2>目前沒有通知</h2>
+            <p>店家根據你的意見開始處理或完成改善時，通知會出現在這裡。</p>
+        </section>
     {% endfor %}
 </div>
-
-<script src="{% static 'js/customer-notifications.js' %}?v=20261029-tl1"></script>
 {% endblock %}

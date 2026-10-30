@@ -1,63 +1,38 @@
-{% extends "base.html" %}
+{% extends "feedback/customer_base.html" %}
 
-{% block title %}個人資料 | FeedBack IQ{% endblock %}
-{% block body_class %}site-body customer-workspace-body{% endblock %}
+{% block title %}個人資料｜回饋洞察 AI 平台{% endblock %}
 
 {% block content %}
-<section class="customer-page-head customer-page-head-compact">
-    <div>
-        <p class="section-kicker">Profile Settings</p>
-        <h1>維護你的個人資料。</h1>
-        <p>
-            請保持姓名、Email 與所屬單位正確。這些資料會用於通知寄送與顧客端顯示，
-            不會改變你已提交的問卷紀錄。
-        </p>
-    </div>
-    <nav class="customer-page-actions" aria-label="個人資料操作">
-        <a class="button button-ghost" href="{% url 'feedback:customer-home' %}">返回顧客端</a>
-        <a class="button button-primary" href="{% url 'accounts:password_change' %}">變更密碼</a>
-    </nav>
+<header class="cx-head">
+    <h1>帳號</h1>
+</header>
+
+<nav class="cx-subnav" aria-label="帳號設定">
+    <a href="{% url 'accounts:profile' %}" aria-current="page">個人資料</a>
+    <a href="{% url 'accounts:preferences' %}">通知設定</a>
+</nav>
+
+<section class="cx-card">
+    <p class="cx-static">帳號名稱<strong>{{ user.username }}</strong></p>
+    <form method="post" class="cx-form-stack">
+        {% csrf_token %}
+        {% for field in form %}
+            <div class="cx-field">
+                <label class="cx-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                {{ field }}
+                {{ field.errors }}
+            </div>
+        {% endfor %}
+        <button type="submit" class="cx-btn cx-btn-primary">儲存</button>
+    </form>
+    <p class="cx-note">Email 用來寄送改善通知和帳號相關訊息；姓名和所屬單位讓店家知道是誰提出的意見。修改資料不會影響你已送出的回覆。</p>
 </section>
 
-<section class="customer-layout-grid">
-    <article class="customer-panel">
-        <div class="customer-panel-head">
-            <div>
-                <p class="section-kicker">Account</p>
-                <h2>個人資料</h2>
-            </div>
-        </div>
-
-        <div class="customer-static-field">
-            <span>帳號：</span>
-            <strong>{{ user.username }}</strong>
-        </div>
-
-        <form method="post" class="form-stack">
-            {% csrf_token %}
-            {% for field in form %}
-                <div class="field-block">
-                    {{ field.label_tag }}
-                    {{ field }}
-                    {{ field.errors }}
-                </div>
-            {% endfor %}
-            <button type="submit" class="button button-primary">儲存資料</button>
-        </form>
-    </article>
-
-    <article class="customer-panel customer-muted-panel">
-        <div class="customer-panel-head">
-            <div>
-                <p class="section-kicker">Notes</p>
-                <h2>資料用途</h2>
-            </div>
-        </div>
-        <ul class="feature-list">
-            <li>Email 會用於寄送改善通知與帳號相關訊息。</li>
-            <li>姓名與所屬單位協助管理端辨識回饋來源。</li>
-            <li>通知接收設定請到通知偏好頁調整。</li>
-        </ul>
-    </article>
+<section class="cx-card cx-card-row">
+    <div>
+        <h2 class="cx-card-title">密碼</h2>
+        <p class="cx-note">定期更換密碼，保護你的帳號。</p>
+    </div>
+    <a class="cx-btn cx-btn-ghost" href="{% url 'accounts:password_change' %}">變更密碼</a>
 </section>
 {% endblock %}

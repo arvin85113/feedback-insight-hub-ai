@@ -156,7 +156,7 @@ def customer_preferences_view(request):
             form = CustomerPreferenceForm(request.POST, instance=request.user)
             if form.is_valid():
                 form.save()
-                messages.success(request, "通知偏好已儲存。")
+                messages.success(request, "通知設定已儲存。")
                 return redirect("accounts:preferences")
         elif action == "toggle-survey":
             survey_id = request.POST.get("survey_id")
