@@ -1,48 +1,35 @@
-{% extends "base.html" %}
+{% extends "feedback/customer_base.html" %}
 
-{% block title %}提交成功 | FeedBack IQ{% endblock %}
-{% block body_class %}site-body customer-workspace-body{% endblock %}
+{% block title %}已送出｜回饋洞察 AI 平台{% endblock %}
+{% block body_extra %} cx-focus{% endblock %}
+{% block tabs %}{% endblock %}
 
 {% block content %}
-<section class="survey-shell">
-    <div class="survey-success-panel">
-        <div class="survey-success-icon">✓</div>
-        <p class="section-kicker">Submitted</p>
-        <h1>感謝你的回饋</h1>
-        <p>
-            你的意見已成功送出，系統將納入分析與改善追蹤流程。
-        </p>
+<section class="cx-done">
+    <span class="cx-done-mark" aria-hidden="true"></span>
+    <h1>謝謝你的回饋</h1>
+    <p class="cx-sub">你的回覆已經送出，店家會看到整理好的意見。</p>
 
-        <div class="survey-success-next-steps">
-            <div class="survey-success-step">
-                <span class="survey-success-step-icon">📊</span>
-                <div>
-                    <strong>資料已收錄</strong>
-                    <p>你的回饋已歸屬到你的帳號，不會與他人混淆。</p>
-                </div>
-            </div>
-            <div class="survey-success-step">
-                <span class="survey-success-step-icon">🔔</span>
-                <div>
-                    <strong>後續改善通知</strong>
-                    <p>當管理團隊根據你的回饋做出改善，你將收到專屬通知。</p>
-                </div>
-            </div>
-            <div class="survey-success-step">
-                <span class="survey-success-step-icon">📋</span>
-                <div>
-                    <strong>追蹤填答紀錄</strong>
-                    <p>可在顧客中心查看所有填答紀錄與改善進度。</p>
-                </div>
-            </div>
-        </div>
+    <ol class="cx-next">
+        <li>
+            <strong>店家整理意見</strong>
+            <span>你的回覆會和其他顧客的意見一起整理，交給店家參考。</span>
+        </li>
+        <li>
+            <strong>店家決定要改什麼</strong>
+            <span>開始處理或改善完成時，進度會顯示在「我的回饋」。</span>
+        </li>
+        <li>
+            <strong>通知你</strong>
+            <span>如果你同意接收通知，改善完成時會告訴你店家做了哪些改變。</span>
+        </li>
+    </ol>
 
-        <div class="survey-success-actions">
-            <a class="button button-primary" href="{% url 'feedback:home' %}">回首頁</a>
-            {% if user.is_authenticated and not user.is_manager %}
-                <a class="button button-ghost" href="{% url 'feedback:customer-home' %}">前往顧客中心</a>
-            {% endif %}
-        </div>
+    <div class="cx-done-actions">
+        {% if user.is_authenticated and not user.is_manager %}
+            <a class="cx-btn cx-btn-primary" href="{% url 'feedback:customer-home' %}">查看我的回饋</a>
+        {% endif %}
+        <a class="cx-btn cx-btn-ghost" href="{% url 'feedback:home' %}">回首頁</a>
     </div>
 </section>
 {% endblock %}

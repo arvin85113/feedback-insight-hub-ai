@@ -210,8 +210,8 @@ class CustomerTimelineTemplateTests(TimelineFixtures, TestCase):
         html = self.get_page("feedback:customer-home")
         self.assertIn("已填答", html)
         self.assertIn("等待店家回應", html)
-        self.assertIn('class="customer-timeline-item', html)
-        self.assertIn("customer-timeline-item-pending", html)
+        self.assertIn('class="cx-tl-item is-done"', html)
+        self.assertIn('class="cx-tl-item is-waiting"', html)
 
     def test_home_renders_processing_copy(self):
         self.receipt(status="quarantined")
@@ -224,7 +224,8 @@ class CustomerTimelineTemplateTests(TimelineFixtures, TestCase):
         html = self.get_page("feedback:customer-home")
         self.assertIn("已修正洗手間", html)
         self.assertIn("進行中", html)
-        self.assertIn('class="pill customer-timeline-unread-pill"', html)
+        self.assertIn('class="cx-tl-item is-new"', html)
+        self.assertIn('class="cx-tag cx-tag-new"', html)
         self.assertNotIn("SECRET-INTERNAL", html)
         self.assertNotIn("等待店家回應", html)
 
@@ -233,8 +234,8 @@ class CustomerTimelineTemplateTests(TimelineFixtures, TestCase):
         self.dispatch(self.improvement(), subject="已讀事件", is_read=True)
         html = self.get_page("feedback:customer-home")
         self.assertIn("已讀事件", html)
-        self.assertNotIn("customer-timeline-unread-pill", html)
-        self.assertNotIn("customer-timeline-item-unread", html)
+        self.assertNotIn("cx-tag-new", html)
+        self.assertNotIn("is-new", html)
 
     def test_announcements_section_rendered(self):
         self.receipt()
@@ -247,13 +248,12 @@ class CustomerTimelineTemplateTests(TimelineFixtures, TestCase):
         self.receipt()
         self.assertNotIn("店家公告", self.get_page("feedback:customer-home"))
 
-    def test_notification_row_keeps_mark_read_hook(self):
+    def test_unread_notification_has_mark_read_form(self):
         self.receipt()
         dispatch = self.dispatch(self.improvement(), subject="分組通知")
         html = self.get_page("feedback:customer-notifications")
-        self.assertIn(f'data-pk="{dispatch.pk}"', html)
-        self.assertIn('data-is-read="false"', html)
-        self.assertIn(reverse("feedback:notice-mark-read", args=[dispatch.pk]), html)
+        self.assertIn('class="cx-list-item is-new"', html)
+        self.assertIn(f'action="{reverse("feedback:notice-mark-read", args=[dispatch.pk])}"', html)
         self.assertIn("分組通知", html)
         self.assertIn(self.survey.title, html)
 
@@ -264,14 +264,19 @@ class CustomerTimelineTemplateTests(TimelineFixtures, TestCase):
         self.assertIn("店家公告", html)
         self.assertIn("全店公告", html)
 
-    def test_announcement_row_has_empty_survey_url_and_read_url(self):
+    def test_announcement_row_has_mark_read_form(self):
         self.receipt()
         dispatch = self.dispatch(
             self.improvement(survey=self.other_survey), audience="global", subject="全店公告")
         html = self.get_page("feedback:customer-notifications")
-        self.assertIn('data-survey-url=""', html)
-        self.assertIn(
-            f'data-read-url="{reverse("feedback:notice-mark-read", args=[dispatch.pk])}"', html)
+        self.assertIn(f'action="{reverse("feedback:notice-mark-read", args=[dispatch.pk])}"', html)
+
+    def test_read_notification_has_no_mark_read_form(self):
+        self.receipt()
+        self.dispatch(self.improvement(), subject="已讀通知", is_read=True)
+        html = self.get_page("feedback:customer-notifications")
+        self.assertIn("已讀通知", html)
+        self.assertNotIn("data-mark-read", html)
 
 
 @cloud_only

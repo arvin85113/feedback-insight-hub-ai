@@ -35,7 +35,7 @@
         fill.style.width = pct + '%';
 
         if (isInfo) {
-            label.textContent    = '填答者資訊';
+            label.textContent    = '填答前確認';
             fraction.textContent = '';
         } else {
             label.textContent    = '第 ' + n + ' 題';
@@ -46,7 +46,7 @@
         prevBtn.style.display   = n === 0 ? 'none' : '';
         nextBtn.style.display   = isLast ? 'none' : '';
         submitBtn.style.display = isLast ? '' : 'none';
-        nextBtn.textContent     = isInfo ? '開始填答 →' : '下一題 →';
+        nextBtn.textContent     = isInfo ? '開始填答' : '下一題';
 
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }

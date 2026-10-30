@@ -1,114 +1,111 @@
-{% extends "base.html" %}
+{% extends "feedback/customer_base.html" %}
 {% load static %}
 
-{% block title %}{{ survey.title }} | FeedBack IQ{% endblock %}
-{% block body_class %}site-body customer-workspace-body{% endblock %}
+{% block title %}{{ survey.title }}｜回饋洞察 AI 平台{% endblock %}
+{% block body_extra %} cx-focus{% if preview %} cx-preview{% endif %}{% endblock %}
+{% block topbar %}{% if not preview %}{{ block.super }}{% endif %}{% endblock %}
+{% block tabs %}{% endblock %}
 
 {% block content %}
-<section class="survey-shell">
-    <div class="customer-page-head customer-page-head-compact">
-        <div>
-            <p class="section-kicker">Feedback Form</p>
-            <h1>{{ survey.title }}</h1>
-            <p>{{ survey.description|default:"請根據你的實際體驗填寫下列問題，協助團隊更有效率地整理意見、啟動改善並追蹤後續結果。" }}</p>
-        </div>
-    </div>
+<header class="cx-head cx-survey-head">
+    {% if survey.category %}<p class="cx-hello">{{ survey.category.name }}</p>{% endif %}
+    <h1>{{ survey.title }}</h1>
+    <p class="cx-sub">{{ survey.description|default:"請依你的實際體驗回答。大多是選擇題，幾分鐘就能填完。" }}</p>
+</header>
 
-    {% if preview %}
-        <article class="survey-notice survey-notice-info"><p>預覽模式：這是填答者會看到的樣子，無法送出。</p></article>
+{% if preview %}
+    <p class="cx-flash cx-flash-info">預覽模式：這是填答者會看到的畫面，無法送出。</p>
+{% endif %}
+
+{% if survey_notice %}
+    <p class="cx-flash cx-flash-{{ survey_notice_type|default:'info' }}">{{ survey_notice }}</p>
+    {% if user.is_authenticated and not user.is_manager %}
+        <p class="cx-after-notice"><a class="cx-btn cx-btn-ghost" href="{% url 'feedback:customer-home' %}">查看我的回饋</a></p>
     {% endif %}
+{% else %}
 
-    {% if survey_notice %}
-        <article class="survey-notice survey-notice-{{ survey_notice_type|default:'info' }}">
-            <p>{{ survey_notice }}</p>
-        </article>
-    {% else %}
-
-    <div class="survey-progress-strip" id="surveyProgressStrip" style="display:none">
-        <div class="survey-progress-meta">
-            <span class="survey-progress-label" id="surveyProgressLabel"></span>
-            <span class="survey-progress-fraction" id="surveyProgressFraction"></span>
-        </div>
-        <div class="survey-progress-track">
-            <div class="survey-progress-fill" id="surveyProgressFill"></div>
-        </div>
+<div class="cx-progress" id="surveyProgressStrip" style="display:none">
+    <div class="cx-progress-meta">
+        <span id="surveyProgressLabel"></span>
+        <span id="surveyProgressFraction"></span>
     </div>
+    <div class="cx-progress-track"><div class="cx-progress-fill" id="surveyProgressFill"></div></div>
+</div>
 
-    <form method="post" class="survey-card-stack" id="surveyForm" novalidate
-          data-total-q="{{ active_question_count }}">
-        {% csrf_token %}
-        {{ respondent_form.idempotency_key }}
-        <input type="hidden" name="definition_version" value="{{ form_version }}">
+<form method="post" class="cx-form" id="surveyForm" novalidate data-total-q="{{ active_question_count }}">
+    {% csrf_token %}
+    {{ respondent_form.idempotency_key }}
+    <input type="hidden" name="definition_version" value="{{ form_version }}">
 
-        {# Step 0: respondent info + consent #}
-        <article class="survey-card survey-card-accent survey-step"
-                 data-step="0"
-                 data-has-error="{{ respondent_form.errors|yesno:'1,0' }}">
-            <h2>填答者資訊</h2>
-            <div class="respondent-info-row">
-                <div class="respondent-info-field">
-                    <span class="respondent-info-label">姓名</span>
-                    <span class="respondent-info-value">{{ request.user.get_full_name|default:request.user.username }}</span>
-                </div>
-                <div class="respondent-info-field">
-                    <span class="respondent-info-label">Email</span>
-                    <span class="respondent-info-value">{{ request.user.email|default:"—" }}</span>
-                </div>
-            </div>
-            <div class="respondent-consent-row">
-                {% with field=respondent_form.consent_follow_up %}
-                    <label class="consent-label">
-                        {{ field }}
-                        <span>{{ field.label }}</span>
-                    </label>
-                    {{ field.errors }}
-                {% endwith %}
-            </div>
-        </article>
+    {# Step 0: who is answering, and whether they want to hear back #}
+    <section class="cx-q survey-step" data-step="0" data-has-error="{{ respondent_form.errors|yesno:'1,0' }}">
+        <h2 class="cx-q-title">填答前確認</h2>
+        <dl class="cx-who">
+            <div><dt>姓名</dt><dd>{{ request.user.get_full_name|default:request.user.username }}</dd></div>
+            <div><dt>Email</dt><dd>{{ request.user.email|default:"未填寫" }}</dd></div>
+        </dl>
+        {% with field=respondent_form.consent_follow_up %}
+            <label class="cx-check">
+                {{ field }}
+                <span>{{ field.label }}</span>
+            </label>
+            {{ field.errors }}
+        {% endwith %}
+    </section>
 
-        {# Steps 1-N: questions #}
-        {% for field in form %}
-            <article class="survey-card survey-step"
-                     data-step="{{ forloop.counter }}"
-                     data-has-error="{{ field.errors|yesno:'1,0' }}">
-                <div class="question-index">{{ forloop.counter }}</div>
-                <div class="field-block">
-                    {{ field.label_tag }}
+    {# Steps 1-N: questions #}
+    {% for field in form %}
+        <section class="cx-q survey-step" data-step="{{ forloop.counter }}" data-has-error="{{ field.errors|yesno:'1,0' }}">
+            {% if field.field.widget.input_type == "radio" or field.field.widget.input_type == "checkbox" %}
+                <fieldset class="cx-field">
+                    <legend class="cx-q-title">
+                        <span class="cx-q-num">{{ forloop.counter }}</span>{{ field.label }}{% if field.field.required %}<span class="cx-req" aria-label="必填">*</span>{% endif %}
+                    </legend>
+                    {% if field.help_text %}<p class="cx-q-help">{{ field.help_text }}</p>{% endif %}
+                    {% if field.field.widget.input_type == "checkbox" %}<p class="cx-q-help">可複選</p>{% endif %}
                     {% if field.field.is_scale %}
-                        <div class="scale-field">
-                            {% if field.field.scale_min_label %}<span class="scale-end-label">{{ field.field.scale_min_label }}</span>{% endif %}
-                            <div class="scale-buttons">{{ field }}</div>
-                            {% if field.field.scale_max_label %}<span class="scale-end-label">{{ field.field.scale_max_label }}</span>{% endif %}
+                        <div class="cx-scale">
+                            <div class="cx-scale-options">{{ field }}</div>
+                            {% if field.field.scale_min_label or field.field.scale_max_label %}
+                                <div class="cx-scale-ends" aria-hidden="true">
+                                    <span>{{ field.field.scale_min_label }}</span>
+                                    <span>{{ field.field.scale_max_label }}</span>
+                                </div>
+                            {% endif %}
                         </div>
                     {% else %}
-                        {{ field }}
-                    {% endif %}
-                    {% if field.help_text %}
-                        <small class="muted-text">{{ field.help_text }}</small>
+                        <div class="cx-choices">{{ field }}</div>
                     {% endif %}
                     {{ field.errors }}
+                </fieldset>
+            {% else %}
+                <div class="cx-field">
+                    <label class="cx-q-title" for="{{ field.id_for_label }}">
+                        <span class="cx-q-num">{{ forloop.counter }}</span>{{ field.label }}{% if field.field.required %}<span class="cx-req" aria-label="必填">*</span>{% endif %}
+                    </label>
+                    {% if field.help_text %}<p class="cx-q-help">{{ field.help_text }}</p>{% endif %}
+                    {{ field }}
+                    {{ field.errors }}
                 </div>
-            </article>
-        {% endfor %}
+            {% endif %}
+        </section>
+    {% endfor %}
 
-        {% if not preview %}
-        {# Navigation (JS-driven) #}
-        <div class="survey-nav" id="surveyNav" style="display:none">
-            <button type="button" class="button button-ghost" id="surveyPrev">← 上一題</button>
-            <div class="survey-nav-right">
-                <button type="button" class="button button-primary" id="surveyNext">下一步 →</button>
-                <button type="submit" class="button button-primary" id="surveySubmit" style="display:none">送出回饋</button>
-            </div>
-        </div>
+    {% if not preview %}
+    {# Step navigation (JS-driven) #}
+    <div class="cx-step-nav" id="surveyNav" style="display:none">
+        <button type="button" class="cx-btn cx-btn-ghost" id="surveyPrev">上一題</button>
+        <button type="button" class="cx-btn cx-btn-primary" id="surveyNext">下一題</button>
+        <button type="submit" class="cx-btn cx-btn-primary" id="surveySubmit" style="display:none">送出回饋</button>
+    </div>
 
-        {# Fallback submit: shown only if JS is disabled #}
-        <div class="survey-submit" id="surveyFallbackSubmit" style="display:none">
-            <button type="submit" class="button button-primary">送出回饋</button>
-        </div>
-        {% endif %}
-    </form>
+    {# Shown only without JS: every question is visible and one button submits #}
+    <div class="cx-step-nav" id="surveyFallbackSubmit">
+        <button type="submit" class="cx-btn cx-btn-primary">送出回饋</button>
+    </div>
     {% endif %}
-</section>
+</form>
+{% endif %}
 
-<script src="{% static 'js/survey-form.js' %}?v=20261004-preview"></script>
+<script src="{% static 'js/survey-form.js' %}?v=20261030-2"></script>
 {% endblock %}
