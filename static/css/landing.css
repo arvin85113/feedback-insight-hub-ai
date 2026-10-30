@@ -310,7 +310,8 @@
 .lp-hero h1 {
     margin: 0;
     color: var(--lp-ink);
-    font-size: clamp(38px, 4.4vw, 60px);
+    /* Sized so the longest line (11 characters) fits the column without a one-character last line. */
+    font-size: clamp(28px, 3.5vw, 50px);
     font-weight: 900;
     line-height: 1.14;
     letter-spacing: -0.02em;
@@ -1113,6 +1114,10 @@
 
     .lp-hero-copy {
         padding-top: 0;
+    }
+
+    .lp-hero h1 {
+        font-size: clamp(28px, 6.4vw, 50px);
     }
 
     .lp-feature-flip .lp-feature-copy {
