@@ -1,41 +1,52 @@
 {% extends "feedback/dashboard_base.html" %}
+{% load static %}
 
 {% block title %}編輯 {{ improvement.title }}｜回饋洞察 AI 平台{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'css/survey-manager.css' %}?v=20261031-2"><link rel="stylesheet" href="{% static 'css/analysis.css' %}?v=20261031-4"><link rel="stylesheet" href="{% static 'css/improvements.css' %}?v=20261101-1">{% endblock %}
 
 {% block dashboard_content %}
-<section class="manager-header manager-header-inline">
-    <div>
-        <h1>編輯改善項目</h1>
-        <p>只更新工作內容與內部追蹤資訊，不會建立通知或寄送郵件。</p>
+<header class="an-head">
+    <div class="an-head-title">
+        <a class="an-back" href="{% url 'feedback:improvement-detail' improvement.pk %}">← 取消編輯</a>
+        <h2>編輯改善項目</h2>
+        <p>只更新內容與內部追蹤資訊，不會建立通知或寄信。</p>
     </div>
-    <a class="button button-ghost" href="{% url 'feedback:improvement-detail' improvement.pk %}">取消編輯</a>
-</section>
+</header>
 
-<section class="manager-dual-grid improvement-edit-grid">
-    <article class="manager-panel">
-        <div class="panel-head"><h2>項目內容</h2></div>
-        <form method="post" class="form-stack">
+<div class="im-detail">
+    <section class="tx-card im-section">
+        <form method="post" class="im-edit-form">
             {% csrf_token %}
             {% for field in form %}
-                <div class="field-block">
+                <div class="im-field">
                     {{ field.label_tag }}
                     {{ field }}
+                    {% if field.help_text %}<p class="im-muted">{{ field.help_text }}</p>{% endif %}
                     {{ field.errors }}
                 </div>
             {% endfor %}
-            <button type="submit" class="button button-primary">儲存變更</button>
+            <div class="im-edit-actions">
+                <button type="submit" class="button button-primary">儲存變更</button>
+                <a class="button button-ghost" href="{% url 'feedback:improvement-detail' improvement.pk %}">取消</a>
+            </div>
         </form>
-    </article>
+    </section>
 
-    <aside class="manager-panel muted-card">
-        <div class="panel-head"><h2>不可變更的來源資料</h2></div>
-        <dl class="detail-list improvement-detail-list">
-            <div><dt>來源問卷</dt><dd>{% if improvement.survey %}{{ improvement.survey.title }}{% else %}來源問卷已移除{% endif %}</dd></div>
-            <div><dt>目前狀態</dt><dd>{{ improvement.get_status_display }}</dd></div>
-            <div><dt>AI 來源</dt><dd>{% if improvement.source_ai_analysis_stage %}{{ improvement.source_ai_analysis_stage.get_stage_type_display }} r{{ improvement.source_ai_analysis_stage.revision }}{% else %}手動建立{% endif %}</dd></div>
-            {% if improvement.source_ai_draft_id %}<div><dt>AI 草稿識別碼</dt><dd>{{ improvement.source_ai_draft_id }}</dd></div>{% endif %}
-        </dl>
-        <p class="muted-text">問卷、AI 階段、草稿識別碼、證據引用與來源 metadata 均為唯讀稽核資料。</p>
+    <aside class="im-detail-side">
+        <section class="tx-card">
+            <header class="tx-card-head">
+                <div>
+                    <h3>來源資料</h3>
+                    <p>問卷、狀態與 AI 來源是稽核紀錄，這裡不能修改。</p>
+                </div>
+            </header>
+            <dl class="im-props im-section">
+                <div><dt>來源問卷</dt><dd>{% if improvement.survey %}{{ improvement.survey.title }}{% else %}來源問卷已移除{% endif %}</dd></div>
+                <div><dt>目前狀態</dt><dd><span class="im-state-label"><span class="im-state im-state-{{ improvement.status }}" aria-hidden="true"></span>{{ improvement.get_status_display }}</span></dd></div>
+                <div><dt>建立方式</dt><dd>{% if improvement.source_ai_analysis_stage %}AI 建議（{{ improvement.source_ai_analysis_stage.get_stage_type_display }} r{{ improvement.source_ai_analysis_stage.revision }}）{% else %}手動建立{% endif %}</dd></div>
+                {% if improvement.source_ai_draft_id %}<div><dt>草稿識別碼</dt><dd class="im-mono">{{ improvement.source_ai_draft_id }}</dd></div>{% endif %}
+            </dl>
+        </section>
     </aside>
-</section>
+</div>
 {% endblock %}

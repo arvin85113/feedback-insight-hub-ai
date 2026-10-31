@@ -841,6 +841,17 @@ class TextAnalysisView(DashboardBaseMixin, TemplateView):
         )
         return context
 
+# Linear-style grouping: work in flight first, finished and archived last.
+IMPROVEMENT_STATUS_ORDER = (
+    ImprovementUpdate.Status.IN_PROGRESS,
+    ImprovementUpdate.Status.PLANNED,
+    ImprovementUpdate.Status.DRAFT,
+    ImprovementUpdate.Status.COMPLETED,
+    ImprovementUpdate.Status.ARCHIVED,
+)
+IMPROVEMENT_CLOSED_STATUSES = (ImprovementUpdate.Status.COMPLETED, ImprovementUpdate.Status.ARCHIVED)
+
+
 class ImprovementListView(DashboardBaseMixin, TemplateView):
     template_name = "feedback/improvement_list.html"
     active_section = "feedback:improvement-list"
@@ -879,6 +890,11 @@ class ImprovementListView(DashboardBaseMixin, TemplateView):
             .select_related("category")
             .annotate(
                 improvement_count=Count("improvements", distinct=True),
+                open_improvement_count=Count(
+                    "improvements",
+                    filter=~Q(improvements__status__in=IMPROVEMENT_CLOSED_STATUSES),
+                    distinct=True,
+                ),
             )
         )
         if category_id:
@@ -894,8 +910,18 @@ class ImprovementListView(DashboardBaseMixin, TemplateView):
         survey_rows = list(improvement_surveys)
         _apply_received_stats(survey_rows)
         context["improvement_survey_rows"] = survey_rows
-        context["selected_improvements"] = (
-            selected_survey.improvements.order_by("-created_at") if selected_survey else []
+        improvements = list(selected_survey.improvements.order_by("-updated_at")) if selected_survey else []
+        context["selected_improvements"] = improvements
+        context["improvement_groups"] = [
+            {"status": status, "label": ImprovementUpdate.Status(status).label,
+             "items": [item for item in improvements if item.status == status]}
+            for status in IMPROVEMENT_STATUS_ORDER
+        ]
+        context["today"] = timezone.localdate()
+        context["open_improvement_total"] = sum(
+            1 for item in improvements if item.status not in IMPROVEMENT_CLOSED_STATUSES)
+        context["survey_list"] = (
+            Survey.objects.filter(is_active=True).order_by("title") if selected_survey else []
         )
         context["create_url"] = (
             reverse("feedback:improvement-create", args=[selected_survey.slug]) if selected_survey else ""
