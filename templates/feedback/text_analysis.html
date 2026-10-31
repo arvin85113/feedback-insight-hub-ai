@@ -2,300 +2,255 @@
 {% load static %}
 
 {% block title %}文字洞察｜回饋洞察 AI 平台{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'css/survey-manager.css' %}?v=20261031-2"><link rel="stylesheet" href="{% static 'css/analysis.css' %}?v=20261031-4">{% endblock %}
 
 {% block dashboard_content %}
-<section class="manager-header manager-header-inline analytics-hero">
-    {% if selected_survey %}
-    <div class="analytics-meta-strip" aria-label="文字洞察摘要">
-        <span class="analytics-meta-item analytics-meta-item-wide">
-            <span class="analytics-meta-label">問卷</span>
-            <strong class="analytics-meta-value">{{ selected_survey.title }}</strong>
-        </span>
-        <span class="analytics-meta-item">
-            <span class="analytics-meta-label">文字題</span>
-            <strong class="analytics-meta-value">{{ text_questions|length }}</strong>
-        </span>
-        <span class="analytics-meta-item">
-            <span class="analytics-meta-label">關鍵字</span>
-            <strong class="analytics-meta-value">{{ keywords|length }}</strong>
-        </span>
-        <span class="analytics-meta-item">
-            <span class="analytics-meta-label">分類規則</span>
-            <strong class="analytics-meta-value">{{ keyword_categories|length }}</strong>
-        </span>
-        <span class="analytics-meta-item">
-            <span class="analytics-meta-label">已分析</span>
-            <strong class="analytics-meta-value">{{ analysis_summary.analyzed_answers|default:0 }}/{{ analysis_summary.total_answers|default:0 }}</strong>
-        </span>
-        <span class="analytics-meta-item" title="整體氣氛參考，非正式滿意度指標">
-            <span class="analytics-meta-label">情緒分數</span>
-            <strong class="analytics-meta-value">{{ analysis_summary.avg_sentiment_score|default:"-" }}</strong>
-        </span>
+{% if selected_survey %}
+<header class="an-head">
+    <div class="an-head-title">
+        <a class="an-back" href="{% url 'feedback:text-analysis' %}">← 所有問卷</a>
+        <h2>{{ selected_survey.title }}</h2>
     </div>
-        <a class="button button-ghost" href="{% url 'feedback:text-analysis' %}">返回問卷列表</a>
-    {% else %}
-    <div>
-        <p>整理開放式題目的關鍵字與主題分類，協助團隊快速理解顧客回饋的重點方向。</p>
-    </div>
-    {% endif %}
+    <form class="an-switch" method="get">
+        <label class="visually-hidden" for="tx-survey">切換問卷</label>
+        <select id="tx-survey" name="survey" data-autosubmit>
+            {% for item in survey_list %}
+                <option value="{{ item.slug }}"{% if item.pk == selected_survey.pk %} selected{% endif %}>{{ item.title }}</option>
+            {% endfor %}
+        </select>
+        <noscript><button type="submit" class="button button-ghost button-small">切換</button></noscript>
+    </form>
+</header>
+<section class="an-kpis" aria-label="文字洞察摘要">
+    <div><p>文字題</p><strong>{{ text_questions|length }}</strong></div>
+    <div><p>已分析回答</p><strong>{{ analysis_summary.analyzed_answers|default:0 }}<small> / {{ analysis_summary.total_answers|default:0 }}</small></strong></div>
+    <div><p>關鍵字</p><strong>{{ keywords|length }}</strong></div>
+    <div title="由文字推估的整體氣氛，僅供參考，不是正式滿意度指標"><p>平均情緒（參考）</p><strong>{{ analysis_summary.avg_sentiment_score|default:"—" }}</strong></div>
 </section>
+{% else %}
+<header class="an-head">
+    <div class="an-head-title">
+        <h2>選擇要看的問卷</h2>
+        <p>整理開放式回答裡常出現的關鍵字、主題分類與情緒傾向，方便找出要改善的地方。</p>
+    </div>
+</header>
+{% endif %}
 
 {% include "feedback/_analysis_publication_status.html" %}
 
 {% if selected_survey %}
     <nav class="analytics-tab-nav" data-default-tab="text-keywords" role="tablist" aria-label="文字洞察分類">
         <button class="analytics-tab" data-tab="text-keywords" role="tab" aria-selected="true">
-            <span class="analytics-tab-num">1</span>
-            <span class="analytics-tab-label">關鍵字摘要</span>
-            {% if keywords %}
-                <span class="analytics-tab-badge">{{ keywords|length }}</span>
-            {% endif %}
+            <span class="analytics-tab-label">關鍵字</span>
+            {% if keywords %}<span class="analytics-tab-badge">{{ keywords|length }}</span>{% endif %}
         </button>
         <button class="analytics-tab" data-tab="text-sentiment" role="tab" aria-selected="false">
-            <span class="analytics-tab-num">2</span>
             <span class="analytics-tab-label">情緒分布</span>
-            {% if category_sentiments %}
-                <span class="analytics-tab-badge">{{ category_sentiments|length }}</span>
-            {% endif %}
+            {% if category_sentiments %}<span class="analytics-tab-badge">{{ category_sentiments|length }}</span>{% endif %}
         </button>
         <button class="analytics-tab" data-tab="text-rules" role="tab" aria-selected="false">
-            <span class="analytics-tab-num">3</span>
             <span class="analytics-tab-label">分類規則</span>
-            {% if keyword_categories %}
-                <span class="analytics-tab-badge">{{ keyword_categories|length }}</span>
-            {% endif %}
+            {% if keyword_categories %}<span class="analytics-tab-badge">{{ keyword_categories|length }}</span>{% endif %}
         </button>
     </nav>
 
-    <div data-tab-panel="text-keywords" class="analytics-tab-panel">
-        <article class="manager-panel">
-            <div class="panel-head">
+    <div data-tab-panel="text-keywords" class="analytics-tab-panel tx-keywords">
+        <section class="tx-card">
+            <header class="tx-card-head">
                 <div>
-                    <h2>關鍵字摘要</h2>
+                    <h3>常見關鍵字</h3>
+                    <p>在文字回答中出現的次數，可直接轉成改善項目。</p>
                 </div>
-            </div>
-            <div class="wordcloud-panel">
-                <h3>文字雲</h3>
-                <div class="wordcloud-controls" role="group" aria-label="文字雲顯示模式">
-                    <button type="button" class="button button-ghost button-small wordcloud-toggle active" data-mode="keyword">關鍵字</button>
-                    <button type="button" class="button button-ghost button-small wordcloud-toggle" data-mode="category">分類</button>
+            </header>
+            {% if keywords %}
+                <ol class="tx-kw-list">
+                    {% for keyword in keywords %}
+                        <li class="tx-kw-row">
+                            <span class="tx-kw-rank">{{ forloop.counter }}</span>
+                            <div class="tx-kw-main">
+                                <strong>{{ keyword.keyword }}</strong>
+                                <span class="sm-tag">{{ keyword.category|default:"未分類" }}</span>
+                            </div>
+                            <span class="tx-kw-bar" aria-hidden="true"><i style="width: {% widthratio keyword.count keywords.0.count 100 %}%"></i></span>
+                            <span class="tx-kw-count">{{ keyword.count }} 次</span>
+                            <a class="tx-kw-action" href="{% url 'feedback:improvement-create' selected_survey.slug %}?category={{ keyword.category|urlencode }}&keyword={{ keyword.keyword|urlencode }}">建立改善</a>
+                        </li>
+                    {% endfor %}
+                </ol>
+            {% else %}
+                <div class="sm-empty">
+                    <h3>還沒有關鍵字</h3>
+                    <p>文字題收到回答並完成分析後，常見關鍵字會列在這裡。</p>
                 </div>
-                <div id="keyword-wordcloud" class="wordcloud-canvas" aria-label="文字雲視覺化"></div>
-                <p class="muted-text">
-                    可切換關鍵字/分類模式。字體越大代表次數越高，建議搭配下方關鍵字卡片一起解讀。<br>
-                    關鍵字在開放式回覆中出現的次數可作為改善追蹤或主題分類的候選訊號。
-                </p>
-            </div>
-            <div class="keyword-signal-list">
-                {% for keyword in keywords %}
-                    <article class="keyword-signal-row" data-keyword-category="{{ keyword.category|default:'未分類' }}">
-                        <div class="keyword-signal-main">
-                            <span class="keyword-signal-category">{{ keyword.category|default:"未分類" }}</span>
-                            <strong class="keyword-signal-word">{{ keyword.keyword }}</strong>
-                        </div>
-                        <span class="keyword-signal-count">{{ keyword.count }} 次</span>
-                        <a class="button button-ghost button-small"
-                        href="{% url 'feedback:improvement-create' selected_survey.slug %}?category={{ keyword.category }}&keyword={{ keyword.keyword }}">建立改善</a>
-                    </article>
-                {% empty %}
-                    <div class="empty-card">
-                        <div>
-                            <h3>尚無可分析的關鍵字</h3>
-                            <p>需要先有文字題回覆，系統才會整理常見關鍵字。</p>
-                        </div>
-                    </div>
-                {% endfor %}
-            </div>
-        </article>
+            {% endif %}
+        </section>
+
+        <section class="tx-card tx-cloud">
+            <header class="tx-card-head">
+                <div>
+                    <h3>文字雲</h3>
+                    <p>字越大代表出現越多次。</p>
+                </div>
+                <div class="tx-segmented" role="group" aria-label="文字雲顯示方式">
+                    <button type="button" class="wordcloud-toggle active" data-mode="keyword">關鍵字</button>
+                    <button type="button" class="wordcloud-toggle" data-mode="category">分類</button>
+                </div>
+            </header>
+            <div id="keyword-wordcloud" class="tx-cloud-canvas" aria-label="文字雲"></div>
+        </section>
     </div>
 
     <div data-tab-panel="text-sentiment" class="analytics-tab-panel">
-        <article class="manager-panel">
-            <div class="panel-head">
+        <section class="tx-card">
+            <header class="tx-card-head">
                 <div>
-                    <h2>分類情緒分布</h2>
+                    <h3>分類情緒分布</h3>
+                    <p>依主題分類統計回答的情緒傾向。情緒是文字分析的推估結果，僅供參考。</p>
                 </div>
-            </div>
-            <div class="record-list sentiment-by-category">
-                {% for row in category_sentiments %}
-                    <div class="record-row record-row-stack sentiment-category-row {% if row.negative >= row.positive and row.negative >= row.neutral %}sentiment-category-negative{% elif row.positive >= row.neutral %}sentiment-category-positive{% else %}sentiment-category-neutral{% endif %}">
-                        <div class="sentiment-category-head">
-                            <strong class="sentiment-category-badge">{{ row.category }}</strong>
-                        </div>
-                        {% if row.total %}
-                            {% widthratio row.positive row.total 100 as pct_pos %}
-                            {% widthratio row.neutral row.total 100 as pct_neu %}
-                            {% widthratio row.negative row.total 100 as pct_neg %}
-                            <div
-                                class="sentiment-stacked"
-                                role="img"
-                                aria-label="{{ row.category }} 情緒：正向 {{ row.positive }}、中性 {{ row.neutral }}、負向 {{ row.negative }}，合計 {{ row.total }}"
-                            >
-                                <div class="sentiment-stacked-track">
-                                    <span class="sentiment-slice sentiment-slice--positive {% if not row.positive %}sentiment-slice-empty{% endif %}" style="width: {{ pct_pos }}%">
-                                        <span class="sentiment-slice-label">正向 {{ row.positive }} ({{ pct_pos }}%)</span>
-                                    </span>
-                                    <span class="sentiment-slice sentiment-slice--neutral {% if not row.neutral %}sentiment-slice-empty{% endif %}" style="width: {{ pct_neu }}%">
-                                        <span class="sentiment-slice-label">中性 {{ row.neutral }} ({{ pct_neu }}%)</span>
-                                    </span>
-                                    <span class="sentiment-slice sentiment-slice--negative {% if not row.negative %}sentiment-slice-empty{% endif %}" style="width: {{ pct_neg }}%">
-                                        <span class="sentiment-slice-label">負向 {{ row.negative }} ({{ pct_neg }}%)</span>
-                                    </span>
-                                </div>
-                            </div>
-                            <span class="sentiment-total">共 {{ row.total }} 筆</span>
-                        {% else %}
-                            <p class="muted-text">此分類暫無筆數。</p>
-                        {% endif %}
-                    </div>
-                {% empty %}
-                    <div class="empty-card">
-                        <div>
-                            <h3>尚無情緒分布資料</h3>
-                            <p>請先累積文字回覆或確認 sentiment_score 已完成計算。</p>
-                        </div>
-                    </div>
-                {% endfor %}
-            </div>
-        </article>
+                <ul class="tx-legend" aria-hidden="true">
+                    <li><i class="tx-pos"></i>正向</li>
+                    <li><i class="tx-neu"></i>中性</li>
+                    <li><i class="tx-neg"></i>負向</li>
+                    <li><i class="tx-unk"></i>無法判斷</li>
+                </ul>
+            </header>
+            {% for row in category_sentiments %}
+                {% if forloop.first %}<ul class="tx-senti-list">{% endif %}
+                <li class="tx-senti-row">
+                    <strong class="tx-senti-name">{{ row.category }}</strong>
+                    {% if row.total %}
+                        {% widthratio row.positive row.total 100 as pct_pos %}
+                        {% widthratio row.neutral row.total 100 as pct_neu %}
+                        {% widthratio row.negative row.total 100 as pct_neg %}
+                        <span class="tx-senti-bar" role="img"
+                              aria-label="{{ row.category }} 情緒：正向 {{ row.positive }}、中性 {{ row.neutral }}、負向 {{ row.negative }}，合計 {{ row.total }}">
+                            <i class="tx-pos" style="width: {{ pct_pos }}%"></i><i class="tx-neu" style="width: {{ pct_neu }}%"></i><i class="tx-neg" style="width: {{ pct_neg }}%"></i>
+                        </span>
+                        <span class="tx-senti-counts">
+                            <span>正向 <b>{{ row.positive }}</b></span>
+                            <span>中性 <b>{{ row.neutral }}</b></span>
+                            <span{% if row.negative >= row.positive and row.negative %} class="tx-senti-alert"{% endif %}>負向 <b>{{ row.negative }}</b></span>
+                            <span class="tx-senti-total">共 {{ row.total }} 筆</span>
+                        </span>
+                    {% else %}
+                        <span class="tx-senti-counts">這個分類還沒有回答。</span>
+                    {% endif %}
+                </li>
+                {% if forloop.last %}</ul>{% endif %}
+            {% empty %}
+                <div class="sm-empty">
+                    <h3>還沒有情緒分布</h3>
+                    <p>文字題收到回答並完成分析後，會依分類列出正向、中性與負向的比例。</p>
+                </div>
+            {% endfor %}
+        </section>
     </div>
 
-    <section data-tab-panel="text-rules" class="manager-panel analytics-tab-panel">
-        <div class="panel-head">
-            <div>
-                <h2>關鍵字分類規則</h2>
-            </div>
-        </div>
-        <div class="record-list">
-            {% for kc in keyword_categories %}
-                <div class="record-row record-row-stack">
-                    <div>
-                        <strong>{{ kc.keyword }}</strong>
-                        <p>分類：{{ kc.category }}，門檻：{{ kc.threshold }} 次</p>
-                    </div>
-                    <div class="record-meta keyword-rule-actions">
-                        <details class="keyword-rule-edit">
-                            <summary class="button button-ghost button-small">編輯</summary>
-                            <form method="post" action="{% url 'feedback:keyword-category-update' kc.pk %}" class="keyword-rule-edit-form">
-                                {% csrf_token %}
-                                <input type="text" name="keyword" value="{{ kc.keyword }}" aria-label="關鍵字" required>
-                                <input type="text" name="category" value="{{ kc.category }}" aria-label="分類名稱" required>
-                                <input type="number" name="threshold" value="{{ kc.threshold }}" min="1" aria-label="門檻" required>
-                                <button type="submit" class="button button-primary button-small">儲存</button>
-                            </form>
-                        </details>
-                        <form method="post" action="{% url 'feedback:keyword-category-delete' kc.pk %}"
-                              onsubmit="return confirm('確定刪除關鍵字規則「{{ kc.keyword }}」？')">
-                            {% csrf_token %}
-                            <button type="submit" class="button button-danger button-small">刪除</button>
-                        </form>
-                    </div>
+    <div data-tab-panel="text-rules" class="analytics-tab-panel">
+        <section class="tx-card">
+            <header class="tx-card-head">
+                <div>
+                    <h3>關鍵字分類規則</h3>
+                    <p>把常見關鍵字歸到主題分類；出現次數達到門檻才會列入分類。</p>
                 </div>
-            {% empty %}
-                <div class="empty-card">
-                    <div>
-                        <h3>尚未建立分類規則</h3>
-                        <p>可把常見關鍵字歸到主題分類，讓文字洞察更容易轉成改善方向。</p>
-                    </div>
-                </div>
-            {% endfor %}
-        </div>
-        <form method="post" action="{% url 'feedback:keyword-category-create' %}"
-              class="category-add-form" style="margin-top:16px;">
-            {% csrf_token %}
-            <input type="hidden" name="survey_slug" value="{{ selected_survey.slug }}">
-            <input type="text" name="keyword" placeholder="關鍵字" required>
-            <input type="text" name="category" placeholder="分類名稱" required>
-            <input type="number" name="threshold" value="2" min="1" style="width:80px;">
-            <button type="submit" class="button button-primary button-small">新增規則</button>
-        </form>
-    </section>
-{% else %}
-    <section class="manager-toolbar stats-list-toolbar">
-        <div class="toolbar-filters">
-            <a class="filter-pill {% if not current_category %}filter-pill-active{% endif %}"
-               href="?sort={{ current_sort }}">全部</a>
-            {% for cat in categories %}
-                <a class="filter-pill {% if current_category == cat.id|stringformat:'s' %}filter-pill-active{% endif %}"
-                   href="?sort={{ current_sort }}&category={{ cat.id }}">{{ cat.name }}</a>
-            {% endfor %}
-        </div>
-        <div class="toolbar-sort">
-            <select class="sort-select" onchange="location.href=this.value">
-                <option value="?sort=newest{% if current_category %}&category={{ current_category }}{% endif %}"
-                    {% if current_sort == 'newest' %}selected{% endif %}>最新建立</option>
-                <option value="?sort=oldest{% if current_category %}&category={{ current_category }}{% endif %}"
-                    {% if current_sort == 'oldest' %}selected{% endif %}>最舊建立</option>
-                <option value="?sort=title{% if current_category %}&category={{ current_category }}{% endif %}"
-                    {% if current_sort == 'title' %}selected{% endif %}>名稱 A-Z</option>
-            </select>
-        </div>
-    </section>
-
-    <section class="manager-panel stats-survey-list-panel">
-        <div class="record-list">
-            {% for survey in text_survey_rows %}
-                <div class="record-row record-row-stack stats-survey-row">
-                    <a class="record-row-link" href="{% url 'feedback:text-analysis' %}?survey={{ survey.slug }}">
-                        <div class="survey-row-body">
-                            <div class="survey-row-text">
-                                <strong>{{ survey.title }}</strong>
-                                {% if survey.category %}
-                                    <span class="pill pill-category">{{ survey.category.name }}</span>
-                                {% endif %}
-                                <p>{{ survey.description|default:"尚未填寫問卷說明。" }}</p>
-                                <div class="survey-stat-chips">
-                                    <span class="survey-stat-chip">
-                                        <span class="survey-stat-chip-label">文字題</span>
-                                        <span class="survey-stat-chip-value">{{ survey.text_question_count }}</span>
-                                    </span>
-                                    <span class="survey-stat-chip">
-                                        <span class="survey-stat-chip-label">回覆</span>
-                                        <span class="survey-stat-chip-value">{{ survey.response_count }}</span>
-                                    </span>
-                                    <span class="survey-stat-chip">
-                                        <span class="survey-stat-chip-label">最近回覆</span>
-                                        <span class="survey-stat-chip-value">{% if survey.latest_submission_at %}{{ survey.latest_submission_at|date:"m/d H:i" }}{% else %}—{% endif %}</span>
-                                    </span>
-                                </div>
+            </header>
+            {% if keyword_categories %}
+                <ul class="tx-rule-list">
+                    {% for kc in keyword_categories %}
+                        <li class="tx-rule-row">
+                            <div class="tx-rule-main">
+                                <strong>{{ kc.keyword }}</strong>
+                                <span class="sm-tag">{{ kc.category }}</span>
                             </div>
-                        </div>
-                    </a>
-                    <div class="record-meta">
-                        {% if survey.text_question_count and survey.response_count %}
-                            <span class="pill pill-active">可分析</span>
-                        {% elif survey.text_question_count %}
-                            <span class="pill">等待回覆</span>
-                        {% else %}
-                            <span class="pill">沒有文字題</span>
-                        {% endif %}
-                        <a class="button button-primary button-small" href="{% url 'feedback:text-analysis' %}?survey={{ survey.slug }}">查看洞察</a>
-                    </div>
+                            <span class="tx-rule-threshold">門檻 {{ kc.threshold }} 次</span>
+                            <div class="tx-rule-actions">
+                                <details class="tx-rule-edit">
+                                    <summary class="button button-ghost button-small">編輯</summary>
+                                    <form method="post" action="{% url 'feedback:keyword-category-update' kc.pk %}" class="tx-rule-form">
+                                        {% csrf_token %}
+                                        <input type="text" name="keyword" value="{{ kc.keyword }}" aria-label="關鍵字" required>
+                                        <input type="text" name="category" value="{{ kc.category }}" aria-label="分類名稱" required>
+                                        <input type="number" name="threshold" value="{{ kc.threshold }}" min="1" aria-label="門檻" required>
+                                        <button type="submit" class="button button-primary button-small">儲存</button>
+                                    </form>
+                                </details>
+                                <form method="post" action="{% url 'feedback:keyword-category-delete' kc.pk %}"
+                                      onsubmit="return confirm('確定刪除關鍵字規則「{{ kc.keyword }}」？')">
+                                    {% csrf_token %}
+                                    <button type="submit" class="sm-link-danger">刪除</button>
+                                </form>
+                            </div>
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <div class="sm-empty">
+                    <h3>還沒有分類規則</h3>
+                    <p>把常見關鍵字歸到主題分類，文字洞察會更容易轉成改善方向。</p>
                 </div>
-            {% empty %}
-                <div class="empty-card">
-                    <div>
-                        <h3>尚無可分析的問卷</h3>
-                        <p>請先建立問卷並新增文字題，回覆累積後即可進行文字洞察。</p>
-                    </div>
-                </div>
-            {% endfor %}
-        </div>
-    </section>
+            {% endif %}
+            <form method="post" action="{% url 'feedback:keyword-category-create' %}" class="tx-rule-form tx-rule-add">
+                {% csrf_token %}
+                <input type="hidden" name="survey_slug" value="{{ selected_survey.slug }}">
+                <input type="text" name="keyword" placeholder="關鍵字" aria-label="關鍵字" required>
+                <input type="text" name="category" placeholder="分類名稱" aria-label="分類名稱" required>
+                <input type="number" name="threshold" value="2" min="1" aria-label="門檻（次）">
+                <button type="submit" class="button button-primary button-small">新增規則</button>
+            </form>
+        </section>
+    </div>
+{% else %}
+    <form class="an-toolbar" method="get">
+        {% if categories %}
+            <label class="visually-hidden" for="tx-category">分類</label>
+            <select id="tx-category" name="category" data-autosubmit>
+                <option value="">所有分類</option>
+                {% for cat in categories %}
+                    <option value="{{ cat.id }}"{% if current_category == cat.id|stringformat:'s' %} selected{% endif %}>{{ cat.name }}</option>
+                {% endfor %}
+            </select>
+        {% endif %}
+        <label class="visually-hidden" for="tx-sort">排序</label>
+        <select id="tx-sort" name="sort" data-autosubmit>
+            <option value="newest"{% if current_sort == 'newest' %} selected{% endif %}>排序：最新建立</option>
+            <option value="oldest"{% if current_sort == 'oldest' %} selected{% endif %}>排序：最早建立</option>
+            <option value="title"{% if current_sort == 'title' %} selected{% endif %}>排序：名稱</option>
+        </select>
+        <noscript><button type="submit" class="button button-ghost button-small">套用</button></noscript>
+    </form>
 
-    <section class="manager-panel stats-empty-guide">
-        <div class="empty-card">
-            <div>
-                <h3>文字洞察會做什麼？</h3>
-                <p>進入單一問卷後，系統會整理文字題回覆中的高頻關鍵字，並依照你建立的分類規則協助歸納主題。</p>
+    <section class="an-list" aria-label="可分析的問卷">
+        {% for survey in text_survey_rows %}
+            <a class="an-list-row" href="{% url 'feedback:text-analysis' %}?survey={{ survey.slug }}">
+                <div class="an-list-main">
+                    <strong>{{ survey.title }}</strong>{% if survey.category %}<span class="sm-tag">{{ survey.category.name }}</span>{% endif %}
+                    {% if survey.description %}<p>{{ survey.description }}</p>{% endif %}
+                </div>
+                <span class="an-list-num"><b>{{ survey.text_question_count }}</b> 文字題</span>
+                <span class="an-list-num"><b>{{ survey.response_count }}</b> 份回覆</span>
+                <span class="an-list-state">
+                    {% if survey.text_question_count and survey.response_count %}<span class="sm-status sm-status-live">可分析</span>
+                    {% elif survey.text_question_count %}<span class="sm-status sm-status-draft">等待回覆</span>
+                    {% else %}<span class="sm-status">沒有文字題</span>{% endif %}
+                </span>
+                <span class="an-list-go" aria-hidden="true">查看洞察 →</span>
+            </a>
+        {% empty %}
+            <div class="sm-empty">
+                <h3>還沒有可分析的問卷</h3>
+                <p>問卷有文字題並收到回覆後，就能在這裡看文字洞察。</p>
+                <a class="button button-ghost button-small" href="{% url 'feedback:survey-manager' %}">到問卷管理</a>
             </div>
-        </div>
+        {% endfor %}
     </section>
 {% endif %}
+{% endblock %}
 
+{% block extra_js %}
 {% if selected_survey %}
 {{ keywords|json_script:"keywords-data" }}
 <script src="{% static 'js/analysis-tabs.js' %}?v=20260929-ui2"></script>
-<script src="{% static 'js/text-wordcloud.js' %}?v=20260929-ui2"></script>
+<script src="{% static 'js/text-wordcloud.js' %}?v=20261031-1"></script>
 {% endif %}
+<script src="{% static 'js/autosubmit.js' %}?v=20261031-1"></script>
 {% endblock %}

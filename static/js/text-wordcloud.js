@@ -15,7 +15,7 @@
         return;
     }
 
-    const palette = ["#1a3554", "#c86432", "#2f5b8a", "#2b7a59", "#7c4d9e", "#9c4722", "#0f766e", "#8b5cf6"];
+    const palette = ["#0d7a52", "#0b1f33", "#2f5b8a", "#b07a0a", "#a8321f", "#56687a", "#0f766e", "#6b4f8f"];
     const categoryColorMap = new Map();
 
     const resolveCategoryColor = (category, index) => {
