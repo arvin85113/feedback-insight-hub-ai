@@ -1,42 +1,52 @@
 {% extends "feedback/dashboard_base.html" %}
+{% load static %}
 
 {% block title %}建立問卷｜回饋洞察 AI 平台{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'css/analysis.css' %}?v=20261031-4"><link rel="stylesheet" href="{% static 'css/builder.css' %}?v=20261101-1">{% endblock %}
 
 {% block dashboard_content %}
-<section class="manager-header">
-    <div>
-        <h1>建立新的問卷專案</h1>
-        <p>設定問卷名稱與功能選項，建立後即可進入題目編排。</p>
+<header class="an-head sb-head">
+    <div class="an-head-title">
+        <a class="an-back" href="{% url 'feedback:survey-manager' %}">← 問卷管理</a>
+        <h2>建立問卷</h2>
+        <p>建立後是草稿，可隨時修改題目；按「發布」後定稿並開始收件。</p>
     </div>
-</section>
+</header>
 
-<section class="manager-panel">
-    <div class="panel-head">
-        <h2>建立表單</h2>
-    </div>
+<form method="post" class="sb-settings">
+    {% csrf_token %}
+    {% if is_node %}<input type="hidden" name="survey_uuid" value="{{ pending_survey_uuid }}">{% endif %}
     {% if node_notice %}<div class="builder-alert builder-alert-info" role="status">{{ node_notice }}</div>{% endif %}
-    <form method="post" class="form-stack">
-        {% csrf_token %}
-        {% if is_node %}<input type="hidden" name="survey_uuid" value="{{ pending_survey_uuid }}">{% endif %}
-        <div class="field-block">
-            {{ form.title.label_tag }}
-            {{ form.title }}
-            {{ form.title.errors }}
+    {{ form.non_field_errors }}
+    <section class="tx-card">
+        <header class="tx-card-head">
+            <div>
+                <h3>基本資料</h3>
+                <p>填答者會在問卷開頭看到名稱與說明。</p>
+            </div>
+        </header>
+        <div class="sb-card-body">
+            <div class="sb-field">
+                <label for="{{ form.title.id_for_label }}">{{ form.title.label }}</label>
+                {{ form.title }}
+                {{ form.title.errors }}
+            </div>
+            <div class="sb-field">
+                <label for="{{ form.category.id_for_label }}">{{ form.category.label }}</label>
+                {{ form.category }}
+                {{ form.category.errors }}
+            </div>
+            <div class="sb-field">
+                <label for="{{ form.description.id_for_label }}">{{ form.description.label }}</label>
+                {{ form.description }}
+                {{ form.description.errors }}
+            </div>
         </div>
-        <div class="field-block">
-            {{ form.category.label_tag }}
-            {{ form.category }}
-            {{ form.category.errors }}
-        </div>
-        <div class="field-block">
-            {{ form.description.label_tag }}
-            {{ form.description }}
-            {{ form.description.errors }}
-        </div>
+    </section>
 
-        <div class="setting-block">
-            <div class="setting-block-header">發布設定</div>
-            <p class="toggle-desc">建立後是草稿，可隨時修改題目；按「發布」後定稿並開始收件。</p>
+    <section class="tx-card">
+        <header class="tx-card-head"><h3>分析與通知</h3></header>
+        <div class="sb-card-body sb-switches">
             <label class="toggle-label">
                 <div class="toggle-wrapper">
                     {{ form.analysis_enabled }}
@@ -47,20 +57,22 @@
                     <span class="toggle-desc">關閉後不再排程統計、文字與 AI 分析；已發布結果保留</span>
                 </div>
             </label>
-        </div>
-
-        <div class="setting-block">
-            <div class="setting-block-header">通知設定</div>
-            <label class="checkbox-label-rich">
-                {{ form.thank_you_email_enabled }}
-                <div class="checkbox-text">
-                    <span class="checkbox-title">完成後寄送確認信</span>
-                    <span class="checkbox-desc">填答者提交後將收到一封回覆確認信</span>
+            <label class="toggle-label">
+                <div class="toggle-wrapper">
+                    {{ form.thank_you_email_enabled }}
+                    <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                </div>
+                <div class="toggle-text">
+                    <span class="toggle-title">完成後寄送確認信</span>
+                    <span class="toggle-desc">填答者提交後將收到一封回覆確認信</span>
                 </div>
             </label>
         </div>
+    </section>
 
+    <div class="sb-save">
         <button type="submit" class="button button-primary">建立並開始設計題目</button>
-    </form>
-</section>
+        <a class="button button-ghost" href="{% url 'feedback:survey-manager' %}">取消</a>
+    </div>
+</form>
 {% endblock %}

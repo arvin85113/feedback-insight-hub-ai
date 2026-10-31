@@ -1,75 +1,81 @@
 {% extends "feedback/dashboard_base.html" %}
 {% load static %}
 
-{% block title %}{{ survey.title }} | 問卷編排{% endblock %}
+{% block title %}{{ survey.title }}｜問卷編排{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'css/analysis.css' %}?v=20261031-4"><link rel="stylesheet" href="{% static 'css/builder.css' %}?v=20261101-1">{% endblock %}
 
 {% block dashboard_content %}
-<section class="manager-header manager-header-inline analytics-hero builder-header">
-    <div class="analytics-meta-strip" aria-label="問卷編輯摘要">
-        <span class="analytics-meta-item analytics-meta-item-wide">
-            <span class="analytics-meta-label">問卷</span>
-            <strong class="analytics-meta-value">{{ survey.title }}</strong>
-        </span>
-        <span class="analytics-meta-item">
-            <span class="analytics-meta-label">題目</span>
-            <strong class="analytics-meta-value">{{ survey.questions.count }}</strong>
-        </span>
-        <span class="analytics-meta-item">
-            <span class="analytics-meta-label">回覆</span>
-            <strong class="analytics-meta-value">{{ responses_count }}</strong>
-        </span>
-        <span class="analytics-meta-item">
-            <span class="analytics-meta-label">最近回覆</span>
-            <strong class="analytics-meta-value">{% if latest_response_at %}{{ latest_response_at|date:"m/d H:i" }}{% else %}尚無{% endif %}</strong>
-        </span>
+<header class="an-head sb-head">
+    <div class="an-head-title">
+        <a class="an-back" href="{% url 'feedback:survey-manager' %}">← 問卷管理</a>
+        <h2>{{ survey.title }}</h2>
+        <p class="sb-meta" aria-label="問卷摘要">
+            <span class="sb-status sb-status-{{ status }}">{{ status_label }}</span>
+            {% if survey.category %}<span>{{ survey.category.name }}</span>{% endif %}
+            <span>題目 <b>{{ survey.questions.count }}</b></span>
+            <span>回覆 <b>{{ responses_count }}</b></span>
+            <span>最近回覆 <b>{% if latest_response_at %}{{ latest_response_at|date:"Y/n/j H:i" }}{% else %}尚無{% endif %}</b></span>
+        </p>
     </div>
-    <div class="builder-header-meta">
-        <a class="builder-meta-link" href="{% url 'feedback:stats-overview' %}?survey={{ survey.slug }}">統計分析</a>
-        <a class="builder-meta-link" href="{% url 'feedback:text-analysis' %}?survey={{ survey.slug }}">文字洞察</a>
+    <div class="sb-head-actions">
+        {% if read_only %}
+        <a class="button button-ghost" href="{% url 'feedback:stats-overview' %}?survey={{ survey.slug }}">統計分析</a>
+        <a class="button button-ghost" href="{% url 'feedback:text-analysis' %}?survey={{ survey.slug }}">文字洞察</a>
+        {% endif %}
+        <form method="post">
+            {% csrf_token %}{% include "feedback/_definition_version_field.html" %}
+            <input type="hidden" name="action" value="copy">
+            <button type="submit" class="button {% if read_only %}button-primary{% else %}button-ghost{% endif %}">複製為新草稿</button>
+        </form>
         {% if not read_only %}
-            <form method="post" class="q-card-inline">
+            <form method="post">
                 {% csrf_token %}{% include "feedback/_definition_version_field.html" %}
                 <input type="hidden" name="action" value="publish">
                 <button type="submit" class="button button-primary">發布</button>
             </form>
         {% endif %}
-        <form method="post" class="q-card-inline">
-            {% csrf_token %}{% include "feedback/_definition_version_field.html" %}
-            <input type="hidden" name="action" value="copy">
-            <button type="submit" class="button button-secondary">複製為新草稿</button>
-        </form>
-        <a class="button button-ghost" href="{% url 'feedback:survey-manager' %}">返回問卷列表</a>
     </div>
-</section>
+</header>
 
-<section class="manager-panel">
-    <div class="builder-tab-bar">
-        <button type="button" class="builder-tab builder-tab-active" data-builder-tab="questions">題目設定</button>
-        <button type="button" class="builder-tab" data-builder-tab="settings">問卷設定</button>
-    </div>
+<nav class="sb-tabs" aria-label="編排分頁">
+    <button type="button" class="builder-tab builder-tab-active" data-builder-tab="questions">題目設定</button>
+    <button type="button" class="builder-tab" data-builder-tab="settings">問卷設定</button>
+</nav>
 
-    {# ── 問卷設定 panel ── #}
-    <div id="panel-settings" style="display:none">
-        <form method="post" class="form-stack">
-            {% csrf_token %}{% include "feedback/_definition_version_field.html" %}
-            <input type="hidden" name="action" value="update-survey">
-            <div class="field-block">
-                {{ survey_edit_form.title.label_tag }}
-                {% if read_only %}<input type="text" value="{{ survey.title }}" disabled><input type="hidden" name="title" value="{{ survey.title }}">{% else %}{{ survey_edit_form.title }}{% endif %}
-                {{ survey_edit_form.title.errors }}
+{# ── 問卷設定 panel ── #}
+<div id="panel-settings" style="display:none">
+    <form method="post" class="sb-settings">
+        {% csrf_token %}{% include "feedback/_definition_version_field.html" %}
+        <input type="hidden" name="action" value="update-survey">
+        <section class="tx-card">
+            <header class="tx-card-head">
+                <div>
+                    <h3>基本資料</h3>
+                    <p>{% if read_only %}已發布：名稱與說明已固定，只能改分類。{% else %}填答者會在問卷開頭看到名稱與說明。{% endif %}</p>
+                </div>
+            </header>
+            <div class="sb-card-body">
+                <div class="sb-field">
+                    <label for="{{ survey_edit_form.title.id_for_label }}">{{ survey_edit_form.title.label }}</label>
+                    {% if read_only %}<input type="text" id="{{ survey_edit_form.title.id_for_label }}" value="{{ survey.title }}" disabled><input type="hidden" name="title" value="{{ survey.title }}">{% else %}{{ survey_edit_form.title }}{% endif %}
+                    {{ survey_edit_form.title.errors }}
+                </div>
+                <div class="sb-field">
+                    <label for="{{ survey_edit_form.category.id_for_label }}">{{ survey_edit_form.category.label }}</label>
+                    {{ survey_edit_form.category }}
+                    {{ survey_edit_form.category.errors }}
+                </div>
+                <div class="sb-field">
+                    <label for="{{ survey_edit_form.description.id_for_label }}">{{ survey_edit_form.description.label }}</label>
+                    {% if read_only %}<textarea rows="4" id="{{ survey_edit_form.description.id_for_label }}" disabled>{{ survey.description }}</textarea><input type="hidden" name="description" value="{{ survey.description }}">{% else %}{{ survey_edit_form.description }}{% endif %}
+                    {{ survey_edit_form.description.errors }}
+                </div>
             </div>
-            <div class="field-block">
-                {{ survey_edit_form.category.label_tag }}
-                {{ survey_edit_form.category }}
-                {{ survey_edit_form.category.errors }}
-            </div>
-            <div class="field-block">
-                {{ survey_edit_form.description.label_tag }}
-                {% if read_only %}<textarea rows="4" disabled>{{ survey.description }}</textarea><input type="hidden" name="description" value="{{ survey.description }}">{% else %}{{ survey_edit_form.description }}{% endif %}
-                {{ survey_edit_form.description.errors }}
-            </div>
-            <div class="setting-block">
-                <div class="setting-block-header">發布設定</div>
+        </section>
+
+        <section class="tx-card">
+            <header class="tx-card-head"><h3>收件與分析</h3></header>
+            <div class="sb-card-body sb-switches">
                 <label class="toggle-label">
                     <div class="toggle-wrapper">
                         {{ survey_edit_form.is_active }}
@@ -90,27 +96,37 @@
                         <span class="toggle-desc">關閉後不再排程統計、文字與 AI 分析；已發布結果保留</span>
                     </div>
                 </label>
-            </div>
-            <div class="setting-block">
-                <div class="setting-block-header">通知設定</div>
-                <label class="checkbox-label-rich">
-                    {{ survey_edit_form.thank_you_email_enabled }}
-                    <div class="checkbox-text">
-                        <span class="checkbox-title">完成後寄送確認信</span>
-                        <span class="checkbox-desc">填答者提交後將收到一封回覆確認信</span>
+                <label class="toggle-label">
+                    <div class="toggle-wrapper">
+                        {{ survey_edit_form.thank_you_email_enabled }}
+                        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                    </div>
+                    <div class="toggle-text">
+                        <span class="toggle-title">完成後寄送確認信</span>
+                        <span class="toggle-desc">填答者提交後將收到一封回覆確認信</span>
                     </div>
                 </label>
             </div>
-            <div class="setting-block">
-                <div class="setting-block-header">問卷連結</div>
+        </section>
+
+        <section class="tx-card">
+            <header class="tx-card-head">
+                <div>
+                    <h3>問卷連結</h3>
+                    <p>填答者需登入才能作答。</p>
+                </div>
+            </header>
+            <div class="sb-card-body">
                 <div class="slug-row">
-                    <input type="text" class="slug-input" value="{{ request.scheme }}://{{ request.get_host }}{% url 'feedback:survey-detail' survey.slug %}" disabled>
+                    <input type="text" class="slug-input" aria-label="問卷連結" value="{{ request.scheme }}://{{ request.get_host }}{% url 'feedback:survey-detail' survey.slug %}" readonly>
                     <button type="button" class="button button-ghost button-small" id="copy-slug-btn">複製連結</button>
                 </div>
             </div>
-            <button type="submit" class="button button-primary">儲存設定</button>
-        </form>
-    </div>
+        </section>
+
+        <div class="sb-save"><button type="submit" class="button button-primary">儲存設定</button></div>
+    </form>
+</div>
 
     {# ── 題目卡片（builder spec §3）── #}
     <div class="builder-vertical" id="panel-questions">
@@ -160,7 +176,6 @@
         </dialog>
         <div class="visually-hidden" aria-live="polite" data-builder-live></div>
     </div>
-</section>
 
 <script src="{% static 'js/survey-builder-tabs.js' %}?v=20261003-cards"></script>
 <script src="{% static 'js/question-editor.js' %}?v=20261004-gforms3"></script>

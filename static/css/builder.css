@@ -1,0 +1,192 @@
+/* Survey builder (問卷編排) and survey create (建立問卷): page header, underline tabs and settings cards
+   in the manager style. Question cards keep their app.css styles. Uses the app.css tokens. */
+.manager-content > :is(.sb-head, .sb-tabs) {
+    margin-bottom: 16px;
+}
+
+.sb-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 14px;
+    font-variant-numeric: tabular-nums;
+}
+
+.sb-meta b {
+    font-weight: 600;
+    color: var(--c-ink-900);
+}
+
+.sb-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 500;
+    color: var(--c-ink-700);
+}
+
+.sb-status::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--c-ink-400);
+}
+
+.sb-status-live::before { background: var(--c-brand-700); }
+.sb-status-draft::before { background: var(--c-warning-500); }
+
+.sb-head-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.sb-head-actions form {
+    display: contents;
+}
+
+.sb-head-actions .button {
+    min-height: 34px;
+    padding: 6px 12px;
+    font-size: 0.86rem;
+}
+
+/* Tabs: same underline as the analysis pages */
+.sb-tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--c-line);
+}
+
+.manager-shell .sb-tabs .builder-tab {
+    margin-bottom: -1px;
+    padding: 10px 12px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: none;
+    color: var(--c-ink-500);
+    font-size: 0.92rem;
+    font-weight: 500;
+    box-shadow: none;
+    cursor: pointer;
+}
+
+.manager-shell .sb-tabs .builder-tab:hover {
+    color: var(--c-ink-900);
+}
+
+.manager-shell .sb-tabs .builder-tab-active,
+.manager-shell .sb-tabs .builder-tab-active:hover {
+    border-bottom-color: var(--c-brand-700);
+    color: var(--c-ink-900);
+    font-weight: 600;
+}
+
+.sb-tabs .builder-tab:focus-visible {
+    outline: 2px solid var(--c-brand-600);
+    outline-offset: -2px;
+}
+
+/* Question cards and settings share one readable column */
+.manager-content > #panel-questions,
+.sb-settings {
+    max-width: 920px;
+}
+
+/* Settings cards */
+.sb-settings {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.sb-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 16px 20px 20px;
+}
+
+.sb-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.sb-field > label {
+    font-size: 0.86rem;
+    font-weight: 500;
+    color: var(--c-ink-900);
+}
+
+.manager-shell .sb-field :is(input:not([type="checkbox"]), select, textarea) {
+    width: 100%;
+    margin: 0;
+}
+
+.manager-shell .sb-field :disabled {
+    background: var(--c-surface-subtle);
+    color: var(--c-ink-500);
+    cursor: not-allowed;
+}
+
+.sb-field .errorlist {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.84rem;
+    color: var(--c-danger-700);
+}
+
+.sb-note {
+    margin: 0;
+    font-size: 0.86rem;
+    color: var(--c-ink-500);
+}
+
+.sb-switches .toggle-title {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--c-ink-900);
+}
+
+.sb-switches .toggle-desc {
+    font-size: 0.84rem;
+    color: var(--c-ink-500);
+}
+
+.sb-switches .toggle-wrapper input[type="checkbox"]:checked ~ .toggle-track {
+    background: var(--c-brand-700);
+}
+
+.sb-switches .toggle-wrapper input[type="checkbox"]:focus-visible ~ .toggle-track {
+    outline: 2px solid var(--c-brand-600);
+    outline-offset: 2px;
+}
+
+.manager-shell .sb-settings .slug-input {
+    margin: 0;
+    color: var(--c-ink-700);
+    background: var(--c-surface-subtle);
+}
+
+.sb-save {
+    display: flex;
+    gap: 8px;
+}
+
+@media (max-width: 640px) {
+    .sb-card-body {
+        padding: 14px 16px 16px;
+    }
+
+    .sb-head-actions {
+        width: 100%;
+    }
+
+    .slug-row {
+        flex-wrap: wrap;
+    }
+}

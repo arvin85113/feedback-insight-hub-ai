@@ -1,8 +1,11 @@
+import uuid
+from datetime import datetime, timezone as dt_timezone
+
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
-from cloudapi.models import NodeDevice
+from cloudapi.models import NodeDevice, SubmissionReceipt
 from cloudapi.writes import assign_survey_to_node
 from feedback.models import Answer, FeedbackSubmission, Question, Survey, SurveyCategory
 from feedback.test_utils import cloud_only
@@ -29,6 +32,17 @@ class CloudBuilderForNodeSurveysTests(TestCase):
         page = self.client.get(self.url)
         self.assertContains(page, 'name="definition_version" value="1"')
         self.assertContains(page, f'name="question_uuid" value="{self.question.uuid}"')
+
+    def test_header_counts_inbox_receipts_as_replies(self):
+        # Node replies exist only as receipts in the cloud; the header must show their time, not "尚無".
+        received = datetime(2026, 10, 30, 9, 15, tzinfo=dt_timezone.utc)
+        SubmissionReceipt.objects.create(
+            submission_uuid=uuid.uuid4(), node=self.node, survey=self.survey, submitted_at=received,
+            definition_version=1, response_sequence=1, payload_hash="0" * 64,
+            status=SubmissionReceipt.Status.RECEIVED)
+        page = self.client.get(self.url)
+        self.assertEqual(page.context["responses_count"], 1)
+        self.assertEqual(page.context["latest_response_at"], received)
 
     def test_delete_on_draft_removes_question_and_bumps_version(self):
         self.post(action="delete-question", question_uuid=str(self.question.uuid), question_id=self.question.pk)

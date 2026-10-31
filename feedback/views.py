@@ -627,11 +627,11 @@ class SurveyBuilderView(DashboardBaseMixin, DetailView):
         if external:
             context["responses_count"], context["latest_response_at"] = external
         else:
-            from cloudapi.receipts import received_counts
+            from cloudapi.receipts import latest_received_at, received_counts
 
             context["responses_count"] = received_counts([self.object.pk])[self.object.pk]
-            latest = self.object.submissions.order_by("-submitted_at").only("submitted_at").first()
-            context["latest_response_at"] = latest.submitted_at if latest else None
+            context["latest_response_at"] = latest_received_at([self.object.pk])[self.object.pk]
+        context["status"], context["status_label"] = survey_status(self.object)
         context["active_tab"] = self.request.GET.get("tab", "questions")
         context["node_notice"] = node_notice(self.object)
         return context
