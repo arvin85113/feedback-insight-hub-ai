@@ -1,16 +1,39 @@
 {% extends "feedback/dashboard_base.html" %}
+{% load static %}
+
+{% block title %}Gemini 金鑰｜回饋洞察 AI 平台{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'css/analysis.css' %}?v=20261031-4"><link rel="stylesheet" href="{% static 'css/node.css' %}?v=20261101-1">{% endblock %}
+
 {% block dashboard_content %}
-<section class="manager-panel">
-  <h2>Gemini 金鑰</h2>
-  <p>只存 Windows 憑證庫，不存資料庫或 EXE。儲存設定不會呼叫 API。</p>
-  {% if credential_error %}<p class="flash-message flash-error">憑證庫無法使用，請檢查 Windows 認證管理員。</p>{% endif %}
-  <p>狀態：{% if key_configured %}已設定{% else %}未設定{% endif %}</p>
-  <form method="post" class="form-stack">{% csrf_token %}
-    <label for="api-key">API 金鑰（不回顯）</label>
-    <input id="api-key" name="api_key" type="password" autocomplete="new-password" maxlength="4096">
-    <button class="button button-primary" name="action" value="save">儲存至憑證庫</button>
-    <button class="button" name="action" value="delete">清除金鑰</button>
-  </form>
-  <a href="{% url 'node:jobs' %}">前往分析工作</a>
-</section>
+<div class="nd">
+    <header class="an-head">
+        <div class="an-head-title">
+            <a class="an-back" href="{% url 'node:settings' %}">← 設定</a>
+            <h2>Gemini 金鑰</h2>
+            <p>金鑰只存在 Windows 憑證庫，不存資料庫或 EXE。儲存設定不會呼叫 API。</p>
+        </div>
+        <div class="nd-head-actions">
+            <a class="button button-ghost" href="{% url 'node:jobs' %}">前往分析工作</a>
+        </div>
+    </header>
+
+    {% if credential_error %}<p class="nd-banner nd-banner-danger">憑證庫無法使用，請檢查 Windows 認證管理員。</p>{% endif %}
+
+    <section class="nd-card">
+        <div class="nd-card-head">
+            <h3>API 金鑰</h3>
+            <span class="nd-state {% if key_configured %}nd-state-ok{% endif %}">{% if key_configured %}已設定{% else %}未設定{% endif %}</span>
+        </div>
+        <form method="post" class="nd-card-body nd-form">{% csrf_token %}
+            <div class="nd-field">
+                <label for="api-key">API 金鑰（不回顯）</label>
+                <input id="api-key" name="api_key" type="password" autocomplete="new-password" maxlength="4096">
+            </div>
+            <div class="nd-actions">
+                <button class="button button-primary" name="action" value="save">儲存至憑證庫</button>
+                <button class="button button-ghost" name="action" value="delete">清除金鑰</button>
+            </div>
+        </form>
+    </section>
+</div>
 {% endblock %}

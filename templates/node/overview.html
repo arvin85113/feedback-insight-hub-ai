@@ -1,42 +1,64 @@
 {% extends "feedback/dashboard_base.html" %}
+{% load static %}
 
 {% block title %}節點總覽｜回饋洞察 AI 平台{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'css/analysis.css' %}?v=20261031-4"><link rel="stylesheet" href="{% static 'css/node.css' %}?v=20261101-1">{% endblock %}
 
 {% block dashboard_content %}
-<section class="manager-header manager-header-inline">
-    <div>
-        <p>{{ organization.name|default:"尚未設定組織" }} · 資料位置 <code>{{ data_root }}</code></p>
-    </div>
-</section>
-
-{% if pending %}
-<section class="manager-panel node-pending" aria-label="待處理事項">
-    <h2>待處理事項</h2>
-    <ul>{% for message in pending %}<li>{{ message }}</li>{% endfor %}</ul>
-</section>
-{% endif %}
-
-<section class="node-status-grid" aria-label="節點狀態">
-    {% for item in status_items %}
-    <article class="summary-card node-status-card node-status-{{ item.state }}">
-        <span class="info-label">{{ item.label }}</span>
-        <strong>{{ item.summary }}</strong>
-    </article>
-    {% endfor %}
-</section>
-
-<section class="manager-panel">
-    <h2>最近活動</h2>
-    <div class="record-list">
-        {% for event in recent_events %}
-        <div class="record-row">
-            <strong>{{ event.label }}</strong>
-            <span>{{ event.actor_email|default:event.target }}</span>
-            <span>{{ event.created_at|date:"m/d H:i" }}</span>
+<div class="nd">
+    <header class="an-head">
+        <div class="an-head-title">
+            <h2>節點總覽</h2>
+            <p>{{ organization.name|default:"尚未設定組織" }} · 這台電腦的資料、分析與雲端連線狀態。</p>
         </div>
-        {% empty %}
-        <p>目前沒有紀錄。</p>
-        {% endfor %}
+        <div class="nd-head-actions">
+            <a class="button button-ghost" href="{% url 'node:jobs' %}">分析工作</a>
+            <a class="button button-ghost" href="{% url 'cloudsync:connection' %}">雲端連線</a>
+        </div>
+    </header>
+
+    {% if pending %}
+    <section class="nd-banner nd-banner-warn" aria-label="待處理事項">
+        <strong>待處理事項</strong>
+        <ul>{% for message in pending %}<li>{{ message }}</li>{% endfor %}</ul>
+    </section>
+    {% endif %}
+
+    <div class="nd-grid nd-grid-wide">
+        <section class="nd-card" aria-label="節點狀態">
+            <div class="nd-card-head">
+                <div>
+                    <h3>系統狀態</h3>
+                    <p>資料位置 <code>{{ data_root }}</code></p>
+                </div>
+            </div>
+            <ul class="nd-status">
+                {% for item in status_items %}
+                <li>
+                    <span class="nd-dot nd-dot-{{ item.state }}" aria-hidden="true"></span>
+                    <span class="nd-status-label">{{ item.label }}</span>
+                    <span class="nd-status-summary">{{ item.summary }}</span>
+                </li>
+                {% endfor %}
+            </ul>
+        </section>
+
+        <section class="nd-card">
+            <div class="nd-card-head"><h3>最近活動</h3></div>
+            <ul class="nd-list">
+                {% for event in recent_events %}
+                <li>
+                    <div class="nd-list-main">
+                        <strong>{{ event.label }}</strong>
+                        <span>{{ event.actor_email|default:event.target }}</span>
+                    </div>
+                    <span class="nd-list-meta">{{ event.created_at|date:"m/d H:i" }}</span>
+                </li>
+                {% empty %}
+                <li class="nd-empty">目前沒有紀錄。</li>
+                {% endfor %}
+            </ul>
+        </section>
     </div>
-</section>
+</div>
 {% endblock %}

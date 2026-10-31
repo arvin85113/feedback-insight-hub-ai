@@ -1,47 +1,99 @@
 {% extends "feedback/dashboard_base.html" %}
+{% load static %}
+
 {% block title %}雲端連線｜回饋洞察 AI 平台{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'css/analysis.css' %}?v=20261031-4"><link rel="stylesheet" href="{% static 'css/node.css' %}?v=20261101-1">{% endblock %}
+
 {% block dashboard_content %}
-<section class="manager-panel">
-    <h2>目前狀態</h2>
-    <p>節點所屬問卷在本機發布後自動排入上傳，背景同步通常每 5 分鐘送出；「立即同步」可提早執行。</p>
-    {% if unbound_results_count %}<section class="flash-message flash-error" role="status"><strong>{{ unbound_results_count }} 份本機結果尚未接上雲端發布，並非已上傳。</strong><ul>{% for row in unbound_results %}<li>{{ row.survey__title }}</li>{% endfor %}</ul><p>外部資料請由資料集頁完成雲端來源登錄；其他未綁定來源需核對定義與節點歸屬，不能直接改指派或覆蓋舊問卷。</p><a class="button" href="{% url 'node:jobs' %}">查看待處理來源</a></section>{% endif %}
-    {% if unqueued_results_count %}<p class="flash-message flash-error">{{ unqueued_results_count }} 份已綁定結果尚未建立上傳紀錄；下一次同步會補建，若仍存在請查看下方錯誤。</p>{% endif %}
-    {% if link.is_linked %}
-        <p>已連結 <code>{{ link.api_url }}</code>（節點 {{ link.node_uuid }}）</p>
-        <p>最近雲端連線成功：{{ link.last_success_at|date:"Y/m/d H:i"|default:"尚未同步" }}（不代表所有結果已上傳）</p>
-        {% if inbox %}
-        <p>收件匣：待收 {{ inbox.pending_count }} 筆 · 衝突 {{ inbox.quarantined_count|default:0 }} 筆 · 占用 {{ inbox.occupied_count }} / {{ inbox.max_count }} 筆{% if inbox.oldest_pending_at %} · 最舊待收 {{ inbox.oldest_pending_at }}{% endif %}</p>
-        {% if inbox.deadline_state == "critical" %}<p class="flash-message flash-error">最舊待收已超過 30 天，請立即同步。</p>{% elif inbox.deadline_state == "warn" %}<p class="flash-message flash-error">最舊待收已超過 25 天。</p>{% endif %}
-        {% endif %}
-        <p>結果上傳：待上傳 {{ pending_results }} 份{% if failed_results %} · 失敗 {{ failed_results|length }} 份{% endif %}</p>
-        {% if failed_results %}
-        <ul>
-            {% for row in failed_results %}
-            <li>{{ row.survey__title }} 發布 #{{ row.publish_sequence }}：{% if row.last_error == "not_found" %}雲端找不到這份問卷，可能已改連其他雲端或取消指派{% elif row.last_error == "too_large" %}結果內容超過上傳上限{% elif row.last_error == "conflict" %}雲端已有同編號但內容不同的結果{% elif row.last_error == "invalid" %}雲端認為結果內容格式不正確{% elif row.last_error == "bad_reply" %}雲端回應無法辨識{% else %}{{ row.last_error }}{% endif %}</li>
-            {% endfor %}
-        </ul>
-        <form method="post" class="form-inline">{% csrf_token %}
-            <button type="submit" name="action" value="retry-results" class="button">重新上傳</button>
-        </form>
-        {% endif %}
-        {% if unconfirmed_acks %}<p class="flash-message flash-error">{{ unconfirmed_acks }} 筆回覆已寫入本機，但雲端未確認同步，需人工處理。</p>{% endif %}
-        {% if link.last_error_kind %}<p class="flash-message flash-error">最近錯誤：{{ link.last_error_kind }}　{{ link.last_error_message }}</p>{% endif %}
-        <form method="post" class="form-inline">{% csrf_token %}
+<div class="nd">
+    <header class="an-head">
+        <div class="an-head-title">
+            <h2>雲端連線</h2>
+            <p>節點所屬問卷在本機發布後自動排入上傳，背景同步通常每 5 分鐘送出；「立即同步」可提早執行。</p>
+        </div>
+        {% if link.is_linked %}
+        <form method="post" class="nd-head-actions">{% csrf_token %}
             <button type="submit" name="action" value="sync-now" class="button button-primary">立即同步</button>
-            <button type="submit" name="action" value="disconnect" class="button button-danger"
-                    onclick="return confirm('確定中斷雲端連線？')">中斷連線</button>
         </form>
-    {% else %}
-        <p>尚未連結雲端；問卷在本機為唯讀。</p>
+        {% endif %}
+    </header>
+
+    {% if unbound_results_count %}
+    <section class="nd-banner nd-banner-danger" role="status">
+        <strong>{{ unbound_results_count }} 份本機結果尚未接上雲端發布，並非已上傳。</strong>
+        <ul>{% for row in unbound_results %}<li>{{ row.survey__title }}</li>{% endfor %}</ul>
+        <p>外部資料請由資料集頁完成雲端來源登錄；其他未綁定來源需核對定義與節點歸屬，不能直接改指派或覆蓋舊問卷。</p>
+        <a class="button button-ghost button-small" href="{% url 'node:jobs' %}">查看待處理來源</a>
+    </section>
     {% endif %}
-</section>
-<section class="manager-panel">
-    <h2>{% if link.is_linked %}重新連結{% else %}連結雲端{% endif %}</h2>
-    {% for error in backfill_errors %}<p class="flash-message flash-error">歷史上傳錯誤紀錄：問卷 {{ error.target }}，{{ error.details.code }}（{{ error.created_at }}）。請核對來源設定與目前上傳狀態；其他問卷仍可同步。</p>{% endfor %}
-    <form method="post" class="form-stack">{% csrf_token %}
-        {{ form.non_field_errors }}
-        {% for field in form %}<label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{{ field.errors }}{% endfor %}
-        <button type="submit" name="action" value="connect" class="button button-primary">測試並儲存</button>
-    </form>
-</section>
+    {% if unqueued_results_count %}<p class="nd-banner nd-banner-warn">{{ unqueued_results_count }} 份已綁定結果尚未建立上傳紀錄；下一次同步會補建，若仍存在請查看下方錯誤。</p>{% endif %}
+    {% if link.is_linked %}
+        {% if inbox.deadline_state == "critical" %}<p class="nd-banner nd-banner-danger">最舊待收已超過 30 天，請立即同步。</p>{% elif inbox.deadline_state == "warn" %}<p class="nd-banner nd-banner-warn">最舊待收已超過 25 天。</p>{% endif %}
+        {% if unconfirmed_acks %}<p class="nd-banner nd-banner-danger">{{ unconfirmed_acks }} 筆回覆已寫入本機，但雲端未確認同步，需人工處理。</p>{% endif %}
+        {% if link.last_error_kind %}<p class="nd-banner nd-banner-danger">最近錯誤：{{ link.last_error_kind }}　{{ link.last_error_message }}</p>{% endif %}
+    {% endif %}
+
+    <div class="nd-grid">
+        <section class="nd-card">
+            <div class="nd-card-head">
+                <h3>目前狀態</h3>
+                <span class="nd-state {% if link.is_linked %}{% if link.last_error_kind %}nd-state-failed{% else %}nd-state-ok{% endif %}{% endif %}">{% if link.is_linked %}已連結{% else %}未連結{% endif %}</span>
+            </div>
+            <div class="nd-card-body">
+                {% if link.is_linked %}
+                <dl class="nd-props">
+                    <div><dt>雲端網址</dt><dd><code>{{ link.api_url }}</code></dd></div>
+                    <div><dt>節點</dt><dd><code>{{ link.node_uuid }}</code></dd></div>
+                    <div><dt>最近連線成功</dt><dd>{{ link.last_success_at|date:"Y/m/d H:i"|default:"尚未同步" }}（不代表所有結果已上傳）</dd></div>
+                    {% if inbox %}
+                    <div><dt>收件匣</dt><dd>待收 {{ inbox.pending_count }} 筆 · 衝突 {{ inbox.quarantined_count|default:0 }} 筆 · 占用 {{ inbox.occupied_count }} / {{ inbox.max_count }} 筆{% if inbox.oldest_pending_at %} · 最舊待收 {{ inbox.oldest_pending_at }}{% endif %}</dd></div>
+                    {% endif %}
+                    <div><dt>結果上傳</dt><dd>待上傳 {{ pending_results }} 份{% if failed_results %} · 失敗 {{ failed_results|length }} 份{% endif %}</dd></div>
+                </dl>
+                {% else %}
+                <p>尚未連結雲端；問卷在本機為唯讀。</p>
+                {% endif %}
+            </div>
+            {% if link.is_linked and failed_results %}
+            <ul class="nd-list">
+                {% for row in failed_results %}
+                <li>
+                    <div class="nd-list-main">
+                        <strong>{{ row.survey__title }} 發布 #{{ row.publish_sequence }}</strong>
+                        <span>{% if row.last_error == "not_found" %}雲端找不到這份問卷，可能已改連其他雲端或取消指派{% elif row.last_error == "too_large" %}結果內容超過上傳上限{% elif row.last_error == "conflict" %}雲端已有同編號但內容不同的結果{% elif row.last_error == "invalid" %}雲端認為結果內容格式不正確{% elif row.last_error == "bad_reply" %}雲端回應無法辨識{% else %}{{ row.last_error }}{% endif %}</span>
+                    </div>
+                    <span class="nd-state nd-state-failed">上傳失敗</span>
+                </li>
+                {% endfor %}
+            </ul>
+            <form method="post" class="nd-card-body">{% csrf_token %}
+                <div class="nd-actions"><button type="submit" name="action" value="retry-results" class="button button-ghost">重新上傳</button></div>
+            </form>
+            {% endif %}
+        </section>
+
+        <section class="nd-card">
+            <div class="nd-card-head">
+                <div>
+                    <h3>{% if link.is_linked %}重新連結{% else %}連結雲端{% endif %}</h3>
+                    <p>輸入雲端網址與裝置權杖，測試成功才會儲存。</p>
+                </div>
+            </div>
+            <div class="nd-card-body">
+                {% for error in backfill_errors %}<p class="nd-banner nd-banner-warn">歷史上傳錯誤紀錄：問卷 {{ error.target }}，{{ error.details.code }}（{{ error.created_at }}）。請核對來源設定與目前上傳狀態；其他問卷仍可同步。</p>{% endfor %}
+                <form method="post" class="nd-form">{% csrf_token %}
+                    {{ form.non_field_errors }}
+                    {% for field in form %}<div class="nd-field"><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{{ field.errors }}</div>{% endfor %}
+                    <div class="nd-actions"><button type="submit" name="action" value="connect" class="button button-primary">測試並儲存</button></div>
+                </form>
+                {% if link.is_linked %}
+                <form method="post" class="nd-actions">{% csrf_token %}
+                    <button type="submit" name="action" value="disconnect" class="button button-danger"
+                            onclick="return confirm('確定中斷雲端連線？')">中斷連線</button>
+                </form>
+                {% endif %}
+            </div>
+        </section>
+    </div>
+</div>
 {% endblock %}
