@@ -1,21 +1,40 @@
 {% extends "feedback/dashboard_base.html" %}
+{% load static %}
 
 {% block title %}設定｜回饋洞察 AI 平台{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'css/analysis.css' %}?v=20261031-4"><link rel="stylesheet" href="{% static 'css/node.css' %}?v=20261101-1">{% endblock %}
 
 {% block dashboard_content %}
-<section class="manager-panel">
-    <h2>組織</h2>
-    <form method="post" class="form-stack">
-        {% csrf_token %}
-        {{ form.name.errors }}
-        <label for="{{ form.name.id_for_label }}">{{ form.name.label }}</label>
-        {{ form.name }}
-        <button type="submit" class="button button-primary">儲存</button>
-    </form>
-</section>
-<section class="manager-panel">
-    <h2>資料位置</h2>
-    <a class="button" href="{% url 'node:gemini-settings' %}">Gemini 金鑰設定（OWNER）</a>
-    <p><code>{{ data_root }}</code></p>
-</section>
+<div class="nd">
+    <header class="an-head">
+        <div class="an-head-title">
+            <h2>設定</h2>
+            <p>這台節點的組織名稱與資料位置。</p>
+        </div>
+    </header>
+
+    <div class="nd-grid">
+        <section class="nd-card">
+            <div class="nd-card-head"><h3>組織</h3></div>
+            <form method="post" class="nd-card-body nd-form">
+                {% csrf_token %}
+                <div class="nd-field">
+                    <label for="{{ form.name.id_for_label }}">{{ form.name.label }}</label>
+                    {{ form.name }}{{ form.name.errors }}
+                </div>
+                <div class="nd-actions"><button type="submit" class="button button-primary">儲存</button></div>
+            </form>
+        </section>
+
+        <section class="nd-card">
+            <div class="nd-card-head"><h3>資料與金鑰</h3></div>
+            <div class="nd-card-body">
+                <dl class="nd-props">
+                    <div><dt>資料位置</dt><dd><code>{{ data_root }}</code></dd></div>
+                    <div><dt>Gemini 金鑰</dt><dd><a href="{% url 'node:gemini-settings' %}">Gemini 金鑰設定</a>（限擁有者）</dd></div>
+                </dl>
+            </div>
+        </section>
+    </div>
+</div>
 {% endblock %}
