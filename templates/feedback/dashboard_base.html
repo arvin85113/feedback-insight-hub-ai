@@ -7,10 +7,10 @@
 <div class="manager-shell">
     <aside class="manager-sidebar">
         <div class="manager-brand">
-            <div class="manager-brand-icon">FI</div>
+            <div class="manager-brand-icon" aria-hidden="true">回</div>
             <div>
-                <strong>FeedBack IQ</strong>
-                <small>{% if is_node %}Local Node{% else %}Manager Workspace{% endif %}</small>
+                <strong>回饋洞察</strong>
+                <small>{% if is_node %}本機節點{% else %}管理後台{% endif %}</small>
             </div>
         </div>
         <nav class="manager-nav" aria-label="管理端導覽">
@@ -22,7 +22,7 @@
             {% endfor %}
         </nav>
         <div class="manager-sidebar-foot">
-            <p>以正式 SaaS 工作區方式管理問卷、分析、改善追蹤與顧客通知。</p>
+            <p>{{ user.get_full_name|default:user.username }}</p>
         </div>
     </aside>
 
@@ -30,10 +30,9 @@
         <header class="manager-topbar">
             <div class="manager-topbar-title">
                 <h1>{{ section_label }}</h1>
-                <p>歡迎回來，{{ user.get_full_name|default:user.username }}</p>
             </div>
             <div class="manager-topbar-actions">
-                {% if not is_node %}<a class="button button-ghost button-small" href="{% url 'feedback:home' %}">返回官網</a>{% endif %}
+                {% if not is_node %}<a class="button button-ghost button-small" href="{% url 'feedback:home' %}">回到首頁</a>{% endif %}
                 <form method="post" action="{% url 'accounts:logout' %}">
                     {% csrf_token %}
                     <button type="submit" class="button button-quiet button-small">登出</button>

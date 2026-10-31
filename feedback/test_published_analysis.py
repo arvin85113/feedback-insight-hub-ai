@@ -215,7 +215,7 @@ class PublishedAnalysisReadTests(TestCase):
         response = self.client.get(reverse("feedback:dashboard"))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "開啟營運分析")
+        self.assertContains(response, "查看分析結果")
         self.assertContains(response, reverse("feedback:analysis-operations"))
         self.assertNotContains(response, "data-ai-operations")
 

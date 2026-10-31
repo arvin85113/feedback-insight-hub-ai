@@ -322,8 +322,8 @@ class DashboardView(DashboardBaseMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context.update(self.get_dashboard_base_context())
-        context.update(local_service.get_dashboard_payload())
-        context["ai_report_surveys"] = analysis_report_surveys()
+        range_days = 30 if self.request.GET.get("range") == "30" else 7
+        context.update(local_service.get_dashboard_payload(range_days))
         return context
 
 

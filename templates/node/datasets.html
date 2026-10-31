@@ -2,7 +2,6 @@
 {% block title %}資料集 | 回饋洞察 AI 平台{% endblock %}
 {% block dashboard_content %}
 <section class="manager-panel">
-    <p class="section-kicker">Local datasets</p>
     <h2>連接既有資料，不搬動原檔</h2>
     <p>先驗證本機 manifest 與 mapping，再確認登錄。這一步同時建立雲端發布綁定：之後本機更新統計／文字或經確認的 Gemini 結果，會自動排入上傳。雲端只接收問卷定義與版本 metadata，不接收檔案、路徑或評論全文；外部問卷不開放填答。</p>
     {% if not link.is_linked %}<p role="status">尚未連結雲端：可以驗證檔案，登錄前請先完成<a href="{% url 'cloudsync:connection' %}">雲端連線</a>。</p>{% endif %}

@@ -1,11 +1,10 @@
 {% extends "feedback/dashboard_base.html" %}
 
-{% block title %}通知中心 | FeedBack IQ{% endblock %}
+{% block title %}通知中心｜回饋洞察 AI 平台{% endblock %}
 
 {% block dashboard_content %}
 <section class="manager-header manager-header-inline analytics-hero">
     <div>
-        <p class="section-kicker">Notice Center</p>
         <p>依問卷檢視通知草稿、寄送進度與歷史結果。</p>
     </div>
     {% if selected_survey %}
@@ -36,7 +35,6 @@
     <section class="manager-panel">
         <div class="panel-head">
             <div>
-                <p class="section-kicker">Notice Batches</p>
                 <h2>通知批次</h2>
             </div>
             <a class="button button-primary button-small" href="{% url 'feedback:improvement-list' %}?survey={{ selected_survey.slug }}">前往改善項目</a>

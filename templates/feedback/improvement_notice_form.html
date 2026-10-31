@@ -1,11 +1,10 @@
 {% extends "feedback/dashboard_base.html" %}
 
-{% block title %}{% if form_mode == 'update' %}編輯通知草稿{% else %}建立通知草稿{% endif %} | FeedBack IQ{% endblock %}
+{% block title %}{% if form_mode == 'update' %}編輯通知草稿{% else %}建立通知草稿{% endif %}｜回饋洞察 AI 平台{% endblock %}
 
 {% block dashboard_content %}
 <section class="manager-header manager-header-inline">
     <div>
-        <p class="section-kicker">Notice Draft</p>
         <h1>{% if form_mode == 'update' %}編輯通知草稿{% else %}建立通知草稿{% endif %}</h1>
         <p>{{ improvement.title }} ｜ 儲存草稿不會寄送郵件。</p>
     </div>

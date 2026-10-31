@@ -1,22 +1,160 @@
-{% extends "feedback/dashboard.html" %}
+{% extends "feedback/dashboard_base.html" %}
+{% load static %}
 
-{% block dashboard_analysis_section %}
-<section class="manager-panel dashboard-analysis-summary">
-    <div class="panel-head">
+{% block title %}營運總覽｜回饋洞察 AI 平台{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'css/overview.css' %}?v=20261030-3">{% endblock %}
+
+{% block dashboard_content %}
+<div class="ov">
+    <header class="ov-head">
         <div>
-            <p class="section-kicker">Published Analysis</p>
-            <h2>營運分析</h2>
+            <p class="ov-date">{{ today_label }}</p>
+            <h2 class="ov-greet">{{ user.get_full_name|default:user.username }}，你好</h2>
         </div>
-        <a class="button button-primary" href="{% url 'feedback:analysis-operations' %}">開啟營運分析</a>
-    </div>
-    <p class="muted-text">
-        查看各問卷已發布的統計、文字洞察與 Gemini 綜合報告；所有運算由本機工作台完成，網站只負責快速展示。
-    </p>
-    <div class="dashboard-analysis-facts">
-        <span><strong>{{ ai_report_surveys|length }}</strong> 份可分析問卷</span>
-        <span>版本狀態與歷次結果集中於獨立頁面</span>
-    </div>
-</section>
-{% endblock %}
+        <div class="ov-actions">
+            <a class="button button-ghost button-small" href="{% url 'feedback:analysis-operations' %}">查看分析結果</a>
+            <a class="button button-primary button-small" href="{% url 'feedback:survey-create' %}">建立問卷</a>
+        </div>
+    </header>
 
-{% block dashboard_analysis_script %}{% endblock %}
+    <section class="ov-card ov-attention" aria-labelledby="ov-attention-title">
+        <div class="ov-card-head">
+            <h3 id="ov-attention-title">需要處理{% if attention_items %}<span class="ov-count">{{ attention_items|length }}</span>{% endif %}</h3>
+        </div>
+        {% if attention_items %}
+            <ul class="ov-inbox">
+                {% for item in attention_items %}
+                    <li class="ov-inbox-item ov-kind-{{ item.kind }}">
+                        <span class="ov-inbox-dot" aria-hidden="true"></span>
+                        <div class="ov-inbox-text">
+                            <strong>{{ item.title }}</strong>
+                            <p>{{ item.detail }}</p>
+                        </div>
+                        <a class="button button-ghost button-small" href="{{ item.url }}">{{ item.action }}</a>
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p class="ov-allclear"><span aria-hidden="true">✓</span>目前沒有需要處理的事項。</p>
+        {% endif %}
+    </section>
+
+    <section class="ov-kpis" aria-label="主要數字">
+        {% for kpi in kpis %}
+            <div class="ov-kpi">
+                <p class="ov-kpi-label">{{ kpi.label }}</p>
+                <p class="ov-kpi-value">
+                    <strong>{{ kpi.value }}</strong>
+                    {% if kpi.change is not None %}
+                        <span class="ov-delta {% if kpi.change > 0 %}ov-delta-up{% elif kpi.change < 0 %}ov-delta-down{% endif %}">
+                            {% if kpi.change > 0 %}+{% endif %}{{ kpi.change }}%
+                        </span>
+                    {% endif %}
+                </p>
+                <p class="ov-kpi-hint">{{ kpi.hint }}</p>
+            </div>
+        {% endfor %}
+    </section>
+
+    <section class="ov-card ov-trend" aria-labelledby="ov-trend-title">
+        <div class="ov-card-head">
+            <h3 id="ov-trend-title">回覆趨勢</h3>
+            <nav class="ov-segment" aria-label="時間範圍">
+                {% for days in range_options %}
+                    <a href="?range={{ days }}"{% if days == range_days %} aria-current="true"{% endif %}>{{ days }} 天</a>
+                {% endfor %}
+            </nav>
+        </div>
+        <div class="ov-trend-body">
+            <div class="ov-chart{% if range_days > 7 %} ov-chart-dense{% endif %}" role="img" aria-label="近 {{ range_days }} 天每日回覆數，合計 {{ trend_total }} 份">
+                <div class="ov-chart-grid" aria-hidden="true">
+                    <span><i>{{ trend_peak }}</i></span>
+                    <span></span>
+                    <span><i>0</i></span>
+                </div>
+                <div class="ov-chart-bars">
+                    {% for point in trend %}
+                        <div class="ov-bar-col{% if point.is_today %} is-today{% endif %}" title="{{ point.label }}：{{ point.total }} 份">
+                            <div class="ov-bar-track"><span class="ov-bar" style="height: {{ point.percent }}%"></span></div>
+                            <small>{% if point.show_label %}{% if point.is_today %}今天{% else %}{{ point.label }}{% endif %}{% endif %}</small>
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+            <dl class="ov-trend-facts">
+                <div><dt>合計</dt><dd>{{ trend_total }} 份</dd></div>
+                <div><dt>每日平均</dt><dd>{{ trend_average }} 份</dd></div>
+                <div><dt>最多的一天</dt><dd>{% if trend_busiest %}{{ trend_busiest.label }}，{{ trend_busiest.total }} 份{% else %}—{% endif %}</dd></div>
+            </dl>
+        </div>
+    </section>
+
+    <div class="ov-grid">
+        <section class="ov-card ov-surveys" aria-labelledby="ov-surveys-title">
+            <div class="ov-card-head">
+                <h3 id="ov-surveys-title">問卷</h3>
+                <a class="text-link" href="{% url 'feedback:survey-manager' %}">全部 {{ survey_total }} 份</a>
+            </div>
+            {% if survey_rows %}
+                <div class="ov-table-wrap">
+                    <table class="ov-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">問卷</th>
+                                <th scope="col">狀態</th>
+                                <th scope="col" class="ov-num">回覆</th>
+                                <th scope="col" class="ov-num ov-hide-sm">近 {{ range_days }} 天</th>
+                                <th scope="col" class="ov-hide-sm">最近回覆</th>
+                                <th scope="col">分析</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in survey_rows %}
+                                <tr>
+                                    <th scope="row"><a href="{% url 'feedback:survey-builder' row.slug %}">{{ row.title }}</a></th>
+                                    <td><span class="ov-status ov-status-{{ row.status }}">{{ row.status_label }}</span></td>
+                                    <td class="ov-num">{{ row.response_total }}</td>
+                                    <td class="ov-num ov-hide-sm">{{ row.recent_total }}</td>
+                                    <td class="ov-muted ov-hide-sm">{% if row.last_response_at %}{{ row.last_response_at|date:"n/j H:i" }}{% else %}—{% endif %}</td>
+                                    <td class="ov-muted">
+                                        {% if not row.analysis_enabled %}未啟用
+                                        {% elif row.unanalyzed %}<span class="ov-pending">{{ row.unanalyzed }} 份待分析</span>
+                                        {% elif row.analyzed_at %}{{ row.analyzed_at|date:"n/j" }} 更新
+                                        {% else %}—{% endif %}
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="ov-empty">
+                    <p>還沒有問卷。建立第一份問卷，開始收集顧客回饋。</p>
+                    <a class="button button-primary button-small" href="{% url 'feedback:survey-create' %}">建立問卷</a>
+                </div>
+            {% endif %}
+        </section>
+
+        <section class="ov-card ov-activity" aria-labelledby="ov-activity-title">
+            <div class="ov-card-head">
+                <h3 id="ov-activity-title">最近動態</h3>
+            </div>
+            {% if activity %}
+                <ol class="ov-feed">
+                    {% for entry in activity %}
+                        <li class="ov-feed-item ov-kind-{{ entry.kind }}">
+                            <span class="ov-feed-dot" aria-hidden="true"></span>
+                            <div>
+                                {% if entry.url %}<a href="{{ entry.url }}">{{ entry.title }}</a>{% else %}<span>{{ entry.title }}</span>{% endif %}
+                                <time datetime="{{ entry.at|date:'c' }}">{{ entry.at|date:"n/j H:i" }}</time>
+                            </div>
+                        </li>
+                    {% endfor %}
+                </ol>
+            {% else %}
+                <div class="ov-empty"><p>收到回覆、更新改善項目或寄出通知後，會依時間顯示在這裡。</p></div>
+            {% endif %}
+        </section>
+    </div>
+</div>
+{% endblock %}

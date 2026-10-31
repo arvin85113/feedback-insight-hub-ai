@@ -1,11 +1,10 @@
 {% extends "feedback/dashboard_base.html" %}
 
-{% block title %}{{ improvement.title }} | 通知中心 | FeedBack IQ{% endblock %}
+{% block title %}{{ improvement.title }}｜通知中心｜回饋洞察 AI 平台{% endblock %}
 
 {% block dashboard_content %}
 <section class="manager-header manager-header-inline">
     <div>
-        <p class="section-kicker">Notice Detail</p>
         <h1>{{ improvement.title }}</h1>
         <p>{{ improvement.survey.title }} ｜ 建立於 {{ improvement.created_at|date:"Y/m/d H:i" }}</p>
     </div>

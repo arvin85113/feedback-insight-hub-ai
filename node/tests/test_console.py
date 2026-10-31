@@ -68,7 +68,7 @@ class OverviewTests(ConsoleTestCase):
         response = self.client.get(reverse("feedback:survey-manager"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, reverse("node:overview"))
-        self.assertNotContains(response, "返回官網")
+        self.assertNotContains(response, "回到首頁")
 
     def test_root_redirects_to_console(self):
         response = self.client.get("/")

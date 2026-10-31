@@ -1,11 +1,10 @@
 {% extends "feedback/dashboard_base.html" %}
 
-{% block title %}{{ improvement.title }} | 改善追蹤 | FeedBack IQ{% endblock %}
+{% block title %}{{ improvement.title }}｜改善追蹤｜回饋洞察 AI 平台{% endblock %}
 
 {% block dashboard_content %}
 <section class="manager-header manager-header-inline">
     <div>
-        <p class="section-kicker">Improvement Detail</p>
         <h1>{{ improvement.title }}</h1>
         <p>{% if improvement.survey %}{{ improvement.survey.title }}{% else %}來源問卷已移除{% endif %} ｜ 更新於 {{ improvement.updated_at|date:"Y/m/d H:i" }}</p>
     </div>
@@ -25,7 +24,6 @@
     <article class="manager-panel improvement-detail-main">
         <div class="panel-head">
             <div>
-                <p class="section-kicker">Work Item</p>
                 <h2>改善內容</h2>
             </div>
             <div class="improvement-badges">
@@ -96,7 +94,6 @@
 <section class="manager-panel improvement-ai-source">
     <div class="panel-head">
         <div>
-            <p class="section-kicker">AI Provenance</p>
             <h2>AI 分析依據</h2>
         </div>
         <span class="pill">唯讀</span>

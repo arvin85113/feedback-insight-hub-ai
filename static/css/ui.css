@@ -144,24 +144,25 @@ body.dashboard-body {
     border-left-color: var(--c-warning-500);
 }
 
-/* ── Manager shell ────────────────────────────────────────────────────── */
+/* ── Manager shell: white sidebar like the homepage header ────────────── */
 .manager-shell {
-    grid-template-columns: 248px minmax(0, 1fr);
+    grid-template-columns: 240px minmax(0, 1fr);
     background: var(--c-canvas);
 }
 
 .manager-sidebar {
     display: flex;
     flex-direction: column;
-    padding: 20px 14px;
-    background: var(--c-brand-900);
-    color: rgba(251, 250, 246, 0.9);
+    padding: 16px 12px;
+    background: var(--c-surface);
+    border-right: 1px solid var(--c-line);
+    color: var(--c-ink-700);
 }
 
 .manager-brand {
-    padding: 4px 8px 18px;
-    margin-bottom: 14px;
-    border-bottom: 1px solid rgba(251, 250, 246, 0.1);
+    padding: 4px 8px 16px;
+    margin-bottom: 12px;
+    border-bottom: 1px solid var(--c-line);
 }
 
 .manager-nav {
@@ -169,24 +170,25 @@ body.dashboard-body {
 }
 
 .manager-shell .manager-nav-link {
-    gap: 12px;
-    padding: 10px 12px;
+    gap: 10px;
+    padding: 8px 10px;
     border-radius: var(--radius-sm);
-    color: rgba(251, 250, 246, 0.72);
-    font-size: 0.94rem;
+    color: var(--c-ink-500);
+    font-size: 0.92rem;
     transition: background-color 140ms ease, color 140ms ease;
 }
 
 .manager-shell .manager-nav-link:hover {
-    color: var(--c-on-brand);
-    background: rgba(251, 250, 246, 0.07);
+    color: var(--c-ink-900);
+    background: var(--c-surface-muted);
     transform: none;
 }
 
 .manager-shell .manager-nav-link.active {
-    color: var(--c-on-brand);
-    background: rgba(251, 250, 246, 0.12);
-    box-shadow: inset 3px 0 0 #8fc4a8;
+    color: var(--c-brand-700);
+    background: var(--c-brand-50);
+    box-shadow: none;
+    font-weight: 600;
 }
 
 .manager-shell .manager-nav-icon {
@@ -199,15 +201,14 @@ body.dashboard-body {
     border-radius: 0;
     background: none;
     color: inherit;
-    opacity: 0.9;
 }
 
 .manager-sidebar-foot {
     margin-top: auto;
     padding: 12px 8px 0;
-    font-size: 0.8rem;
+    font-size: 0.82rem;
     line-height: 1.6;
-    color: rgba(251, 250, 246, 0.5);
+    color: var(--c-ink-500);
 }
 
 .manager-topbar {
@@ -215,7 +216,7 @@ body.dashboard-body {
     top: 0;
     z-index: 30;
     padding: 14px 32px;
-    background: rgba(246, 244, 238, 0.88);
+    background: rgba(246, 247, 249, 0.88);
     border-bottom: 1px solid var(--c-line);
     backdrop-filter: saturate(1.4) blur(12px);
 }
@@ -701,3 +702,220 @@ body.dashboard-body {
 .node-status-warn { border-left-color: var(--c-warning-500); }
 .node-status-off { border-left-color: var(--c-ink-400); }
 .node-pending { border-left: 4px solid var(--c-warning-500); }
+
+/* ── Workspace refresh: Stripe/Linear-style density on the manager pages ──
+   White sidebar and cards with crisp 1px borders, store-green accent. */
+.manager-shell .manager-brand-icon {
+    display: inline-grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-md);
+    background: var(--c-brand-700);
+    color: #fff;
+    font-weight: 700;
+    font-size: 0.95rem;
+    box-shadow: none;
+}
+
+.manager-shell .manager-brand strong {
+    color: var(--c-ink-900);
+    font-size: 0.98rem;
+    letter-spacing: 0.02em;
+}
+
+.manager-shell .manager-brand small {
+    color: var(--c-ink-500);
+    font-size: 0.78rem;
+}
+
+.manager-shell .manager-nav-link {
+    padding: 8px 10px;
+    font-size: 0.92rem;
+    border-radius: var(--radius-sm);
+}
+
+
+.manager-sidebar-foot p {
+    margin: 0;
+    padding-top: 12px;
+    border-top: 1px solid var(--c-line);
+    color: var(--c-ink-500);
+    overflow-wrap: anywhere;
+}
+
+.manager-topbar {
+    background: rgba(255, 255, 255, 0.9);
+}
+
+.manager-topbar-title h1 {
+    font-size: 1.12rem;
+}
+
+.manager-shell .manager-panel {
+    padding: 20px 22px;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+}
+
+.manager-shell .panel-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 14px;
+}
+
+.manager-shell .panel-head h2,
+.manager-shell .manager-panel h2 {
+    margin: 0;
+    font-size: 1.02rem;
+    font-weight: 700;
+    letter-spacing: 0;
+}
+
+.manager-shell .panel-head p {
+    margin: 4px 0 0;
+}
+
+.manager-shell .text-link {
+    color: var(--c-brand-700);
+    font-size: 0.88rem;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.manager-shell .text-link:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.manager-shell .manager-metric-card {
+    padding: 16px 18px;
+    border-radius: var(--radius-lg);
+}
+
+.manager-shell .manager-metric-card strong {
+    font-size: 1.75rem;
+}
+
+.manager-shell .record-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+.manager-shell .record-list > .record-row {
+    border: 0;
+    border-bottom: 1px solid var(--c-line);
+    border-radius: 0;
+    padding: 10px 2px;
+    background: none;
+    box-shadow: none;
+}
+
+.manager-shell .record-list > .record-row:last-child {
+    border-bottom: 0;
+}
+
+.manager-shell .record-list > a.record-row:hover {
+    background: var(--c-surface-subtle);
+    transform: none;
+}
+
+.manager-shell .record-row strong {
+    font-weight: 600;
+}
+
+.manager-shell .record-row p {
+    margin: 2px 0 0;
+    font-size: 0.86rem;
+    color: var(--c-ink-500);
+}
+
+.manager-shell .pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border: 1px solid var(--c-line);
+    border-radius: 999px;
+    background: var(--c-surface-subtle);
+    color: var(--c-ink-700);
+    font-size: 0.78rem;
+    font-weight: 500;
+    line-height: 1.6;
+    white-space: nowrap;
+}
+
+.manager-shell .pill-active {
+    border-color: var(--c-brand-200);
+    background: var(--c-brand-50);
+    color: var(--c-brand-700);
+}
+
+.manager-shell .empty-card {
+    padding: 20px;
+    border: 1px dashed var(--c-line-strong);
+    border-radius: var(--radius-md);
+    background: var(--c-surface-subtle);
+    box-shadow: none;
+}
+
+.manager-shell .empty-card h3 {
+    margin: 0 0 4px;
+    font-size: 0.95rem;
+}
+
+.manager-shell .empty-card p {
+    margin: 0 0 10px;
+    color: var(--c-ink-500);
+    font-size: 0.88rem;
+}
+
+.manager-shell .trend-chart {
+    height: auto;
+    gap: 10px;
+    padding: 8px 0 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+}
+
+.manager-shell .trend-bar-wrap {
+    position: relative;
+    height: 160px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+    border-bottom: 1px solid var(--c-line);
+}
+
+.manager-shell .trend-value {
+    font-size: 0.78rem;
+    color: var(--c-ink-500);
+    font-variant-numeric: tabular-nums;
+}
+
+.manager-shell .trend-bar {
+    width: min(32px, 70%);
+    min-height: 2px;
+    border-radius: 4px 4px 0 0;
+    background: var(--c-brand-700);
+}
+
+.manager-shell .trend-col small {
+    display: block;
+    margin-top: 6px;
+    color: var(--c-ink-400);
+    font-size: 0.76rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.manager-shell .dashboard-analysis-facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    color: var(--c-ink-500);
+    font-size: 0.88rem;
+}

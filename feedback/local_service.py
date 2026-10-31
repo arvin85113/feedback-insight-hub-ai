@@ -1,8 +1,11 @@
 from datetime import datetime, timedelta
+from datetime import timezone as dt_timezone
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Count, Max, Q
 from django.db.models.functions import TruncDate
+from django.urls import reverse
 from django.utils import timezone
 
 from .models import (
@@ -267,119 +270,233 @@ def get_customer_notifications_payload(user):
     }
 
 
-def get_dashboard_payload():
-    improvements = ImprovementUpdate.objects.select_related("survey").all()
-    last_week = timezone.now() - timedelta(days=6)
+DASHBOARD_RANGES = (7, 30)
+DASHBOARD_SURVEY_LIMIT = 8
+DASHBOARD_ACTIVITY_LIMIT = 8
+WEEKDAY_LABELS = "一二三四五六日"
 
-    daily_qs = (
-        FeedbackSubmission.objects.filter(submitted_at__gte=last_week)
-        .annotate(day=TruncDate("submitted_at"))
-        .values("day")
-        .annotate(total=Count("id"))
+
+def _percent_change(current, previous):
+    if not previous:
+        return None
+    return round((current - previous) * 100 / previous)
+
+
+def _survey_status(survey):
+    if not survey.is_active:
+        return "inactive", "已停用"
+    if survey.published_version is None:
+        return "draft", "草稿"
+    return "live", "收件中"
+
+
+def get_dashboard_payload(range_days=7):
+    """Overview page: what needs attention, headline numbers, the response trend, surveys and recent activity."""
+    from .models import SurveyAnalysisState
+
+    if range_days not in DASHBOARD_RANGES:
+        range_days = DASHBOARD_RANGES[0]
+    today = timezone.localdate()
+    range_start = today - timedelta(days=range_days - 1)
+    previous_start = range_start - timedelta(days=range_days)
+
+    from cloudapi.models import SubmissionReceipt
+
+    valid = FeedbackSubmission.objects.filter(is_complete=True, voided_at__isnull=True)
+    # Cloud: answers to node-owned surveys stay on the node; the cloud only keeps a receipt per response.
+    receipts = SubmissionReceipt.objects.filter(
+        status__in=(SubmissionReceipt.Status.RECEIVED, SubmissionReceipt.Status.SYNCED)
     )
-    counts_by_day = {row["day"]: row["total"] for row in daily_qs}
-    daily_counts = [
+    counts_by_day = {}
+    for source in (valid, receipts):
+        for row in (
+            source.filter(submitted_at__date__gte=previous_start)
+            .annotate(day=TruncDate("submitted_at"))
+            .values("day")
+            .annotate(total=Count("id"))
+        ):
+            counts_by_day[row["day"]] = counts_by_day.get(row["day"], 0) + row["total"]
+    trend = []
+    for offset in range(range_days):
+        day = range_start + timedelta(days=offset)
+        trend.append({
+            "label": f"{day.month}/{day.day}",
+            "total": counts_by_day.get(day, 0),
+            "is_today": day == today,
+            "show_label": range_days <= 7 or offset % 5 == 0 or day == today,
+        })
+    peak = max(point["total"] for point in trend)
+    for point in trend:
+        point["percent"] = round(point["total"] * 100 / peak) if peak else 0
+    range_total = sum(point["total"] for point in trend)
+    previous_total = sum(
+        counts_by_day.get(previous_start + timedelta(days=offset), 0) for offset in range(range_days)
+    )
+
+    valid_filter = Q(submissions__is_complete=True, submissions__voided_at__isnull=True)
+    surveys = list(
+        Survey.objects.filter(archived_at__isnull=True)
+        .annotate(
+            response_total=Count("submissions", filter=valid_filter),
+            recent_total=Count("submissions", filter=valid_filter & Q(submissions__submitted_at__date__gte=range_start)),
+            last_response_at=Max("submissions__submitted_at", filter=valid_filter),
+        )
+    )
+    receipt_rows = {
+        row["survey"]: row
+        for row in receipts.values("survey").annotate(
+            total=Count("id"),
+            recent=Count("id", filter=Q(submitted_at__date__gte=range_start)),
+            last=Max("submitted_at"),
+        )
+    }
+    for survey in surveys:
+        row = receipt_rows.get(survey.pk)
+        if row:
+            survey.response_total += row["total"]
+            survey.recent_total += row["recent"]
+            survey.last_response_at = max(filter(None, (survey.last_response_at, row["last"])))
+    surveys.sort(key=lambda survey: survey.title)
+    surveys.sort(key=lambda survey: survey.last_response_at or datetime.min.replace(tzinfo=dt_timezone.utc), reverse=True)
+    surveys.sort(key=lambda survey: not survey.is_active)
+    states = {
+        state.survey_id: state
+        for state in SurveyAnalysisState.objects.filter(survey__in=[survey.pk for survey in surveys])
+    }
+    survey_rows = []
+    attention = []
+    for survey in surveys:
+        status, status_label = _survey_status(survey)
+        state = states.get(survey.pk)
+        analyzed_at = state.published_at if state else None
+        unanalyzed = 0
+        # In the cloud, node-owned surveys are analysed on the node, which the cloud cannot see into.
+        node_analysed = survey.owner_node_id and not settings.IS_NODE
+        if survey.analysis_enabled and survey.response_total and not node_analysed:
+            unanalyzed = (
+                valid.filter(survey=survey, submitted_at__gt=analyzed_at).count()
+                if analyzed_at
+                else survey.response_total
+            )
+        survey_rows.append({
+            "title": survey.title,
+            "slug": survey.slug,
+            "status": status,
+            "status_label": status_label,
+            "response_total": survey.response_total,
+            "recent_total": survey.recent_total,
+            "last_response_at": survey.last_response_at,
+            "analyzed_at": analyzed_at,
+            "unanalyzed": unanalyzed,
+            "analysis_enabled": survey.analysis_enabled,
+        })
+        if status == "live" and not survey.response_total:
+            attention.append({
+                "kind": "share",
+                "title": f"「{survey.title}」還沒有回覆",
+                "detail": "問卷已發布。把 QR code 放到門市或收據上，顧客才看得到。",
+                "action": "取得 QR code",
+                "url": reverse("feedback:survey-qrcode", args=[survey.slug]),
+            })
+        elif unanalyzed:
+            attention.append({
+                "kind": "analysis",
+                "title": f"「{survey.title}」有 {unanalyzed} 份回覆還沒分析",
+                "detail": "本機工作台下次分析後，結果才會更新。" if analyzed_at else "這份問卷還沒有分析結果。",
+                "action": "查看分析狀態",
+                "url": reverse("feedback:analysis-operations"),
+            })
+
+    improvements = ImprovementUpdate.objects.select_related("survey").filter(archived_at__isnull=True)
+    unnotified = improvements.filter(status=ImprovementUpdate.Status.COMPLETED, emailed_at__isnull=True)
+    attention = [
         {
-            "label": (last_week + timedelta(days=i)).date().strftime("%m/%d"),
-            "total": counts_by_day.get((last_week + timedelta(days=i)).date(), 0),
+            "kind": "notify",
+            "title": f"改善「{item.title}」已完成，還沒通知顧客",
+            "detail": "通知提出意見的顧客，讓他們知道店家做了什麼。",
+            "action": "寄出通知",
+            "url": reverse("feedback:improvement-detail", args=[item.pk]),
         }
-        for i in range(7)
-    ]
+        for item in unnotified.order_by("-updated_at")[:5]
+    ] + attention
 
-    total_surveys = Survey.objects.count()
-    total_submissions = FeedbackSubmission.objects.count()
-    total_improvements = improvements.count()
-    avg_responses = round(total_submissions / total_surveys, 1) if total_surveys else 0
-    top_surveys = list(Survey.objects.annotate(sub_count=Count("submissions")).order_by("-sub_count")[:5])
-    recent_responses = FeedbackSubmission.objects.select_related("survey", "user").order_by("-submitted_at")[:6]
-    latest_improvements = improvements[:5]
-    active_surveys = Survey.objects.filter(is_active=True).count()
-    emailed_improvements = improvements.filter(emailed_at__isnull=False).count()
+    open_statuses = (ImprovementUpdate.Status.PLANNED, ImprovementUpdate.Status.IN_PROGRESS)
+    notified_total = ImprovementDispatch.objects.filter(
+        delivery_status=ImprovementDispatch.DeliveryStatus.SENT, sent_at__date__gte=range_start
+    ).count()
 
-    insights = [
-        {
-            "title": "問卷活躍度",
-            "body": f"目前共有 {active_surveys} 份啟用中的問卷，平均每份問卷 {avg_responses} 份回覆。",
-            "tone": "neutral",
-        },
-        {
-            "title": "顧客通知閉環",
-            "body": f"已有 {emailed_improvements} 則改善項目完成通知寄送，可持續強化顧客信任。",
-            "tone": "positive" if emailed_improvements else "neutral",
-        },
-        {
-            "title": "優先關注目標",
-            "body": f"{top_surveys[0].title if top_surveys else '目前尚無熱門問卷'} 是最適合先做深度分析與改善追蹤的入口。",
-            "tone": "attention" if top_surveys else "neutral",
-        },
+    # Responses are grouped per survey and day so a busy day does not crowd out everything else.
+    response_groups = {}
+    for source in (valid, receipts):
+        for row in (
+            source.annotate(day=TruncDate("submitted_at"))
+            .values("day", "survey__title")
+            .annotate(total=Count("id"), last=Max("submitted_at"))
+            .order_by("-last")[:DASHBOARD_ACTIVITY_LIMIT]
+        ):
+            group = response_groups.setdefault((row["day"], row["survey__title"]), {"total": 0, "last": row["last"]})
+            group["total"] += row["total"]
+            group["last"] = max(group["last"], row["last"])
+    activity = [
+        {"kind": "response", "at": group["last"], "title": f"「{title}」收到 {group['total']} 份回覆", "url": ""}
+        for (_day, title), group in response_groups.items()
     ]
-    action_items = [
+    activity += [
         {
-            "title": "建立新問卷",
-            "meta": "新增題組、整理題目流程與通知規則。",
-            "url": "/dashboard/forms/new/",
-            "url_label": "開始建立",
-        },
-        {
-            "title": "查看統計總覽",
-            "meta": "檢查連續變數、選項分布與可用分析方法。",
-            "url": "/dashboard/stats/",
-            "url_label": "前往分析",
-        },
-        {
-            "title": "追蹤改善通知",
-            "meta": "整理已建立的改善項目與通知派送情況。",
-            "url": "/dashboard/notices/",
-            "url_label": "查看通知",
-        },
+            "kind": "improvement",
+            "at": item.updated_at,
+            "title": f"改善「{item.title}」：{item.get_status_display()}",
+            "url": reverse("feedback:improvement-detail", args=[item.pk]),
+        }
+        for item in improvements.order_by("-updated_at")[:DASHBOARD_ACTIVITY_LIMIT]
     ]
+    activity += [
+        {
+            "kind": "notice",
+            "at": notice.created_at,
+            "title": f"建立通知「{notice.subject}」",
+            "url": reverse("feedback:notice-detail", args=[notice.pk]),
+        }
+        for notice in ImprovementNotice.objects.order_by("-created_at")[:DASHBOARD_ACTIVITY_LIMIT]
+    ]
+    activity.sort(key=lambda entry: entry["at"], reverse=True)
 
     return {
-        "metrics": [
+        "today_label": f"{today.month} 月 {today.day} 日（{WEEKDAY_LABELS[today.weekday()]}）",
+        "range_days": range_days,
+        "range_options": DASHBOARD_RANGES,
+        "attention_items": attention,
+        "kpis": [
             {
-                "label": "問卷總數",
-                "value": total_surveys,
-                "hint": f"{active_surveys} 份目前啟用",
-                "accent": "blue",
+                "label": f"近 {range_days} 天回覆",
+                "value": range_total,
+                "change": _percent_change(range_total, previous_total),
+                "hint": f"前 {range_days} 天 {previous_total} 份",
             },
             {
-                "label": "有效回覆",
-                "value": total_submissions,
-                "hint": "累積收到的顧客回應量",
-                "accent": "violet",
+                "label": "收件中的問卷",
+                "value": sum(1 for row in survey_rows if row["status"] == "live"),
+                "hint": f"共 {len(survey_rows)} 份問卷",
             },
             {
-                "label": "改善項目",
-                "value": total_improvements,
-                "hint": f"{emailed_improvements} 則已完成通知",
-                "accent": "green",
+                "label": "進行中的改善",
+                "value": improvements.filter(status__in=open_statuses).count(),
+                "hint": f"已完成 {improvements.filter(status=ImprovementUpdate.Status.COMPLETED).count()} 項",
             },
             {
-                "label": "平均回覆量",
-                "value": avg_responses,
-                "hint": "每份問卷平均回覆數",
-                "accent": "amber",
+                "label": f"近 {range_days} 天通知顧客",
+                "value": notified_total,
+                "hint": "已寄出的改善通知",
             },
         ],
-        "daily_counts": daily_counts,
-        "top_surveys": [serialize_survey(survey, survey.sub_count) for survey in top_surveys],
-        "recent_responses": [serialize_submission(item) for item in recent_responses],
-        "latest_improvements": [
-            {
-                "id": item.id,
-                "title": item.title,
-                "summary": item.summary,
-                "emailed_at": item.emailed_at.isoformat() if item.emailed_at else None,
-                "survey": (
-                    {"id": item.survey.id, "title": item.survey.title, "slug": item.survey.slug}
-                    if item.survey
-                    else None
-                ),
-            }
-            for item in latest_improvements
-        ],
-        "insights": insights,
-        "action_items": action_items,
+        "trend": trend,
+        "trend_peak": peak,
+        "trend_total": range_total,
+        "trend_average": round(range_total / range_days, 1),
+        "trend_busiest": max(trend, key=lambda point: point["total"]) if range_total else None,
+        "survey_rows": survey_rows[:DASHBOARD_SURVEY_LIMIT],
+        "survey_total": len(survey_rows),
+        "activity": activity[:DASHBOARD_ACTIVITY_LIMIT],
     }
 
 
