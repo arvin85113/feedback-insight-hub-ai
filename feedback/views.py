@@ -350,6 +350,44 @@ class AIStagePipelineStatusView(ManagerRequiredMixin, View):
         return JsonResponse({"ok": True, **get_published_ai_pipeline_status(survey)})
 
 
+SURVEY_STATUS_TABS = (("", "全部"), ("live", "收件中"), ("draft", "草稿"), ("inactive", "已停用"))
+SURVEY_SORTS = (("recent", "最近有回覆"), ("newest", "最新建立"), ("oldest", "最早建立"), ("title", "名稱"),
+                ("responses", "回覆最多"))
+SURVEY_TREND_DAYS = 7
+
+
+def survey_status(survey):
+    if not survey.is_active:
+        return "inactive", "已停用"
+    if survey.published_version is None:
+        return "draft", "草稿"
+    return "live", "收件中"
+
+
+def recent_daily_counts(survey_ids, days):
+    """Per-survey response counts for each of the last `days` days, counting each reply once (spec §1)."""
+    from cloudapi.models import SubmissionReceipt
+
+    start = timezone.localdate() - timedelta(days=days - 1)
+    counts = {}
+    sources = (
+        FeedbackSubmission.objects.filter(survey_id__in=survey_ids),
+        SubmissionReceipt.objects.filter(survey_id__in=survey_ids)
+        .exclude(status=SubmissionReceipt.Status.ABANDONED)
+        .exclude(submission_uuid__in=FeedbackSubmission.objects.values("idempotency_key")),
+    )
+    for source in sources:
+        for row in (
+            source.filter(submitted_at__date__gte=start)
+            .annotate(day=TruncDate("submitted_at"))
+            .values("survey_id", "day")
+            .annotate(total=Count("id"))
+        ):
+            per_day = counts.setdefault(row["survey_id"], {})
+            per_day[row["day"]] = per_day.get(row["day"], 0) + row["total"]
+    return [start + timedelta(days=offset) for offset in range(days)], counts
+
+
 class SurveyManagerView(DashboardBaseMixin, TemplateView):
     template_name = "feedback/survey_manager.html"
     active_section = "feedback:survey-manager"
@@ -357,60 +395,87 @@ class SurveyManagerView(DashboardBaseMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context.update(self.get_dashboard_base_context())
-        sort = self.request.GET.get("sort", "newest")
+        sorts = dict(SURVEY_SORTS)
+        sort = self.request.GET.get("sort", "recent")
+        sort = sort if sort in sorts else "recent"
+        status = self.request.GET.get("status", "")
         category_id = self.request.GET.get("category", "")
+        query = self.request.GET.get("q", "").strip()
 
         qs = (
             Survey.objects.filter(archived_at__isnull=True)
-            .prefetch_related("questions")
             .select_related("category")
             .annotate(
-                submission_count=Count("submissions"),
+                question_count=Count("questions", filter=Q(questions__is_active=True), distinct=True),
+                submission_count=Count("submissions", distinct=True),
                 latest_submission_at=Max("submissions__submitted_at"),
             )
         )
         if category_id:
             qs = qs.filter(category_id=category_id)
-        if sort == "oldest":
-            qs = qs.order_by("created_at")
-        elif sort == "title":
-            qs = qs.order_by("title")
-        else:
-            qs = qs.order_by("-created_at")
+        if query:
+            qs = qs.filter(Q(title__icontains=query) | Q(description__icontains=query))
 
-        # ── 近 3 日每日回覆數 ──
-        today = timezone.localdate()
-        trend_days = [today - timedelta(days=i) for i in range(2, -1, -1)]  # [day-2, day-1, today]
-        recent_rows = (
-            FeedbackSubmission.objects
-            .filter(submitted_at__date__gte=trend_days[0])
-            .annotate(sub_date=TruncDate("submitted_at"))
-            .values("survey_id", "sub_date")
-            .annotate(cnt=Count("id"))
-        )
-        count_map = {}
-        for row in recent_rows:
-            count_map.setdefault(row["survey_id"], {})[row["sub_date"]] = row["cnt"]
-
-        surveys_list = list(qs)
-        external_totals = external_source_totals([survey.id for survey in surveys_list])
+        surveys_list = list(qs.order_by("-created_at"))
+        survey_ids = [survey.id for survey in surveys_list]
+        external_totals = external_source_totals(survey_ids)
+        from cloudapi.models import SubmissionReceipt
         from cloudapi.receipts import received_counts
 
-        received = received_counts([survey.id for survey in surveys_list])
+        received = received_counts(survey_ids)
+        latest_receipts = dict(
+            SubmissionReceipt.objects.filter(survey_id__in=survey_ids)
+            .exclude(status=SubmissionReceipt.Status.ABANDONED)
+            .values("survey_id")
+            .annotate(latest=Max("submitted_at"))
+            .values_list("survey_id", "latest")
+        )
+        trend_days, daily = recent_daily_counts(survey_ids, SURVEY_TREND_DAYS)
         for survey in surveys_list:
             if survey.id in external_totals:
                 survey.submission_count, survey.latest_submission_at = external_totals[survey.id]
             else:
                 survey.submission_count = received.get(survey.id, survey.submission_count)
-            day_map = count_map.get(survey.id, {})
-            survey.trend = [day_map.get(d, 0) for d in trend_days]
-            survey.trend_max = max(survey.trend) if any(survey.trend) else 1
+                receipt_latest = latest_receipts.get(survey.id)
+                if receipt_latest and (not survey.latest_submission_at or receipt_latest > survey.latest_submission_at):
+                    survey.latest_submission_at = receipt_latest
+            survey.status, survey.status_label = survey_status(survey)
+            per_day = daily.get(survey.id, {})
+            survey.trend = [per_day.get(day, 0) for day in trend_days]
+            survey.recent_total = sum(survey.trend)
+            peak = max(survey.trend) or 1
+            survey.trend_bars = [{"total": total, "percent": round(total * 100 / peak)} for total in survey.trend]
+
+        status_counts = {key: 0 for key, _label in SURVEY_STATUS_TABS}
+        for survey in surveys_list:
+            status_counts[""] += 1
+            status_counts[survey.status] += 1
+        if status in status_counts and status:
+            surveys_list = [survey for survey in surveys_list if survey.status == status]
+        else:
+            status = ""
+
+        never = timezone.now() - timedelta(days=365 * 100)
+        if sort == "recent":
+            surveys_list.sort(key=lambda survey: survey.latest_submission_at or never, reverse=True)
+        elif sort == "oldest":
+            surveys_list.sort(key=lambda survey: survey.created_at)
+        elif sort == "title":
+            surveys_list.sort(key=lambda survey: survey.title)
+        elif sort == "responses":
+            surveys_list.sort(key=lambda survey: survey.submission_count, reverse=True)
 
         context["surveys"] = surveys_list
-        context["trend_days"] = trend_days
+        context["status_tabs"] = [
+            {"key": key, "label": label, "count": status_counts[key]} for key, label in SURVEY_STATUS_TABS
+        ]
+        context["sort_options"] = SURVEY_SORTS
         context["categories"] = SurveyCategory.objects.all()
         context["current_sort"] = sort
+        context["current_status"] = status
         context["current_category"] = category_id
+        context["current_query"] = query
+        context["trend_days"] = SURVEY_TREND_DAYS
         return context
 
 

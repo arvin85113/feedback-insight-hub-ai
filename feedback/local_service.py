@@ -304,8 +304,9 @@ def get_dashboard_payload(range_days=7):
 
     valid = FeedbackSubmission.objects.filter(is_complete=True, voided_at__isnull=True)
     # Cloud: answers to node-owned surveys stay on the node; the cloud only keeps a receipt per response.
-    receipts = SubmissionReceipt.objects.filter(
-        status__in=(SubmissionReceipt.Status.RECEIVED, SubmissionReceipt.Status.SYNCED)
+    # A reply is counted once by its uuid, as in cloudapi.receipts (spec §1 數量定義).
+    receipts = SubmissionReceipt.objects.exclude(status=SubmissionReceipt.Status.ABANDONED).exclude(
+        submission_uuid__in=FeedbackSubmission.objects.values("idempotency_key")
     )
     counts_by_day = {}
     for source in (valid, receipts):

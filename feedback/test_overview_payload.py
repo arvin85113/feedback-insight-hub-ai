@@ -89,6 +89,18 @@ class OverviewPayloadTests(TestCase):
         # The node analyses its own surveys, so the cloud neither asks to share nor to analyse it.
         self.assertNotIn("節點", " ".join(item["title"] for item in payload["attention_items"]))
 
+    @cloud_only
+    def test_receipt_of_a_stored_submission_is_counted_once(self):
+        node, _ = NodeDevice.issue("office")
+        submission = FeedbackSubmission.objects.create(survey=self.survey)
+        SubmissionReceipt.objects.create(
+            submission_uuid=submission.idempotency_key, node=node, survey=self.survey,
+            submitted_at=submission.submitted_at, definition_version=1, response_sequence=1,
+            payload_hash="0" * 64, status=SubmissionReceipt.Status.SYNCED)
+        payload = get_dashboard_payload()
+        self.assertEqual(payload["trend_total"], 1)
+        self.assertEqual(payload["survey_rows"][0]["response_total"], 1)
+
     def test_overview_page_renders_with_range(self):
         self.client.force_login(self.manager)
         response = self.client.get(reverse("feedback:dashboard"), {"range": "30"})

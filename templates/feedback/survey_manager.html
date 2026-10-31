@@ -2,160 +2,164 @@
 {% load static %}
 
 {% block title %}問卷管理｜回饋洞察 AI 平台{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'css/survey-manager.css' %}?v=20261031-2">{% endblock %}
 
 {% block dashboard_content %}
-<section class="manager-header manager-header-inline">
-    <div>
-        <p>集中查看所有問卷的題目數、回覆量、啟用狀態與分類，並快速進入問卷編輯與檢視頁。</p>
-    </div>
-    <div class="manager-header-actions">
-        <button type="button" class="button button-ghost" id="category-panel-toggle">管理分類</button>
-        <a class="button button-primary" href="{% url 'feedback:survey-create' %}">建立新問卷</a>
-    </div>
-</section>
+<div class="sm">
+    <header class="sm-head">
+        <div>
+            <h2>所有問卷</h2>
+            <p class="sm-sub">點問卷名稱可編輯題目；發布後題目就固定，只能改設定。</p>
+        </div>
+        <div class="sm-actions">
+            <button type="button" class="button button-ghost button-small" id="category-panel-toggle" aria-expanded="false" aria-controls="category-panel">管理分類</button>
+            <a class="button button-primary button-small" href="{% url 'feedback:survey-create' %}">建立問卷</a>
+        </div>
+    </header>
 
-<div class="category-panel" id="category-panel" hidden>
-    <div class="category-panel-inner">
-        <h3>問卷分類管理</h3>
-        <ul class="category-item-list">
-            {% for cat in categories %}
-            <li class="category-item">
-                <span>{{ cat.name }}</span>
-                <form method="post" action="{% url 'feedback:category-delete' cat.pk %}"
-                      onsubmit="return confirm('確定刪除分類「{{ cat.name }}」？已套用此分類的問卷將會移除分類。')">
-                    {% csrf_token %}
-                    <button type="submit" class="button button-danger button-small">刪除</button>
-                </form>
-            </li>
-            {% empty %}
-            <li class="category-item-empty">目前沒有任何分類</li>
+    <section class="sm-categories" id="category-panel" hidden aria-label="問卷分類">
+        <div class="sm-categories-head">
+            <h3>問卷分類</h3>
+            <p>分類用來篩選問卷，刪除分類不會刪除問卷。</p>
+        </div>
+        {% if categories %}
+            <ul class="sm-category-list">
+                {% for cat in categories %}
+                    <li>
+                        <span>{{ cat.name }}</span>
+                        {% if not is_node %}
+                            <form method="post" action="{% url 'feedback:category-delete' cat.pk %}"
+                                  onsubmit="return confirm('確定刪除分類「{{ cat.name }}」？用這個分類的問卷會變成沒有分類。')">
+                                {% csrf_token %}
+                                <button type="submit" class="sm-link-danger">刪除</button>
+                            </form>
+                        {% endif %}
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p class="sm-muted">還沒有分類。</p>
+        {% endif %}
+        {% if is_node %}
+            <p class="sm-muted">分類由雲端網站管理，請到雲端新增或刪除。</p>
+        {% else %}
+            <form method="post" action="{% url 'feedback:category-create' %}" class="sm-category-add">
+                {% csrf_token %}
+                <label class="visually-hidden" for="new-category">新分類名稱</label>
+                <input type="text" id="new-category" name="name" placeholder="新分類名稱" required maxlength="50">
+                <button type="submit" class="button button-primary button-small">新增分類</button>
+            </form>
+        {% endif %}
+    </section>
+
+    <div class="sm-toolbar">
+        <nav class="sm-tabs" aria-label="依狀態篩選">
+            {% for tab in status_tabs %}
+                <a href="{% querystring status=tab.key %}"{% if tab.key == current_status %} aria-current="page"{% endif %}>
+                    {{ tab.label }}<span>{{ tab.count }}</span>
+                </a>
             {% endfor %}
-        </ul>
-        <form method="post" action="{% url 'feedback:category-create' %}" class="category-add-form">
-            {% csrf_token %}
-            <input type="text" name="name" placeholder="新分類名稱" required>
-            <button type="submit" class="button button-primary button-small">新增</button>
+        </nav>
+        <form class="sm-filters" method="get" role="search">
+            {% if current_status %}<input type="hidden" name="status" value="{{ current_status }}">{% endif %}
+            <label class="visually-hidden" for="survey-search">搜尋問卷</label>
+            <input type="search" id="survey-search" name="q" value="{{ current_query }}" placeholder="搜尋問卷名稱或說明">
+            {% if categories %}
+                <label class="visually-hidden" for="survey-category">分類</label>
+                <select id="survey-category" name="category" data-autosubmit>
+                    <option value="">所有分類</option>
+                    {% for cat in categories %}
+                        <option value="{{ cat.id }}"{% if current_category == cat.id|stringformat:'s' %} selected{% endif %}>{{ cat.name }}</option>
+                    {% endfor %}
+                </select>
+            {% endif %}
+            <label class="visually-hidden" for="survey-sort">排序</label>
+            <select id="survey-sort" name="sort" data-autosubmit>
+                {% for key, label in sort_options %}
+                    <option value="{{ key }}"{% if key == current_sort %} selected{% endif %}>排序：{{ label }}</option>
+                {% endfor %}
+            </select>
+            <noscript><button type="submit" class="button button-ghost button-small">套用</button></noscript>
         </form>
     </div>
-</div>
 
-<section class="manager-toolbar survey-manager-toolbar">
-    <div class="toolbar-filters">
-        <a class="filter-pill {% if not current_category %}filter-pill-active{% endif %}"
-           href="?sort={{ current_sort }}">全部</a>
-        {% for cat in categories %}
-            <a class="filter-pill {% if current_category == cat.id|stringformat:'s' %}filter-pill-active{% endif %}"
-               href="?sort={{ current_sort }}&category={{ cat.id }}">{{ cat.name }}</a>
-        {% endfor %}
-    </div>
-    <div class="toolbar-sort">
-        <select class="sort-select" onchange="location.href=this.value">
-            <option value="?sort=newest{% if current_category %}&category={{ current_category }}{% endif %}"
-                {% if current_sort == 'newest' %}selected{% endif %}>最新建立</option>
-            <option value="?sort=oldest{% if current_category %}&category={{ current_category }}{% endif %}"
-                {% if current_sort == 'oldest' %}selected{% endif %}>最舊建立</option>
-            <option value="?sort=title{% if current_category %}&category={{ current_category }}{% endif %}"
-                {% if current_sort == 'title' %}selected{% endif %}>名稱 A-Z</option>
-        </select>
-    </div>
-</section>
-
-<section class="manager-panel survey-manager-panel">
-    <div class="record-list">
-        {% for survey in surveys %}
-            <div class="record-row record-row-stack survey-manager-row">
-                <a class="record-row-link" href="{% if survey.slug %}{% url 'feedback:survey-builder' survey.slug %}{% else %}{% url 'feedback:survey-manager' %}{% endif %}">
-                    <div class="survey-row-body">
-                        <div class="survey-row-text">
-                            <strong>{{ survey.title }}</strong>
-                            {% if survey.category %}
-                                <span class="pill pill-category">{{ survey.category.name }}</span>
-                            {% endif %}
-                            <p class="survey-row-description">{{ survey.description|default:"此問卷已建立，可進一步設定題目、流程與分享方式。" }}</p>
-                            <div class="survey-stat-chips">
-                                <span class="survey-stat-chip">
-                                    <span class="survey-stat-chip-label">題目</span>
-                                    <span class="survey-stat-chip-value">{{ survey.questions.count }}</span>
-                                </span>
-                                <span class="survey-stat-chip">
-                                    <span class="survey-stat-chip-label">回覆</span>
-                                    <span class="survey-stat-chip-value">{{ survey.submission_count }}</span>
-                                </span>
-                                <span class="survey-stat-chip">
-                                    <span class="survey-stat-chip-label">最近回覆</span>
-                                    <span class="survey-stat-chip-value">
-                                        {% if survey.latest_submission_at %}
-                                            {{ survey.latest_submission_at|date:"m/d H:i" }}
-                                        {% else %}
-                                            —
-                                        {% endif %}
-                                    </span>
-                                </span>
-                            </div>
-                        </div>
-                        <div class="survey-trend-mini">
-                            <p class="survey-trend-title">近 3 日回覆</p>
-                            <div class="survey-trend-bars">
-                                {% for count in survey.trend %}
-                                    <div class="survey-trend-col">
-                                        <div class="survey-trend-bar-wrap">
-                                            <span class="survey-trend-bar"
-                                                  style="height: {% widthratio count survey.trend_max 44 %}px"></span>
-                                        </div>
-                                        <span class="survey-trend-label">
-                                            {% if forloop.counter == 1 %}前天
-                                            {% elif forloop.counter == 2 %}昨天
-                                            {% else %}今天{% endif %}
-                                        </span>
-                                        <span class="survey-trend-count">{{ count }}</span>
-                                    </div>
-                                {% endfor %}
-                            </div>
-                        </div>
+    <section class="sm-list" aria-label="問卷列表">
+        {% if surveys %}
+            <div class="sm-row sm-row-head" aria-hidden="true">
+                <span>問卷</span>
+                <span>狀態</span>
+                <span class="sm-num">題目</span>
+                <span class="sm-num">回覆</span>
+                <span>近 {{ trend_days }} 天</span>
+                <span>最近回覆</span>
+                <span></span>
+            </div>
+            {% for survey in surveys %}
+                <article class="sm-row">
+                    <div class="sm-main">
+                        <a class="sm-title" href="{% url 'feedback:survey-builder' survey.slug %}">{{ survey.title }}</a>
+                        {% if survey.category %}<span class="sm-tag">{{ survey.category.name }}</span>{% endif %}
+                        {% if survey.description %}<p class="sm-desc">{{ survey.description }}</p>{% endif %}
+                        <p class="sm-meta-sm">
+                            <span class="sm-status sm-status-{{ survey.status }}">{{ survey.status_label }}</span>
+                            <span>{{ survey.submission_count }} 份回覆</span>
+                            <span>近 {{ trend_days }} 天 {{ survey.recent_total }} 份</span>
+                        </p>
                     </div>
-                </a>
-                <div class="record-meta survey-manager-meta">
-                    <span class="pill {% if survey.is_active %}pill-active{% endif %}">
-                        {% if survey.is_active %}已啟用{% else %}草稿中{% endif %}
+                    <span class="sm-status sm-status-{{ survey.status }}">{{ survey.status_label }}</span>
+                    <span class="sm-num"><span class="sm-cell-label">題目</span>{{ survey.question_count }}</span>
+                    <span class="sm-num"><span class="sm-cell-label">回覆</span>{{ survey.submission_count }}</span>
+                    <span class="sm-spark" title="近 {{ trend_days }} 天共 {{ survey.recent_total }} 份">
+                        {% for bar in survey.trend_bars %}<i style="height: {{ bar.percent }}%"{% if not bar.total %} class="is-zero"{% endif %}></i>{% endfor %}
+                        <span class="sm-spark-total">{{ survey.recent_total }}</span>
                     </span>
-                    {% if survey.slug %}
-                    <div class="survey-link-group">
-                        <a class="button button-primary button-small survey-edit-link"
-                           href="{% url 'feedback:survey-builder' survey.slug %}?tab=settings">編輯設定</a>
-                        <div class="qr-popover-wrapper">
-                            <button type="button" class="button button-ghost button-small qr-trigger" aria-label="QR Code" aria-expanded="false">
-                                QRcode
-                            </button>
-                            <div class="qr-popover" hidden>
-                                <img src="{% url 'feedback:survey-qrcode' survey.slug %}"
-                                     alt="{{ survey.title }} QR Code" width="160" height="160">
+                    <span class="sm-muted sm-last"><span class="sm-cell-label">最近回覆</span>{% if survey.latest_submission_at %}{{ survey.latest_submission_at|date:"Y/n/j" }}{% else %}—{% endif %}</span>
+                    <div class="sm-row-actions">
+                        <a class="button button-ghost button-small" href="{% url 'feedback:survey-builder' survey.slug %}?tab=settings">設定</a>
+                        <details class="sm-menu">
+                            <summary aria-label="「{{ survey.title }}」的更多動作">⋯</summary>
+                            <div class="sm-menu-pop">
+                                <a href="{% url 'feedback:survey-builder' survey.slug %}?tab=settings" class="sm-menu-sm">問卷設定</a>
+                                <a href="{% url 'feedback:survey-detail' survey.slug %}?preview=1" target="_blank" rel="noopener">預覽填答畫面</a>
+                                <button type="button" class="copy-survey-link"
+                                        data-url="{{ request.scheme }}://{{ request.get_host }}{% url 'feedback:survey-detail' survey.slug %}">複製填答連結</button>
+                                <a href="{% url 'feedback:survey-qrcode' survey.slug %}" download="{{ survey.slug }}-qrcode.svg">下載 QR code</a>
+                                {# Unassigned drafts are deleted; anything else is archived (builder spec §5.1). #}
+                                {% if survey.status == "draft" and not survey.owner_node_id %}
+                                    <form method="post" action="{% url 'feedback:survey-delete' survey.slug %}"
+                                          onsubmit="return confirm('確定要刪除草稿「{{ survey.title }}」？刪除後無法復原。')">
+                                        {% csrf_token %}{% include "feedback/_definition_version_field.html" %}
+                                        <button type="submit" class="sm-menu-danger">刪除草稿</button>
+                                    </form>
+                                {% else %}
+                                    <form method="post" action="{% url 'feedback:survey-delete' survey.slug %}"
+                                          onsubmit="return confirm('確定要封存「{{ survey.title }}」？封存後不再收件，已收到的回覆與分析結果都會保留。')">
+                                        {% csrf_token %}{% include "feedback/_definition_version_field.html" %}
+                                        <button type="submit" class="sm-menu-danger">封存問卷</button>
+                                    </form>
+                                {% endif %}
                             </div>
-                        </div>
-                        <button type="button" class="button button-ghost button-small copy-survey-link"
-                                data-url="{{ request.scheme }}://{{ request.get_host }}{% url 'feedback:survey-detail' survey.slug %}">
-                            複製連結
-                        </button>
+                        </details>
                     </div>
-                    <form method="post" action="{% url 'feedback:survey-delete' survey.slug %}"
-                          onsubmit="return confirm('確定要刪除「{{ survey.title }}」？此操作無法復原。')">
-                        {% csrf_token %}{% include "feedback/_definition_version_field.html" %}
-                        <button type="submit" class="button button-danger button-small">刪除</button>
-                    </form>
-                    {% endif %}
-                </div>
+                </article>
+            {% endfor %}
+        {% elif current_query or current_category or current_status %}
+            <div class="sm-empty">
+                <h3>沒有符合條件的問卷</h3>
+                <p>換個關鍵字或篩選條件試試。</p>
+                <a class="button button-ghost button-small" href="{% url 'feedback:survey-manager' %}">清除篩選</a>
             </div>
-        {% empty %}
-            <div class="empty-card">
-                <div>
-                    <h3>目前沒有任何問卷</h3>
-                    <p>先建立第一份問卷，再進入題目編排、統計分析與顧客通知的完整流程。</p>
-                </div>
+        {% else %}
+            <div class="sm-empty">
+                <h3>還沒有問卷</h3>
+                <p>建立第一份問卷，把連結或 QR code 放到門市，就能開始收集顧客回饋。</p>
+                <a class="button button-primary button-small" href="{% url 'feedback:survey-create' %}">建立問卷</a>
             </div>
-        {% endfor %}
-    </div>
-</section>
+        {% endif %}
+    </section>
+</div>
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'js/survey-manager.js' %}?v=20260929-ui2"></script>
+<script src="{% static 'js/survey-manager.js' %}?v=20261031-1"></script>
 {% endblock %}
