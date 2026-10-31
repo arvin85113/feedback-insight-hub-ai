@@ -82,6 +82,18 @@ class NoticeCenterViewTests(NoticeCenterBase):
         self.assertEqual(response.context["notices"].count(), 1)
         self.assertEqual(response.context["legacy_notices"].count(), 0)
 
+    def test_totals_sum_deliveries_and_flag_batches_needing_attention(self):
+        sent = self.notice("sent")
+        ImprovementNotice.objects.filter(pk=sent.pk).update(sent_count=5)
+        partial = self.notice("partially_sent")
+        ImprovementNotice.objects.filter(pk=partial.pk).update(sent_count=2, failed_count=1)
+        self.notice("draft")
+        self.client.force_login(self.manager)
+        response = self.client.get(reverse("feedback:notice-center"), {"survey": self.survey.slug})
+        self.assertEqual(response.context["notice_totals"],
+                         {"batches": 3, "delivered": 7, "drafts": 1, "attention": 1})
+        self.assertContains(response, "失敗 1")
+
 
 @cloud_only
 class NodeSurveyResponseCountTests(NoticeCenterBase):

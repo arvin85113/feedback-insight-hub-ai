@@ -1,0 +1,340 @@
+/* Notice center (通知中心): per-improvement batch tables, email-style previews and delivery status dots.
+   Builds on analysis.css, improvements.css and survey-manager.css. */
+.manager-content > :is(.nc-groups, .nc-legacy, .nc-banner) {
+    margin-bottom: 16px;
+}
+
+.nc-kpi-alert strong {
+    color: var(--c-danger-700);
+}
+
+.nc-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.nc-actions form {
+    margin: 0;
+}
+
+.nc-banner {
+    margin: 0;
+    padding: 10px 14px;
+    border-radius: var(--radius-md);
+    font-size: 0.88rem;
+}
+
+.nc-banner-warn {
+    border: 1px solid #f0dfb4;
+    background: var(--c-warning-50);
+    color: var(--c-warning-700);
+}
+
+/* Status dots: grey draft, amber in flight, green sent, red needs attention */
+.sm-status.nc-st-draft::before,
+.sm-status.nc-st-pending::before {
+    background: var(--c-ink-400);
+}
+
+.sm-status.nc-st-sending::before {
+    background: var(--c-warning-500);
+}
+
+.sm-status.nc-st-sent::before {
+    background: var(--c-brand-700);
+}
+
+.sm-status:is(.nc-st-partially_sent, .nc-st-failed) {
+    color: var(--c-danger-700);
+}
+
+.sm-status:is(.nc-st-partially_sent, .nc-st-failed)::before {
+    background: var(--c-danger-500);
+}
+
+.nc-failed {
+    color: var(--c-danger-700);
+    font-style: normal;
+}
+
+/* Groups */
+.nc-groups {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.nc-group-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 16px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--c-line);
+}
+
+.nc-group-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    color: var(--c-ink-900);
+}
+
+.nc-group-title strong {
+    font-weight: 600;
+}
+
+.nc-group-title:hover strong {
+    color: var(--c-brand-700);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.nc-stages {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.nc-stage {
+    padding: 1px 8px;
+    border: 1px solid var(--c-line);
+    border-radius: 999px;
+    background: var(--c-surface-subtle);
+    font-size: 0.76rem;
+    color: var(--c-ink-500);
+    white-space: nowrap;
+}
+
+.nc-stage-done {
+    border-color: var(--c-brand-200);
+    background: var(--c-brand-50);
+    color: var(--c-brand-700);
+}
+
+.nc-stage-attention {
+    border-color: #efc7bd;
+    background: var(--c-danger-50);
+    color: var(--c-danger-700);
+}
+
+.nc-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 96px 120px 72px 48px;
+    align-items: center;
+    gap: 16px;
+    padding: 10px 16px;
+    border-top: 1px solid var(--c-line);
+    color: var(--c-ink-700);
+}
+
+.nc-row-head {
+    border-top: 0;
+    background: var(--c-surface-subtle);
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: var(--c-ink-500);
+}
+
+a.nc-row:hover {
+    background: var(--c-surface-subtle);
+}
+
+a.nc-row:last-child {
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+
+.nc-subject {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.nc-subject strong {
+    overflow: hidden;
+    font-weight: 600;
+    color: var(--c-ink-900);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.nc-subject span {
+    font-size: 0.8rem;
+    color: var(--c-ink-500);
+}
+
+.nc-num {
+    font-size: 0.85rem;
+    text-align: right;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.nc-date {
+    color: var(--c-ink-500);
+}
+
+/* Legacy */
+.nc-legacy-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.nc-legacy-list li + li {
+    border-top: 1px solid var(--c-line);
+}
+
+.nc-legacy-list a {
+    display: flex;
+    flex-direction: column;
+    padding: 10px 20px;
+    color: var(--c-ink-700);
+}
+
+.nc-legacy-list a:hover {
+    background: var(--c-surface-subtle);
+}
+
+.nc-legacy-list strong {
+    font-weight: 600;
+    color: var(--c-ink-900);
+}
+
+.nc-legacy-list span {
+    font-size: 0.84rem;
+    color: var(--c-ink-500);
+}
+
+/* Email-style preview */
+.nc-mail-head {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--c-line);
+}
+
+.nc-mail-label {
+    flex-shrink: 0;
+    font-size: 0.8rem;
+    color: var(--c-ink-500);
+}
+
+.nc-mail-head strong {
+    font-weight: 600;
+    color: var(--c-ink-900);
+}
+
+.nc-mail-body {
+    margin: 0;
+    padding: 20px;
+    font-size: 0.95rem;
+    line-height: 1.75;
+    color: var(--c-ink-700);
+}
+
+.nc-dispatches {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.nc-dispatches li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 4px 16px;
+    padding: 10px 20px;
+    border-top: 1px solid var(--c-line);
+    font-size: 0.88rem;
+}
+
+.nc-dispatches li:first-child {
+    border-top: 0;
+}
+
+.nc-note {
+    grid-column: 1 / -1;
+    margin: 0;
+    font-size: 0.84rem;
+    color: var(--c-ink-500);
+}
+
+.nc-rules {
+    margin: 0;
+    padding: 14px 20px 16px 36px;
+    font-size: 0.86rem;
+    line-height: 1.6;
+    color: var(--c-ink-700);
+}
+
+.nc-rules li + li {
+    margin-top: 6px;
+}
+
+.nc-big {
+    font-size: 1.1rem;
+    font-weight: 700;
+}
+
+.nc-send {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 14px 20px 18px;
+    border-top: 1px solid var(--c-line);
+}
+
+.nc-send form {
+    margin: 0;
+}
+
+.nc-send .button {
+    width: 100%;
+}
+
+.nc-send p {
+    margin: 0;
+    font-size: 0.82rem;
+}
+
+@media (max-width: 760px) {
+    .nc-row-head {
+        display: none;
+    }
+
+    .nc-row {
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 4px 12px;
+    }
+
+    .nc-subject {
+        grid-column: 1 / -1;
+    }
+
+    .nc-row > :nth-child(3) {
+        text-align: left;
+    }
+
+    .nc-row > :nth-child(4),
+    .nc-row > :nth-child(5) {
+        display: none;
+    }
+
+    .nc-mail-head,
+    .nc-mail-body,
+    .nc-dispatches li,
+    .nc-send {
+        padding-left: 16px;
+        padding-right: 16px;
+    }
+
+    .nc-mail-head {
+        flex-direction: column;
+        gap: 2px;
+    }
+}

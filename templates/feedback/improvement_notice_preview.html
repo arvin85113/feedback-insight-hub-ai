@@ -1,43 +1,49 @@
 {% extends "feedback/dashboard_base.html" %}
+{% load static %}
 
 {% block title %}預覽 {{ notice.subject }}｜回饋洞察 AI 平台{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'css/survey-manager.css' %}?v=20261031-2"><link rel="stylesheet" href="{% static 'css/analysis.css' %}?v=20261031-4"><link rel="stylesheet" href="{% static 'css/improvements.css' %}?v=20261101-1"><link rel="stylesheet" href="{% static 'css/notices.css' %}?v=20261101-1">{% endblock %}
 
 {% block dashboard_content %}
-<section class="manager-header manager-header-inline">
-    <div>
-        <h1>確認通知內容</h1>
-        <p>這是寄送前預覽；目前仍是草稿，尚未寄送。</p>
+<header class="an-head">
+    <div class="an-head-title">
+        <a class="an-back" href="{% url 'feedback:notice-batch-update' notice.pk %}">← 返回編輯</a>
+        <h2>確認通知內容</h2>
+        <p>這是寄送前的預覽，目前仍是草稿，還沒有寄出。</p>
     </div>
-    <a class="button button-ghost" href="{% url 'feedback:notice-batch-update' notice.pk %}">返回編輯</a>
-</section>
+</header>
 
-<section class="manager-dual-grid">
-    <article class="manager-panel notice-preview-content">
-        <div class="panel-head">
-            <div><h2>{{ notice.subject }}</h2></div>
-            <span class="pill">{{ notice.get_status_display }}</span>
-        </div>
-        <p class="preserve-lines">{{ notice.body }}</p>
-    </article>
+<div class="im-detail">
+    <section class="tx-card nc-mail">
+        <header class="nc-mail-head">
+            <span class="nc-mail-label">主旨</span>
+            <strong>{{ notice.subject }}</strong>
+        </header>
+        <p class="preserve-lines nc-mail-body">{{ notice.body }}</p>
+    </section>
 
-    <aside class="manager-panel">
-        <div class="panel-head"><h2>收件範圍</h2></div>
-        <dl class="detail-list improvement-detail-list">
-            <div><dt>改善項目</dt><dd>{{ notice.improvement.title }}</dd></div>
-            <div><dt>通知對象</dt><dd>{{ notice.get_audience_type_display }}</dd></div>
-            <div><dt>符合條件</dt><dd>{{ recipient_count }} 人</dd></div>
-            <div><dt>內容版本</dt><dd>v{{ notice.content_version }}</dd></div>
-        </dl>
-        {% if recipient_count %}
-            <form method="post" action="{% url 'feedback:notice-batch-send' notice.pk %}" class="form-stack">
-                {% csrf_token %}
-                {{ confirmation_form }}
-                <button type="submit" class="button button-primary">確認並寄送</button>
-                <p class="muted-text">送出後會凍結目前內容，並只寄給後端重新核對後仍符合條件的收件者。</p>
-            </form>
-        {% else %}
-            <div class="empty-card"><div><h3>目前沒有符合條件的收件者</h3><p>請確認通知範圍與顧客通知偏好。</p></div></div>
-        {% endif %}
+    <aside class="im-detail-side">
+        <section class="tx-card">
+            <header class="tx-card-head"><div><h3>收件範圍</h3></div></header>
+            <dl class="im-props im-section">
+                <div><dt>改善項目</dt><dd>{{ notice.improvement.title }}</dd></div>
+                <div><dt>通知對象</dt><dd>{{ notice.get_audience_type_display }}</dd></div>
+                <div><dt>符合條件</dt><dd><strong class="nc-big">{{ recipient_count }} 人</strong></dd></div>
+                <div><dt>內容版本</dt><dd>v{{ notice.content_version }}</dd></div>
+            </dl>
+            <div class="nc-send">
+                {% if recipient_count %}
+                    <form method="post" action="{% url 'feedback:notice-batch-send' notice.pk %}">
+                        {% csrf_token %}
+                        {{ confirmation_form }}
+                        <button type="submit" class="button button-primary">確認並寄送</button>
+                    </form>
+                    <p class="im-muted">送出後內容就不能再改，並只寄給寄送當下仍符合條件的收件者。</p>
+                {% else %}
+                    <p class="nc-banner nc-banner-warn">目前沒有符合條件的收件者，請確認通知對象與顧客的通知設定。</p>
+                {% endif %}
+            </div>
+        </section>
     </aside>
-</section>
+</div>
 {% endblock %}

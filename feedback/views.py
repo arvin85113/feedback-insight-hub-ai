@@ -7,7 +7,7 @@ from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
-from django.db.models import Count, IntegerField, Max, OuterRef, Q, Subquery
+from django.db.models import Count, IntegerField, Max, OuterRef, Q, Subquery, Sum
 from django.db.models.fields.json import KT
 from django.db.models.functions import Cast, Coalesce, TruncDate
 import segno
@@ -999,6 +999,16 @@ class NoticeCenterView(DashboardBaseMixin, TemplateView):
         context["notice_survey_rows"] = survey_rows
         context["notice_groups"] = notice_center_groups(selected_survey)
         context["notices"] = notices
+        context["notice_totals"] = notices.aggregate(
+            batches=Count("id"),
+            delivered=Coalesce(Sum("sent_count"), 0),
+            drafts=Count("id", filter=Q(status=ImprovementNotice.Status.DRAFT)),
+            attention=Count("id", filter=Q(status__in=(
+                ImprovementNotice.Status.PARTIALLY_SENT, ImprovementNotice.Status.FAILED))),
+        )
+        context["survey_list"] = (
+            Survey.objects.filter(is_active=True).order_by("title") if selected_survey else []
+        )
         context["legacy_notices"] = legacy_notices
         context["categories"] = SurveyCategory.objects.all()
         context["current_sort"] = sort
