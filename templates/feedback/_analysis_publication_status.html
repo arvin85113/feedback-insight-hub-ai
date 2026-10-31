@@ -22,7 +22,7 @@
     {% elif analysis_publication.available %}
         <div>
             <strong>已發布結果</strong>
-            <span>Snapshot #{{ analysis_publication.snapshot_id }}</span>
+            <span>發布編號 #{{ analysis_publication.snapshot_id }}</span>
         </div>
         {% if analysis_stage_fresh %}
             <span class="analysis-publication-pill analysis-publication-pill-current">符合目前資料版本</span>
@@ -35,7 +35,7 @@
     {% else %}
         <div>
             <strong>尚無已發布結果</strong>
-            <span>背景分析完成後會自動顯示；重新整理不會在網站上重算。</span>
+            <span>本機工作台分析完成後會自動顯示在這裡。</span>
         </div>
     {% endif %}
     {% endwith %}

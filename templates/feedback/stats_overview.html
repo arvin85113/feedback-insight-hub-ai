@@ -2,35 +2,38 @@
 {% load static %}
 
 {% block title %}統計分析｜回饋洞察 AI 平台{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'css/survey-manager.css' %}?v=20261031-2"><link rel="stylesheet" href="{% static 'css/analysis.css' %}?v=20261031-4">{% endblock %}
 
 {% block dashboard_content %}
-<section class="manager-header manager-header-inline analytics-hero">
-    {% if selected_survey %}
-    <div class="analytics-meta-strip" aria-label="統計分析摘要">
-        <span class="analytics-meta-item analytics-meta-item-wide">
-            <span class="analytics-meta-label">問卷</span>
-            <strong class="analytics-meta-value">{{ selected_survey.title }}</strong>
-        </span>
-        <span class="analytics-meta-item">
-            <span class="analytics-meta-label">題目</span>
-            <strong class="analytics-meta-value">{{ question_analysis|length }}</strong>
-        </span>
-        <span class="analytics-meta-item">
-            <span class="analytics-meta-label">描述統計</span>
-            <strong class="analytics-meta-value">{{ charts|length }}</strong>
-        </span>
-        <span class="analytics-meta-item">
-            <span class="analytics-meta-label">推論組合</span>
-            <strong class="analytics-meta-value">{{ inferential_analysis|length }}</strong>
-        </span>
+{% if selected_survey %}
+<header class="an-head">
+    <div class="an-head-title">
+        <a class="an-back" href="{% url 'feedback:stats-overview' %}">← 所有問卷</a>
+        <h2>{{ selected_survey.title }}</h2>
     </div>
-        <a class="button button-ghost" href="{% url 'feedback:stats-overview' %}">返回問卷列表</a>
-    {% else %}
-    <div>
-        <p>依照問卷題型與資料型態，自動整理描述統計、推薦可用檢定，並顯示執行結果或跳過原因。</p>
-    </div>
-    {% endif %}
+    <form class="an-switch" method="get">
+        <label class="visually-hidden" for="an-survey">切換問卷</label>
+        <select id="an-survey" name="survey" data-autosubmit>
+            {% for item in survey_list %}
+                <option value="{{ item.slug }}"{% if item.pk == selected_survey.pk %} selected{% endif %}>{{ item.title }}</option>
+            {% endfor %}
+        </select>
+        <noscript><button type="submit" class="button button-ghost button-small">切換</button></noscript>
+    </form>
+</header>
+<section class="an-kpis" aria-label="統計分析摘要">
+    <div><p>題目</p><strong>{{ question_analysis|length }}</strong></div>
+    <div><p>描述統計</p><strong>{{ charts|length }}</strong></div>
+    <div><p>推論分析</p><strong>{{ available_tests_count }}<small> / {{ inferential_analysis|length }} 組可執行</small></strong></div>
 </section>
+{% else %}
+<header class="an-head">
+    <div class="an-head-title">
+        <h2>選擇要看的問卷</h2>
+        <p>每份問卷依題型整理描述統計，並列出可用的推論檢定與結果；條件不夠時會寫出原因。</p>
+    </div>
+</header>
+{% endif %}
 
 {% include "feedback/_analysis_publication_status.html" %}
 
@@ -286,84 +289,51 @@
         </div>
     </div>
 
-    <script src="{% static 'js/analysis-tabs.js' %}?v=20260929-ui2"></script>
 
 {% else %}
-    <section class="manager-toolbar stats-list-toolbar">
-        <div class="toolbar-filters">
-            <a class="filter-pill {% if not current_category %}filter-pill-active{% endif %}"
-               href="?sort={{ current_sort }}">全部</a>
-            {% for cat in categories %}
-                <a class="filter-pill {% if current_category == cat.id|stringformat:'s' %}filter-pill-active{% endif %}"
-                   href="?sort={{ current_sort }}&category={{ cat.id }}">{{ cat.name }}</a>
-            {% endfor %}
-        </div>
-        <div class="toolbar-sort">
-            <select class="sort-select" onchange="location.href=this.value">
-                <option value="?sort=newest{% if current_category %}&category={{ current_category }}{% endif %}"
-                    {% if current_sort == 'newest' %}selected{% endif %}>最新建立</option>
-                <option value="?sort=oldest{% if current_category %}&category={{ current_category }}{% endif %}"
-                    {% if current_sort == 'oldest' %}selected{% endif %}>最舊建立</option>
-                <option value="?sort=title{% if current_category %}&category={{ current_category }}{% endif %}"
-                    {% if current_sort == 'title' %}selected{% endif %}>名稱 A-Z</option>
+    <form class="an-toolbar" method="get">
+        {% if categories %}
+            <label class="visually-hidden" for="an-category">分類</label>
+            <select id="an-category" name="category" data-autosubmit>
+                <option value="">所有分類</option>
+                {% for cat in categories %}
+                    <option value="{{ cat.id }}"{% if current_category == cat.id|stringformat:'s' %} selected{% endif %}>{{ cat.name }}</option>
+                {% endfor %}
             </select>
-        </div>
-    </section>
+        {% endif %}
+        <label class="visually-hidden" for="an-sort">排序</label>
+        <select id="an-sort" name="sort" data-autosubmit>
+            <option value="newest"{% if current_sort == 'newest' %} selected{% endif %}>排序：最新建立</option>
+            <option value="oldest"{% if current_sort == 'oldest' %} selected{% endif %}>排序：最早建立</option>
+            <option value="title"{% if current_sort == 'title' %} selected{% endif %}>排序：名稱</option>
+        </select>
+        <noscript><button type="submit" class="button button-ghost button-small">套用</button></noscript>
+    </form>
 
-    <section class="manager-panel stats-survey-list-panel">
-        <div class="record-list">
-            {% for survey in stats_survey_rows %}
-                <div class="record-row record-row-stack stats-survey-row">
-                    <a class="record-row-link" href="{% url 'feedback:stats-overview' %}?survey={{ survey.slug }}">
-                        <div class="survey-row-body">
-                            <div class="survey-row-text">
-                                <strong>{{ survey.title }}</strong>
-                                {% if survey.category %}
-                                    <span class="pill pill-category">{{ survey.category.name }}</span>
-                                {% endif %}
-                                <p>{{ survey.description|default:"尚未補充問卷說明。" }}</p>
-                                <div class="survey-stat-chips">
-                                    <span class="survey-stat-chip">
-                                        <span class="survey-stat-chip-label">題目</span>
-                                        <span class="survey-stat-chip-value">{{ survey.question_count }}</span>
-                                    </span>
-                                    <span class="survey-stat-chip">
-                                        <span class="survey-stat-chip-label">回覆</span>
-                                        <span class="survey-stat-chip-value">{{ survey.response_count }}</span>
-                                    </span>
-                                    <span class="survey-stat-chip">
-                                        <span class="survey-stat-chip-label">最近回覆</span>
-                                        <span class="survey-stat-chip-value">{% if survey.latest_submission_at %}{{ survey.latest_submission_at|date:"m/d H:i" }}{% else %}—{% endif %}</span>
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-                    </a>
-                    <div class="record-meta">
-                        <span class="pill {% if survey.response_count %}pill-active{% endif %}">
-                            {% if survey.response_count %}可分析{% else %}等待回覆{% endif %}
-                        </span>
-                        <a class="button button-primary button-small" href="{% url 'feedback:stats-overview' %}?survey={{ survey.slug }}">查看統計</a>
-                    </div>
+    <section class="an-list" aria-label="可分析的問卷">
+        {% for survey in stats_survey_rows %}
+            <a class="an-list-row" href="{% url 'feedback:stats-overview' %}?survey={{ survey.slug }}">
+                <div class="an-list-main">
+                    <strong>{{ survey.title }}</strong>{% if survey.category %}<span class="sm-tag">{{ survey.category.name }}</span>{% endif %}
+                    {% if survey.description %}<p>{{ survey.description }}</p>{% endif %}
                 </div>
-            {% empty %}
-                <div class="empty-card">
-                    <div>
-                        <h3>尚無可分析問卷</h3>
-                        <p>請先建立問卷並收集回覆，之後即可在這裡進入統計分析頁。</p>
-                    </div>
-                </div>
-            {% endfor %}
-        </div>
-    </section>
-
-    <section class="manager-panel stats-empty-guide">
-        <div class="empty-card">
-            <div>
-                <h3>統計頁會做什麼？</h3>
-                <p>進入單一問卷後，系統會依照題型與資料型態，自動整理描述統計、推薦可用推論方法，並顯示條件通過或跳過原因。</p>
+                <span class="an-list-num"><b>{{ survey.question_count }}</b> 題</span>
+                <span class="an-list-num"><b>{{ survey.response_count }}</b> 份回覆</span>
+                <span class="an-list-date">{% if survey.latest_submission_at %}最近 {{ survey.latest_submission_at|date:"Y/n/j" }}{% else %}還沒有回覆{% endif %}</span>
+                <span class="an-list-go" aria-hidden="true">查看統計 →</span>
+            </a>
+        {% empty %}
+            <div class="sm-empty">
+                <h3>還沒有可分析的問卷</h3>
+                <p>問卷發布並收到回覆後，就能在這裡看統計結果。</p>
+                <a class="button button-ghost button-small" href="{% url 'feedback:survey-manager' %}">到問卷管理</a>
             </div>
-        </div>
+        {% endfor %}
     </section>
 {% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/analysis-tabs.js' %}?v=20260929-ui2"></script>
+<script src="{% static 'js/autosubmit.js' %}?v=20261031-1"></script>
 {% endblock %}

@@ -813,6 +813,7 @@ class TextAnalysisView(DashboardBaseMixin, TemplateView):
         survey = Survey.objects.filter(slug=selected_slug).first() if selected_slug else None
         context.update(self.get_dashboard_base_context())
         context["selected_survey"] = survey
+        context["survey_list"] = analysis_visible_surveys().order_by("title") if survey else []
         text_surveys = analysis_visible_surveys().select_related("category")
         if category_id:
             text_surveys = text_surveys.filter(category_id=category_id)
