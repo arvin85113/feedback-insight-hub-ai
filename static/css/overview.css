@@ -1,0 +1,602 @@
+/* Manager overview (營運總覽): attention inbox, KPI strip, response trend, survey table, activity feed.
+   Uses the app.css tokens, which share the homepage palette. */
+.ov {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.ov-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.ov-date {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--c-ink-500);
+}
+
+.ov-greet {
+    margin: 2px 0 0;
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    line-height: 1.3;
+    color: var(--c-ink-900);
+}
+
+.ov-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.ov-card {
+    padding: 18px 20px;
+    border: 1px solid var(--c-line);
+    border-radius: var(--radius-lg);
+    background: var(--c-surface);
+    box-shadow: var(--shadow-sm);
+}
+
+.ov-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.ov-card-head h3 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    font-size: 0.98rem;
+    font-weight: 700;
+    color: var(--c-ink-900);
+}
+
+.ov-count {
+    min-width: 20px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--c-ink-900);
+    color: #fff;
+    font-size: 0.74rem;
+    font-weight: 600;
+    line-height: 20px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Attention inbox */
+.ov-inbox {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.ov-inbox-item {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 12px;
+    padding: 12px 0;
+    border-top: 1px solid var(--c-line);
+}
+
+.ov-inbox-item:first-child {
+    border-top: 0;
+    padding-top: 2px;
+}
+
+.ov-inbox-dot {
+    margin-top: 8px;
+}
+
+.ov-inbox-item .button {
+    align-self: center;
+}
+
+.ov-inbox-dot,
+.ov-feed-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--c-ink-400);
+}
+
+.ov-kind-notify .ov-inbox-dot,
+.ov-kind-notify .ov-feed-dot {
+    background: var(--c-brand-700);
+}
+
+.ov-kind-analysis .ov-inbox-dot,
+.ov-kind-improvement .ov-feed-dot {
+    background: var(--c-warning-500);
+}
+
+.ov-kind-share .ov-inbox-dot {
+    background: #3b6fb6;
+}
+
+.ov-inbox-text strong {
+    display: block;
+    font-size: 0.93rem;
+    font-weight: 600;
+    color: var(--c-ink-900);
+}
+
+.ov-inbox-text p {
+    margin: 2px 0 0;
+    font-size: 0.85rem;
+    color: var(--c-ink-500);
+}
+
+.ov-allclear {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    font-size: 0.9rem;
+    color: var(--c-ink-500);
+}
+
+.ov-allclear span {
+    display: inline-grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--c-brand-50);
+    color: var(--c-brand-700);
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+/* KPI strip: one card split into cells, like Stripe's summary row */
+.ov-kpis {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    border: 1px solid var(--c-line);
+    border-radius: var(--radius-lg);
+    background: var(--c-surface);
+    box-shadow: var(--shadow-sm);
+}
+
+.ov-kpi {
+    padding: 16px 20px;
+    border-left: 1px solid var(--c-line);
+}
+
+.ov-kpi:first-child {
+    border-left: 0;
+}
+
+.ov-kpi p {
+    margin: 0;
+}
+
+.ov-kpi-label {
+    font-size: 0.85rem;
+    color: var(--c-ink-500);
+}
+
+.ov-kpi-value {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-top: 4px !important;
+}
+
+.ov-kpi-value strong {
+    font-size: 1.75rem;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+    color: var(--c-ink-900);
+    font-variant-numeric: tabular-nums;
+}
+
+.ov-delta {
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--c-surface-muted);
+    color: var(--c-ink-500);
+    font-size: 0.76rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.ov-delta-up {
+    background: var(--c-brand-50);
+    color: var(--c-brand-700);
+}
+
+.ov-delta-down {
+    background: var(--c-danger-50);
+    color: var(--c-danger-700);
+}
+
+.ov-kpi-hint {
+    margin-top: 2px !important;
+    font-size: 0.8rem;
+    color: var(--c-ink-400);
+}
+
+/* Segmented range control */
+.ov-segment {
+    display: inline-flex;
+    padding: 2px;
+    border: 1px solid var(--c-line);
+    border-radius: var(--radius-md);
+    background: var(--c-surface-subtle);
+}
+
+.ov-segment a {
+    padding: 3px 10px;
+    border-radius: var(--radius-sm);
+    font-size: 0.82rem;
+    color: var(--c-ink-500);
+}
+
+.ov-segment a:hover {
+    color: var(--c-ink-900);
+}
+
+.ov-segment a[aria-current] {
+    background: var(--c-surface);
+    color: var(--c-ink-900);
+    font-weight: 600;
+    box-shadow: var(--shadow-sm);
+}
+
+/* Trend chart */
+.ov-trend-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 180px;
+    gap: 24px;
+    align-items: stretch;
+}
+
+.ov-chart {
+    position: relative;
+    padding-left: 32px;
+}
+
+.ov-chart-grid {
+    position: absolute;
+    inset: 0 0 22px 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    pointer-events: none;
+}
+
+.ov-chart-grid span {
+    position: relative;
+    height: 0;
+    border-top: 1px dashed var(--c-line);
+}
+
+.ov-chart-grid i {
+    position: absolute;
+    left: -32px;
+    top: 0;
+    width: 24px;
+    transform: translateY(-50%);
+    font-size: 0.72rem;
+    font-style: normal;
+    line-height: 1;
+    text-align: right;
+    color: var(--c-ink-400);
+    font-variant-numeric: tabular-nums;
+}
+
+.ov-chart-grid span:last-child {
+    border-top-style: solid;
+    border-top-color: var(--c-line-strong);
+}
+
+.ov-chart-bars {
+    display: grid;
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: column;
+    gap: 8px;
+    height: 200px;
+}
+
+.ov-chart-dense .ov-chart-bars {
+    gap: 3px;
+}
+
+.ov-bar-col {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.ov-bar-track {
+    position: relative;
+    flex: 1;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+}
+
+.ov-bar {
+    width: min(36px, 100%);
+    min-height: 1px;
+    border-radius: 3px 3px 0 0;
+    background: #9fd3b8;
+    transition: background-color 140ms ease;
+}
+
+.ov-bar-col.is-today .ov-bar,
+.ov-bar-col:hover .ov-bar {
+    background: var(--c-brand-700);
+}
+
+.ov-bar-col small {
+    height: 22px;
+    padding-top: 6px;
+    font-size: 0.74rem;
+    line-height: 16px;
+    color: var(--c-ink-400);
+    text-align: center;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.ov-chart-dense .ov-bar-col small {
+    overflow: visible;
+}
+
+.ov-trend-facts {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin: 0;
+    padding-left: 20px;
+    border-left: 1px solid var(--c-line);
+}
+
+.ov-trend-facts dt {
+    font-size: 0.8rem;
+    color: var(--c-ink-500);
+}
+
+.ov-trend-facts dd {
+    margin: 2px 0 0;
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--c-ink-900);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Surveys table + activity feed */
+.ov-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+}
+
+.ov-table-wrap {
+    margin: 0 -20px -18px;
+    overflow-x: auto;
+}
+
+.manager-shell .ov-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+}
+
+.manager-shell .ov-table th,
+.manager-shell .ov-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--c-line);
+    text-align: left;
+    white-space: nowrap;
+}
+
+.manager-shell .ov-table :is(th, td):first-child {
+    padding-left: 20px;
+}
+
+.manager-shell .ov-table :is(th, td):last-child {
+    padding-right: 20px;
+}
+
+.manager-shell .ov-table thead th {
+    padding-top: 8px;
+    padding-bottom: 8px;
+    background: var(--c-surface-subtle);
+    border-top: 1px solid var(--c-line);
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--c-ink-500);
+}
+
+.manager-shell .ov-table tbody tr:last-child :is(th, td) {
+    border-bottom: 0;
+}
+
+.manager-shell .ov-table tbody tr:hover {
+    background: var(--c-surface-subtle);
+}
+
+.manager-shell .ov-table tbody th {
+    font-weight: 600;
+    color: var(--c-ink-900);
+    white-space: normal;
+    min-width: 140px;
+}
+
+.ov-table tbody th a:hover {
+    color: var(--c-brand-700);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.manager-shell .ov-table .ov-num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.ov-muted {
+    color: var(--c-ink-500);
+}
+
+.ov-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.82rem;
+    color: var(--c-ink-700);
+}
+
+.ov-status::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--c-ink-400);
+}
+
+.ov-status-live::before {
+    background: var(--c-brand-700);
+}
+
+.ov-status-draft::before {
+    background: var(--c-warning-500);
+}
+
+.ov-pending {
+    color: var(--c-warning-700);
+    font-weight: 500;
+}
+
+.ov-feed {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.ov-feed-item {
+    position: relative;
+    display: grid;
+    grid-template-columns: 8px minmax(0, 1fr);
+    gap: 12px;
+    padding-bottom: 14px;
+}
+
+.ov-feed-item:not(:last-child)::before {
+    content: "";
+    position: absolute;
+    left: 3.5px;
+    top: 14px;
+    bottom: 0;
+    width: 1px;
+    background: var(--c-line);
+}
+
+.ov-feed-dot {
+    margin-top: 7px;
+}
+
+.ov-kind-notice .ov-feed-dot {
+    background: #3b6fb6;
+}
+
+.ov-feed-item a,
+.ov-feed-item span:not(.ov-feed-dot) {
+    display: block;
+    font-size: 0.88rem;
+    color: var(--c-ink-900);
+    overflow-wrap: anywhere;
+}
+
+.ov-feed-item a:hover {
+    color: var(--c-brand-700);
+}
+
+.ov-feed-item time {
+    font-size: 0.78rem;
+    color: var(--c-ink-400);
+    font-variant-numeric: tabular-nums;
+}
+
+.ov-empty p {
+    margin: 0 0 10px;
+    font-size: 0.88rem;
+    color: var(--c-ink-500);
+}
+
+@media (max-width: 1100px) {
+    .ov-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (max-width: 760px) {
+    .ov-kpis {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .ov-kpi:nth-child(3) {
+        border-left: 0;
+    }
+
+    .ov-kpi:nth-child(n + 3) {
+        border-top: 1px solid var(--c-line);
+    }
+
+    .ov-trend-body {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .ov-trend-facts {
+        flex-direction: row;
+        justify-content: space-between;
+        padding: 12px 0 0;
+        border-left: 0;
+        border-top: 1px solid var(--c-line);
+    }
+
+    .ov-chart-bars {
+        height: 160px;
+    }
+
+    .ov-hide-sm {
+        display: none;
+    }
+
+    .ov-inbox-item {
+        grid-template-columns: auto minmax(0, 1fr);
+    }
+
+    .ov-inbox-item .button {
+        grid-column: 2;
+        justify-self: start;
+    }
+}
+
+@media (max-width: 420px) {
+    .ov-kpi {
+        padding: 14px;
+    }
+
+    .ov-kpi-value strong {
+        font-size: 1.45rem;
+    }
+
+    .ov-trend-facts dd {
+        font-size: 0.95rem;
+    }
+}

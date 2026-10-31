@@ -1,7 +1,7 @@
 {% extends "feedback/dashboard_base.html" %}
 {% load static %}
 
-{% block title %}文字洞察 | FeedBack IQ{% endblock %}
+{% block title %}文字洞察｜回饋洞察 AI 平台{% endblock %}
 
 {% block dashboard_content %}
 <section class="manager-header manager-header-inline analytics-hero">
@@ -35,7 +35,6 @@
         <a class="button button-ghost" href="{% url 'feedback:text-analysis' %}">返回問卷列表</a>
     {% else %}
     <div>
-        <p class="section-kicker">Text Insight Workflow</p>
         <p>整理開放式題目的關鍵字與主題分類，協助團隊快速理解顧客回饋的重點方向。</p>
     </div>
     {% endif %}
@@ -72,7 +71,6 @@
         <article class="manager-panel">
             <div class="panel-head">
                 <div>
-                    <p class="section-kicker">Keyword Signals</p>
                     <h2>關鍵字摘要</h2>
                 </div>
             </div>
@@ -115,7 +113,6 @@
         <article class="manager-panel">
             <div class="panel-head">
                 <div>
-                    <p class="section-kicker">Sentiment Distribution</p>
                     <h2>分類情緒分布</h2>
                 </div>
             </div>
@@ -166,7 +163,6 @@
     <section data-tab-panel="text-rules" class="manager-panel analytics-tab-panel">
         <div class="panel-head">
             <div>
-                <p class="section-kicker">Category Rules</p>
                 <h2>關鍵字分類規則</h2>
             </div>
         </div>

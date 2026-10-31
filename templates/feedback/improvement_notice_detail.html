@@ -1,11 +1,10 @@
 {% extends "feedback/dashboard_base.html" %}
 
-{% block title %}{{ notice.subject }} | 通知中心 | FeedBack IQ{% endblock %}
+{% block title %}{{ notice.subject }}｜通知中心｜回饋洞察 AI 平台{% endblock %}
 
 {% block dashboard_content %}
 <section class="manager-header manager-header-inline">
     <div>
-        <p class="section-kicker">Notice Batch</p>
         <h1>{{ notice.subject }}</h1>
         <p>{{ notice.improvement.title }} ｜ 建立於 {{ notice.created_at|date:"Y/m/d H:i" }}</p>
     </div>
@@ -26,7 +25,7 @@
 
 <section class="manager-panel notice-preview-content">
     <div class="panel-head">
-        <div><p class="section-kicker">Message Snapshot</p><h2>通知內容</h2></div>
+        <div><h2>通知內容</h2></div>
         <span class="pill {% if notice.status == 'sent' %}pill-active{% endif %}">{{ notice.get_status_display }}</span>
     </div>
     <h3>{{ notice.subject }}</h3>

@@ -1,11 +1,10 @@
 {% extends "feedback/dashboard_base.html" %}
 
-{% block title %}節點總覽 | FeedBack IQ{% endblock %}
+{% block title %}節點總覽｜回饋洞察 AI 平台{% endblock %}
 
 {% block dashboard_content %}
 <section class="manager-header manager-header-inline">
     <div>
-        <p class="section-kicker">Local Node</p>
         <p>{{ organization.name|default:"尚未設定組織" }} · 資料位置 <code>{{ data_root }}</code></p>
     </div>
 </section>
