@@ -1,0 +1,468 @@
+/* Operations analysis (營運分析): survey rail beside the published report. The report markup comes from
+   analysis-operations.js; these rules restyle its ai-* classes inside .ops and override the app.css defaults. */
+.ops > .an-head {
+    margin-bottom: 16px;
+}
+
+.ops-head-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ops-readonly {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border: 1px solid var(--c-line);
+    border-radius: 999px;
+    background: var(--c-surface);
+    font-size: 0.8rem;
+    color: var(--c-ink-500);
+    white-space: nowrap;
+}
+
+.ops-readonly::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--c-brand-700);
+}
+
+.ops-layout {
+    display: grid;
+    grid-template-columns: 240px minmax(0, 1fr);
+    align-items: start;
+    gap: 20px;
+}
+
+/* Survey rail */
+.ops-rail {
+    position: sticky;
+    top: 73px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px;
+    border: 1px solid var(--c-line);
+    border-radius: var(--radius-lg);
+    background: var(--c-surface);
+    box-shadow: var(--shadow-sm);
+}
+
+.ops-rail-label {
+    margin: 4px 8px 6px;
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: var(--c-ink-400);
+}
+
+.ops-rail-empty {
+    margin: 4px 8px 8px;
+    font-size: 0.86rem;
+    color: var(--c-ink-500);
+}
+
+.ops .ai-survey-button {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+    max-width: none;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--c-ink-700);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.ops .ai-survey-button span {
+    font-size: 0.9rem;
+    font-weight: 500;
+    overflow-wrap: anywhere;
+}
+
+.ops .ai-survey-button small {
+    margin: 0;
+    font-size: 0.78rem;
+    color: var(--c-ink-400);
+}
+
+.ops .ai-survey-button:hover {
+    border: 0;
+    background: var(--c-surface-muted);
+}
+
+.ops .ai-survey-button.ai-survey-button-active {
+    background: var(--c-brand-50);
+    color: var(--c-brand-700);
+}
+
+.ops .ai-survey-button.ai-survey-button-active span {
+    font-weight: 600;
+}
+
+.ops .ai-survey-button.ai-survey-button-active small {
+    color: var(--c-brand-600);
+}
+
+/* Main column */
+.ops-main {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+}
+
+.ops .ai-workflow-status {
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 10px;
+    margin: 0;
+    padding: 10px 14px;
+    border: 1px solid var(--c-line);
+    border-radius: var(--radius-md);
+    background: var(--c-surface);
+    color: var(--c-ink-700);
+    font-size: 0.88rem;
+}
+
+.ops .ai-workflow-status strong {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+    color: var(--c-ink-900);
+    white-space: nowrap;
+}
+
+.ops .ai-workflow-status strong::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--c-ink-400);
+}
+
+.ops .ai-workflow-current strong::before { background: var(--c-brand-700); }
+.ops .ai-workflow-running strong::before { background: var(--c-warning-500); }
+.ops .ai-workflow-failed { border-color: #efc7bd; background: var(--c-danger-50); }
+.ops .ai-workflow-failed strong::before { background: var(--c-danger-500); }
+
+/* Stage pipeline: three steps joined by a line */
+.ops .ai-stage-status-list {
+    gap: 0;
+    margin: 0;
+    overflow: hidden;
+    border: 1px solid var(--c-line);
+    border-radius: var(--radius-md);
+    background: var(--c-surface);
+}
+
+.ops .ai-stage-status {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: 2px;
+    min-height: 0;
+    padding: 10px 14px 10px 34px;
+    position: relative;
+    border: 0;
+    border-left: 1px solid var(--c-line);
+    border-radius: 0;
+    background: none;
+}
+
+.ops .ai-stage-status:first-child {
+    border-left: 0;
+}
+
+.ops .ai-stage-status::before {
+    content: "";
+    position: absolute;
+    top: 14px;
+    left: 14px;
+    width: 12px;
+    height: 12px;
+    border: 1.5px solid var(--c-ink-400);
+    border-radius: 50%;
+    box-sizing: border-box;
+}
+
+.ops .ai-stage-status strong {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--c-ink-900);
+}
+
+.ops .ai-stage-status span {
+    font-size: 0.8rem;
+    color: var(--c-ink-500);
+}
+
+.ops .ai-stage-current::before {
+    border-color: var(--c-brand-700);
+    background: var(--c-brand-700);
+    box-shadow: inset 0 0 0 2px var(--c-surface);
+}
+
+.ops .ai-stage-running::before {
+    border-color: var(--c-warning-500);
+    background: conic-gradient(var(--c-warning-500) 0 50%, transparent 50% 100%);
+    background-clip: content-box;
+    padding: 2px;
+}
+
+.ops .ai-stage-failed::before {
+    border-color: var(--c-danger-500);
+    background: var(--c-danger-500);
+}
+
+.ops .ai-stage-failed span {
+    color: var(--c-danger-700);
+}
+
+.ops .ai-stage-stale::before,
+.ops .ai-stage-waiting::before {
+    border-style: dashed;
+}
+
+.ops .ai-report-progress,
+.ops .ai-report-error,
+.ops .ai-freshness-notice {
+    margin: 0;
+    padding: 10px 14px;
+    border: 1px solid var(--c-line);
+    border-left: 1px solid var(--c-line);
+    border-radius: var(--radius-md);
+    font-size: 0.88rem;
+}
+
+.ops .ai-report-progress {
+    background: var(--c-surface);
+    color: var(--c-ink-700);
+}
+
+.ops .ai-report-error {
+    border-color: #efc7bd;
+    background: var(--c-danger-50);
+    color: var(--c-danger-700);
+}
+
+.ops .ai-freshness-notice {
+    border-color: #f0dfb4;
+    background: var(--c-warning-50);
+    color: var(--c-warning-700);
+}
+
+/* Report */
+.ops .ai-report-workspace {
+    min-height: 0;
+}
+
+.ops .ai-report-workspace > [data-ai-report] {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.ops .ai-report-workspace > [data-ai-report][hidden] {
+    display: none;
+}
+
+.ops .ai-report-empty {
+    padding: 48px 20px;
+    border: 1px dashed var(--c-line-strong);
+    border-radius: var(--radius-lg);
+    background: var(--c-surface);
+}
+
+.ops .ai-report-empty h3 {
+    font-size: 1rem;
+    color: var(--c-ink-900);
+}
+
+.ops .ai-report-empty p {
+    font-size: 0.9rem;
+    color: var(--c-ink-500);
+}
+
+.ops .ai-report-meta {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 0;
+    margin: 0;
+    overflow: hidden;
+    border: 1px solid var(--c-line);
+    border-radius: var(--radius-md);
+    background: var(--c-surface);
+}
+
+.ops .ai-report-meta-item {
+    gap: 1px;
+    padding: 8px 14px;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: -1px 0 0 var(--c-line), 0 -1px 0 var(--c-line);
+}
+
+.ops .ai-report-meta-item span {
+    font-size: 0.74rem;
+    color: var(--c-ink-400);
+}
+
+.ops .ai-report-meta-item strong {
+    font-size: 0.86rem;
+    font-weight: 500;
+    color: var(--c-ink-900);
+}
+
+.ops .ai-report-summary,
+.ops .ai-report-section {
+    width: auto;
+    margin: 0;
+    padding: 18px 20px;
+    border: 1px solid var(--c-line);
+    border-radius: var(--radius-lg);
+    background: var(--c-surface);
+    box-shadow: var(--shadow-sm);
+}
+
+.ops .ai-report-summary {
+    border-left: 3px solid var(--c-brand-700);
+}
+
+.ops .ai-report-summary h3,
+.ops .ai-report-section h3 {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--c-ink-500);
+}
+
+.ops .ai-report-summary p {
+    margin-top: 6px;
+    font-size: 1rem;
+    line-height: 1.75;
+    color: var(--c-ink-900);
+}
+
+.ops .ai-finding-grid,
+.ops .ai-draft-grid {
+    gap: 12px;
+}
+
+.ops .ai-finding-grid > :last-child:nth-child(odd),
+.ops .ai-draft-grid > :last-child:nth-child(odd) {
+    grid-column: auto;
+    width: auto;
+    justify-self: stretch;
+}
+
+.ops .ai-finding,
+.ops .ai-draft {
+    gap: 12px;
+    padding: 14px 16px;
+    border: 1px solid var(--c-line);
+    border-radius: var(--radius-md);
+    background: var(--c-surface-subtle);
+}
+
+.ops .ai-finding-head h4 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--c-ink-900);
+}
+
+.ops .ai-priority {
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 0.74rem;
+    font-weight: 600;
+    text-transform: none;
+}
+
+.ops .ai-priority-high { background: var(--c-danger-50); color: var(--c-danger-700); }
+.ops .ai-priority-medium { background: var(--c-warning-50); color: var(--c-warning-700); }
+.ops .ai-priority-low { background: var(--c-surface-muted); color: var(--c-ink-500); }
+
+.ops .ai-finding .ai-card-conclusion,
+.ops .ai-draft .ai-card-conclusion {
+    font-size: 0.9rem;
+    color: var(--c-ink-700);
+}
+
+.ops .ai-card-section-label {
+    font-size: 0.74rem;
+    font-weight: 600;
+    color: var(--c-ink-400);
+}
+
+.ops .ai-evidence-list {
+    padding: 2px 12px;
+    border: 1px solid var(--c-line);
+    border-radius: var(--radius-sm);
+    background: var(--c-surface);
+    color: var(--c-ink-700);
+}
+
+.ops .ai-evidence-item + .ai-evidence-item {
+    border-top: 1px solid var(--c-line);
+}
+
+.ops .ai-evidence-title {
+    color: var(--c-ink-900);
+}
+
+.ops .ai-limitation-list,
+.ops .ai-caveats ul {
+    font-size: 0.84rem;
+    color: var(--c-ink-500);
+}
+
+@media (max-width: 1100px) {
+    .ops-layout {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .ops-rail {
+        position: static;
+        flex-direction: row;
+        overflow-x: auto;
+        scrollbar-width: none;
+    }
+
+    .ops-rail-label {
+        display: none;
+    }
+
+    .ops .ai-survey-button {
+        flex: 0 0 auto;
+        max-width: 220px;
+    }
+}
+
+@media (max-width: 760px) {
+    .ops .ai-stage-status {
+        border-left: 0;
+        border-top: 1px solid var(--c-line);
+    }
+
+    .ops .ai-stage-status:first-child {
+        border-top: 0;
+    }
+
+    .ops .ai-report-summary,
+    .ops .ai-report-section {
+        padding: 14px 16px;
+    }
+
+    .ops-head-actions {
+        flex-wrap: wrap;
+    }
+}

@@ -1,155 +1,147 @@
 {% extends "feedback/dashboard_base.html" %}
+{% load static %}
 
 {% block title %}通知中心｜回饋洞察 AI 平台{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'css/survey-manager.css' %}?v=20261031-2"><link rel="stylesheet" href="{% static 'css/analysis.css' %}?v=20261031-4"><link rel="stylesheet" href="{% static 'css/improvements.css' %}?v=20261101-1"><link rel="stylesheet" href="{% static 'css/notices.css' %}?v=20261101-1">{% endblock %}
 
 {% block dashboard_content %}
-<section class="manager-header manager-header-inline analytics-hero">
-    <div>
-        <p>依問卷檢視通知草稿、寄送進度與歷史結果。</p>
+{% if selected_survey %}
+<header class="an-head">
+    <div class="an-head-title">
+        <a class="an-back" href="{% url 'feedback:notice-center' %}">← 所有問卷</a>
+        <h2>{{ selected_survey.title }}</h2>
     </div>
-    {% if selected_survey %}
-        <a class="button button-ghost" href="{% url 'feedback:notice-center' %}">返回問卷列表</a>
-    {% endif %}
+    <form class="an-switch" method="get">
+        <label class="visually-hidden" for="nc-survey">切換問卷</label>
+        <select id="nc-survey" name="survey" data-autosubmit>
+            {% for item in survey_list %}
+                <option value="{{ item.slug }}"{% if item.pk == selected_survey.pk %} selected{% endif %}>{{ item.title }}</option>
+            {% endfor %}
+            {% if not selected_survey.is_active %}<option value="{{ selected_survey.slug }}" selected>{{ selected_survey.title }}（已停用）</option>{% endif %}
+        </select>
+        <noscript><button type="submit" class="button button-ghost button-small">切換</button></noscript>
+    </form>
+</header>
+
+<section class="an-kpis" aria-label="通知摘要">
+    <div><p>通知批次</p><strong>{{ notice_totals.batches }}</strong></div>
+    <div><p>已寄達</p><strong>{{ notice_totals.delivered }}<small> 人次</small></strong></div>
+    <div><p>草稿</p><strong>{{ notice_totals.drafts }}</strong></div>
+    <div{% if notice_totals.attention %} class="nc-kpi-alert"{% endif %}><p>需處理</p><strong>{{ notice_totals.attention }}</strong></div>
 </section>
 
-{% if selected_survey %}
-    <section class="kpi-strip analytics-kpi-strip">
-        <article class="kpi-chip">
-            <span>通知問卷</span>
-            <strong>{{ selected_survey.title }}</strong>
-        </article>
-        <article class="kpi-chip">
-            <span>改善通知</span>
-            <strong>{{ notices|length }}</strong>
-        </article>
-        <article class="kpi-chip">
-            <span>追蹤狀態</span>
-            <strong>{% if selected_survey.improvement_tracking_enabled %}追蹤中{% else %}已停用{% endif %}</strong>
-        </article>
-        <article class="kpi-chip">
-            <span>問卷狀態</span>
-            <strong>{% if selected_survey.is_active %}開放中{% else %}已停用{% endif %}</strong>
-        </article>
-    </section>
-
-    <section class="manager-panel">
-        <div class="panel-head">
-            <div>
-                <h2>通知批次</h2>
-            </div>
-            <a class="button button-primary button-small" href="{% url 'feedback:improvement-list' %}?survey={{ selected_survey.slug }}">前往改善項目</a>
-        </div>
-        <div class="record-list">
-            {% for notice in notices %}
-                <div class="record-row record-row-stack">
-                    <div>
-                        <a class="record-title-link" href="{% url 'feedback:notice-batch-detail' notice.pk %}"><strong>{{ notice.subject }}</strong></a>
-                        <p>{{ notice.body|truncatechars:180 }}</p>
-                        <p>{{ notice.improvement.title }} ｜ {{ notice.get_audience_type_display }}</p>
-                    </div>
-                    <div class="record-meta">
-                        <span class="pill {% if notice.status == 'sent' %}pill-active{% endif %}">{{ notice.get_status_display }}</span>
-                        <p class="muted-text">{{ notice.created_at|date:"Y/m/d H:i" }}</p>
-                        <a class="button button-ghost button-small" href="{% url 'feedback:notice-batch-detail' notice.pk %}">查看批次</a>
-                    </div>
-                </div>
-            {% empty %}
-                <div class="empty-card">
-                    <div>
-                        <h3>這份問卷尚無改善通知</h3>
-                        <p>請先到改善項目詳細頁建立通知草稿，再預覽並確認寄送。</p>
-                    </div>
-                </div>
-            {% endfor %}
-        </div>
-        {% if legacy_notices %}
-            <div class="panel-head legacy-notice-head"><h2>舊版通知紀錄</h2><span class="pill">相容資料</span></div>
-            <div class="record-list">
-                {% for improvement in legacy_notices %}
-                    <div class="record-row record-row-stack">
-                        <div><strong>{{ improvement.title }}</strong><p>{{ improvement.summary|truncatechars:140 }}</p></div>
-                        <div class="record-meta"><a class="button button-ghost button-small" href="{% url 'feedback:notice-detail' improvement.pk %}">查看舊紀錄</a></div>
-                    </div>
-                {% endfor %}
-            </div>
-        {% endif %}
-    </section>
-{% else %}
-    <section class="manager-toolbar stats-list-toolbar">
-        <div class="toolbar-filters">
-            <a class="filter-pill {% if not current_category %}filter-pill-active{% endif %}"
-               href="?sort={{ current_sort }}">全部</a>
-            {% for cat in categories %}
-                <a class="filter-pill {% if current_category == cat.id|stringformat:'s' %}filter-pill-active{% endif %}"
-                   href="?sort={{ current_sort }}&category={{ cat.id }}">{{ cat.name }}</a>
-            {% endfor %}
-        </div>
-        <div class="toolbar-sort">
-            <select class="sort-select" onchange="location.href=this.value">
-                <option value="?sort=newest{% if current_category %}&category={{ current_category }}{% endif %}"
-                    {% if current_sort == 'newest' %}selected{% endif %}>最新建立</option>
-                <option value="?sort=oldest{% if current_category %}&category={{ current_category }}{% endif %}"
-                    {% if current_sort == 'oldest' %}selected{% endif %}>最舊建立</option>
-                <option value="?sort=title{% if current_category %}&category={{ current_category }}{% endif %}"
-                    {% if current_sort == 'title' %}selected{% endif %}>名稱 A-Z</option>
-            </select>
-        </div>
-    </section>
-
-    <section class="manager-panel stats-survey-list-panel">
-        <div class="record-list">
-            {% for survey in notice_survey_rows %}
-                <div class="record-row record-row-stack stats-survey-row">
-                    <a class="record-row-link" href="{% url 'feedback:notice-center' %}?survey={{ survey.slug }}">
-                        <div class="survey-row-body">
-                            <div class="survey-row-text">
-                                <strong>{{ survey.title }}</strong>
-                                {% if survey.category %}
-                                    <span class="pill pill-category">{{ survey.category.name }}</span>
-                                {% endif %}
-                                <p>{{ survey.description|default:"尚未填寫問卷說明。" }}</p>
-                                <div class="survey-stat-chips">
-                                    <span class="survey-stat-chip">
-                                        <span class="survey-stat-chip-label">通知</span>
-                                        <span class="survey-stat-chip-value">{{ survey.notice_count }}</span>
-                                    </span>
-                                    <span class="survey-stat-chip">
-                                        <span class="survey-stat-chip-label">回覆</span>
-                                        <span class="survey-stat-chip-value">{{ survey.response_count }}</span>
-                                    </span>
-                                    <span class="survey-stat-chip">
-                                        <span class="survey-stat-chip-label">最近回覆</span>
-                                        <span class="survey-stat-chip-value">{% if survey.latest_submission_at %}{{ survey.latest_submission_at|date:"m/d H:i" }}{% else %}—{% endif %}</span>
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
+{% if notice_groups %}
+    <div class="nc-groups">
+        {% for group in notice_groups %}
+            <section class="tx-card nc-group">
+                <header class="nc-group-head">
+                    <a class="nc-group-title" href="{% url 'feedback:improvement-detail' group.improvement.pk %}">
+                        <span class="im-state im-state-{{ group.improvement.status }}" aria-hidden="true"></span>
+                        <strong>{{ group.improvement.title }}</strong>
                     </a>
-                    <div class="record-meta">
-                        <span class="pill {% if survey.notice_count %}pill-active{% endif %}">
-                            {% if survey.notice_count %}已有通知{% else %}尚無通知{% endif %}
-                        </span>
-                        <a class="button button-primary button-small" href="{% url 'feedback:notice-center' %}?survey={{ survey.slug }}">查看通知</a>
+                    <span class="nc-stages">
+                        {% for stage in group.stages %}{% if stage.count %}<span class="nc-stage nc-stage-{{ stage.key }}">{{ stage.label }} {{ stage.count }}</span>{% endif %}{% endfor %}
+                    </span>
+                </header>
+                <div class="nc-table" role="table" aria-label="{{ group.improvement.title }} 的通知批次">
+                    <div class="nc-row nc-row-head" role="row">
+                        <span role="columnheader">通知</span>
+                        <span role="columnheader">狀態</span>
+                        <span role="columnheader" class="nc-num">寄達 / 收件</span>
+                        <span role="columnheader" class="nc-num">站內已讀</span>
+                        <span role="columnheader" class="nc-num">建立</span>
                     </div>
+                    {% for batch in group.batches %}
+                        <a class="nc-row" role="row" href="{% url 'feedback:notice-batch-detail' batch.notice.pk %}">
+                            <span class="nc-subject" role="cell">
+                                <strong>{{ batch.notice.subject }}</strong>
+                                <span>{{ batch.notice.get_audience_type_display }}</span>
+                            </span>
+                            <span role="cell"><span class="sm-status nc-st-{{ batch.notice.status }}">{{ batch.notice.get_status_display }}</span></span>
+                            <span role="cell" class="nc-num">{% if batch.notice.status == 'draft' %}—{% else %}{{ batch.sent_count }} / {{ batch.recipient_count }}{% if batch.failed_count %} <em class="nc-failed">失敗 {{ batch.failed_count }}</em>{% endif %}{% endif %}</span>
+                            <span role="cell" class="nc-num">{% if batch.site_read_rate is not None %}{{ batch.site_read_rate }}%{% else %}—{% endif %}</span>
+                            <span role="cell" class="nc-num nc-date">{{ batch.notice.created_at|date:"n/j" }}</span>
+                        </a>
+                    {% endfor %}
                 </div>
-            {% empty %}
-                <div class="empty-card">
-                    <div>
-                        <h3>尚無可檢視的問卷</h3>
-                        <p>建立問卷並發布改善通知後，會在這裡依問卷集中管理。</p>
-                    </div>
-                </div>
-            {% endfor %}
-        </div>
-    </section>
-
-    <section class="manager-panel stats-empty-guide">
-        <div class="empty-card">
-            <div>
-                <h3>通知中心會做什麼？</h3>
-                <p>通知中心聚焦在「已發布給顧客的改善通知」。如果要建立新改善項目，可從改善追蹤或進入單一問卷後建立。</p>
-            </div>
+            </section>
+        {% endfor %}
+    </div>
+{% else %}
+    <section class="an-list">
+        <div class="sm-empty">
+            <h3>這份問卷還沒有通知</h3>
+            <p>在改善項目的詳細頁建立通知草稿，預覽並確認收件對象後才會寄出。</p>
+            <a class="button button-ghost button-small" href="{% url 'feedback:improvement-list' %}?survey={{ selected_survey.slug }}">到改善追蹤</a>
         </div>
     </section>
 {% endif %}
+
+{% if legacy_notices %}
+    <section class="tx-card nc-legacy">
+        <header class="tx-card-head">
+            <div>
+                <h3>舊版通知紀錄</h3>
+                <p>改版前直接派送的通知，只供查閱。</p>
+            </div>
+        </header>
+        <ul class="nc-legacy-list">
+            {% for improvement in legacy_notices %}
+                <li><a href="{% url 'feedback:notice-detail' improvement.pk %}"><strong>{{ improvement.title }}</strong><span>{{ improvement.summary|truncatechars:80 }}</span></a></li>
+            {% endfor %}
+        </ul>
+    </section>
+{% endif %}
+{% else %}
+<header class="an-head">
+    <div class="an-head-title">
+        <h2>選擇要查看的問卷</h2>
+        <p>查看每份問卷寄給顧客的改善通知：草稿、寄送結果與站內已讀率。</p>
+    </div>
+</header>
+
+<form class="an-toolbar" method="get">
+    {% if categories %}
+        <label class="visually-hidden" for="nc-category">分類</label>
+        <select id="nc-category" name="category" data-autosubmit>
+            <option value="">所有分類</option>
+            {% for cat in categories %}
+                <option value="{{ cat.id }}"{% if current_category == cat.id|stringformat:'s' %} selected{% endif %}>{{ cat.name }}</option>
+            {% endfor %}
+        </select>
+    {% endif %}
+    <label class="visually-hidden" for="nc-sort">排序</label>
+    <select id="nc-sort" name="sort" data-autosubmit>
+        <option value="newest"{% if current_sort == 'newest' %} selected{% endif %}>排序：最新建立</option>
+        <option value="oldest"{% if current_sort == 'oldest' %} selected{% endif %}>排序：最早建立</option>
+        <option value="title"{% if current_sort == 'title' %} selected{% endif %}>排序：名稱</option>
+    </select>
+    <noscript><button type="submit" class="button button-ghost button-small">套用</button></noscript>
+</form>
+
+<section class="an-list" aria-label="問卷通知">
+    {% for survey in notice_survey_rows %}
+        <a class="an-list-row" href="{% url 'feedback:notice-center' %}?survey={{ survey.slug }}">
+            <div class="an-list-main">
+                <strong>{{ survey.title }}</strong>{% if survey.category %}<span class="sm-tag">{{ survey.category.name }}</span>{% endif %}
+                {% if survey.description %}<p>{{ survey.description }}</p>{% endif %}
+            </div>
+            <span class="an-list-num"><b>{{ survey.notice_count }}</b> 則通知</span>
+            <span class="an-list-num"><b>{{ survey.response_count }}</b> 份回覆</span>
+            <span class="an-list-date">{% if survey.latest_submission_at %}最近 {{ survey.latest_submission_at|date:"Y/n/j" }}{% else %}還沒有回覆{% endif %}</span>
+            <span class="an-list-go" aria-hidden="true">查看通知 →</span>
+        </a>
+    {% empty %}
+        <div class="sm-empty">
+            <h3>還沒有可查看的問卷</h3>
+            <p>問卷發布、建立改善項目並寄出通知後，會集中在這裡。</p>
+            <a class="button button-ghost button-small" href="{% url 'feedback:survey-manager' %}">到問卷管理</a>
+        </div>
+    {% endfor %}
+</section>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/autosubmit.js' %}?v=20261031-1"></script>
 {% endblock %}

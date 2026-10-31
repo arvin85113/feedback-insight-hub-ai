@@ -1,60 +1,50 @@
 {% extends "feedback/dashboard_base.html" %}
+{% load static %}
 
 {% block title %}{{ improvement.title }}｜通知中心｜回饋洞察 AI 平台{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'css/survey-manager.css' %}?v=20261031-2"><link rel="stylesheet" href="{% static 'css/analysis.css' %}?v=20261031-4"><link rel="stylesheet" href="{% static 'css/improvements.css' %}?v=20261101-1"><link rel="stylesheet" href="{% static 'css/notices.css' %}?v=20261101-1">{% endblock %}
 
 {% block dashboard_content %}
-<section class="manager-header manager-header-inline">
-    <div>
-        <h1>{{ improvement.title }}</h1>
-        <p>{{ improvement.survey.title }} ｜ 建立於 {{ improvement.created_at|date:"Y/m/d H:i" }}</p>
+<header class="an-head">
+    <div class="an-head-title">
+        <a class="an-back" href="{% url 'feedback:notice-center' %}{% if improvement.survey %}?survey={{ improvement.survey.slug }}{% endif %}">← 通知中心</a>
+        <h2>{{ improvement.title }}</h2>
+        <p>舊版通知紀錄，只供查閱。{% if improvement.survey %}{{ improvement.survey.title }} · {% endif %}建立於 {{ improvement.created_at|date:"Y/n/j H:i" }}</p>
     </div>
-    <a class="button button-ghost" href="{% url 'feedback:notice-center' %}">返回通知中心</a>
-</section>
+</header>
 
-<section class="manager-panel">
-    <div class="record-row record-row-stack" style="margin-bottom: 1.5rem;">
-        <div>
-            <p>{{ improvement.summary }}</p>
-        </div>
-        <div class="record-meta">
-            <span class="pill {% if improvement.emailed_at %}pill-active{% endif %}">
-                {% if improvement.emailed_at %}已寄送{% else %}草稿中{% endif %}
-            </span>
-            <p class="muted-text">共通知 {{ dispatches|length }} 人</p>
-        </div>
+<div class="im-detail">
+    <div class="im-detail-main">
+        <section class="tx-card nc-mail">
+            <p class="preserve-lines nc-mail-body">{{ improvement.summary }}</p>
+        </section>
+
+        <section class="tx-card">
+            <header class="tx-card-head"><div><h3>收件者</h3></div></header>
+            {% if dispatches %}
+                <ul class="nc-dispatches">
+                    {% for dispatch in dispatches %}
+                        <li>
+                            <span>{% if dispatch.submission.user %}{{ dispatch.submission.user.get_full_name|default:dispatch.submission.user.username }}{% else %}匿名填答者{% endif %}</span>
+                            <span class="im-muted">{{ dispatch.sent_at|date:"Y/n/j H:i" }}</span>
+                            <span class="sm-status{% if dispatch.is_read %} sm-status-live{% endif %}">{% if dispatch.is_read %}已讀{% else %}未讀{% endif %}</span>
+                            {% if dispatch.personalized_note %}<p class="nc-note">{{ dispatch.personalized_note }}</p>{% endif %}
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <div class="sm-empty"><h3>沒有派送紀錄</h3><p>這則舊版通知沒有寄給任何人。</p></div>
+            {% endif %}
+        </section>
     </div>
 
-    <div class="record-list">
-        {% for dispatch in dispatches %}
-            <div class="record-row record-row-stack">
-                <div>
-                    <strong>
-                        {% if dispatch.submission.user %}
-                            {{ dispatch.submission.user.get_full_name|default:dispatch.submission.user.username }}
-                        {% else %}
-                            匿名填答者
-                        {% endif %}
-                    </strong>
-                    <p>{{ dispatch.submission.survey.title }}</p>
-                    {% if dispatch.personalized_note %}
-                        <p class="panel-note">{{ dispatch.personalized_note }}</p>
-                    {% endif %}
-                </div>
-                <div class="record-meta">
-                    <span class="pill {% if dispatch.is_read %}pill-active{% endif %}">
-                        {% if dispatch.is_read %}已讀{% else %}未讀{% endif %}
-                    </span>
-                    <p class="muted-text">{{ dispatch.sent_at|date:"Y/m/d H:i" }}</p>
-                </div>
-            </div>
-        {% empty %}
-            <div class="empty-card">
-                <div>
-                    <h3>尚未派送給任何用戶</h3>
-                    <p>建立改善通知時系統會自動根據填答紀錄篩選收件對象。</p>
-                </div>
-            </div>
-        {% endfor %}
-    </div>
-</section>
+    <aside class="im-detail-side">
+        <section class="tx-card im-section">
+            <dl class="im-props">
+                <div><dt>狀態</dt><dd><span class="sm-status{% if improvement.emailed_at %} sm-status-live{% endif %}">{% if improvement.emailed_at %}已寄送{% else %}草稿中{% endif %}</span></dd></div>
+                <div><dt>通知人數</dt><dd>{{ dispatches|length }} 人</dd></div>
+            </dl>
+        </section>
+    </aside>
+</div>
 {% endblock %}

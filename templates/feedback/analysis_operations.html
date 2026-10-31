@@ -1,14 +1,63 @@
-{% extends "feedback/dashboard.html" %}
+{% extends "feedback/dashboard_base.html" %}
+{% load static %}
 
 {% block title %}營運分析｜回饋洞察 AI 平台{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'css/analysis.css' %}?v=20261031-4"><link rel="stylesheet" href="{% static 'css/operations.css' %}?v=20261101-1">{% endblock %}
 
-{% block dashboard_page_header %}
-<section class="manager-header manager-header-inline">
-    <div>
-        <p class="manager-lead">集中查看本機工作台發布的統計、文字洞察與 Gemini 綜合報告，網站不執行分析運算。</p>
+{% block dashboard_content %}
+<div class="ops" data-ai-operations>
+    <header class="an-head">
+        <div class="an-head-title">
+            <h2>營運分析</h2>
+            <p>本機工作台發布的統計、文字洞察與 Gemini 綜合報告；網站只讀取已發布的結果，不在這裡運算。</p>
+        </div>
+        <div class="ops-head-actions">
+            <span class="ops-readonly">網站唯讀展示</span>
+            <button type="button" class="button button-ghost button-small" data-ai-refresh hidden>重新讀取發布狀態</button>
+        </div>
+    </header>
+
+    <div class="ops-layout">
+        <nav class="ops-rail" role="group" aria-label="選擇 AI 分析問卷">
+            <p class="ops-rail-label">問卷</p>
+            {% for survey in ai_report_surveys %}
+                <button
+                    type="button"
+                    class="ai-survey-button"
+                    data-ai-survey
+                    data-survey-slug="{{ survey.slug }}"
+                    data-status-url="{% url 'feedback:ai-stage-status' survey.slug %}"
+                    data-valid-response-count="{{ survey.valid_response_count }}"
+                    aria-pressed="false"
+                >
+                    <span>{{ survey.title }}</span>
+                    <small>{% if survey.valid_response_count >= 3 %}{{ survey.valid_response_count }} 份有效回覆{% else %}資料不足{% endif %}</small>
+                </button>
+            {% empty %}
+                <p class="ops-rail-empty">目前沒有啟用中的問卷。</p>
+            {% endfor %}
+        </nav>
+
+        <div class="ops-main">
+            <div class="ai-workflow-status" data-ai-workflow-status hidden aria-live="polite"></div>
+            <div class="ai-stage-status-list" data-ai-stage-list hidden></div>
+            <div class="ai-report-progress" data-ai-progress hidden aria-live="polite">
+                <span class="ai-report-spinner" aria-hidden="true"></span>
+                <span data-ai-progress-text></span>
+            </div>
+            <div class="ai-report-error" data-ai-error hidden role="alert"></div>
+            <div class="ai-report-workspace" data-ai-workspace>
+                <div class="ai-report-empty" data-ai-empty>
+                    <h3>選擇一份問卷</h3>
+                    <p>只會讀取該問卷由本機工作台發布的結果，不會在網站執行分析。</p>
+                </div>
+                <div data-ai-report hidden></div>
+            </div>
+        </div>
     </div>
-</section>
+</div>
 {% endblock %}
 
-{% block dashboard_metrics %}{% endblock %}
-{% block dashboard_support_content %}{% endblock %}
+{% block extra_js %}
+<script src="{% static 'js/analysis-operations.js' %}?v=20260929-ui2"></script>
+{% endblock %}
