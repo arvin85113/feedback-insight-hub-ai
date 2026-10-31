@@ -1,213 +1,152 @@
 {% extends "feedback/dashboard_base.html" %}
+{% load static %}
 
 {% block title %}改善追蹤｜回饋洞察 AI 平台{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'css/survey-manager.css' %}?v=20261031-2"><link rel="stylesheet" href="{% static 'css/analysis.css' %}?v=20261031-4"><link rel="stylesheet" href="{% static 'css/improvements.css' %}?v=20261101-1">{% endblock %}
 
 {% block dashboard_content %}
-<section class="manager-header manager-header-inline analytics-hero">
-    <div>
-        <p>依問卷集中查看、編輯改善項目，通知內容與寄送則由管理者另外建立。</p>
-    </div>
-    {% if selected_survey %}
-        <a class="button button-ghost" href="{% url 'feedback:improvement-list' %}">返回問卷列表</a>
-    {% endif %}
-</section>
-
 {% if selected_survey %}
-    <section class="kpi-strip analytics-kpi-strip">
-        <article class="kpi-chip">
-            <span>追蹤問卷</span>
-            <strong>{{ selected_survey.title }}</strong>
-        </article>
-        <article class="kpi-chip">
-            <span>改善項目</span>
-            <strong>{{ selected_improvements|length }}</strong>
-        </article>
-        <article class="kpi-chip">
-            <span>追蹤功能</span>
-            <strong>{% if selected_survey.improvement_tracking_enabled %}已啟用{% else %}未啟用{% endif %}</strong>
-        </article>
-        <article class="kpi-chip">
-            <span>問卷狀態</span>
-            <strong>{% if selected_survey.is_active %}開放中{% else %}已停用{% endif %}</strong>
-        </article>
-    </section>
+<header class="an-head">
+    <div class="an-head-title">
+        <a class="an-back" href="{% url 'feedback:improvement-list' %}">← 所有問卷</a>
+        <h2>{{ selected_survey.title }}</h2>
+    </div>
+    <form class="an-switch" method="get">
+        <label class="visually-hidden" for="im-survey">切換問卷</label>
+        <select id="im-survey" name="survey" data-autosubmit>
+            {% for item in survey_list %}
+                <option value="{{ item.slug }}"{% if item.pk == selected_survey.pk %} selected{% endif %}>{{ item.title }}</option>
+            {% endfor %}
+            {% if not selected_survey.is_active %}<option value="{{ selected_survey.slug }}" selected>{{ selected_survey.title }}（已停用）</option>{% endif %}
+        </select>
+        <noscript><button type="submit" class="button button-ghost button-small">切換</button></noscript>
+    </form>
+</header>
 
-    <section class="manager-panel improvement-tracking-control">
-        <form method="post" class="tracking-toggle-form">
+<form method="post" class="im-tracking">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="toggle-tracking">
+    <input type="hidden" name="survey_id" value="{{ selected_survey.id }}">
+    <label class="im-switch">
+        <input type="checkbox" name="enabled"{% if selected_survey.improvement_tracking_enabled %} checked{% endif %} data-autosubmit>
+        <span class="im-switch-track" aria-hidden="true"></span>
+        <span class="im-switch-text">
+            <strong>改善追蹤{% if selected_survey.improvement_tracking_enabled %}已啟用{% else %}已停用{% endif %}</strong>
+            <span>{% if selected_survey.improvement_tracking_enabled %}可以建立並追蹤改善項目；通知顧客需另外確認。{% else %}只能檢視既有項目，啟用後才能新增。{% endif %}</span>
+        </span>
+    </label>
+    <noscript><button type="submit" class="button button-ghost button-small">套用</button></noscript>
+    <span class="im-tracking-count">{{ open_improvement_total }} 項未完成 · 共 {{ selected_improvements|length }} 項</span>
+</form>
+
+{% if selected_survey.improvement_tracking_enabled %}
+    <details class="im-new"{% if not selected_improvements %} open{% endif %}>
+        <summary><span aria-hidden="true">＋</span> 新增改善項目</summary>
+        <form method="post" action="{{ create_url }}" class="im-new-form">
             {% csrf_token %}
-            <input type="hidden" name="action" value="toggle-tracking">
-            <input type="hidden" name="survey_id" value="{{ selected_survey.id }}">
-            <label class="toggle-label">
-                <span class="toggle-wrapper">
-                    <input type="checkbox" name="enabled" {% if selected_survey.improvement_tracking_enabled %}checked{% endif %} onchange="this.form.submit()">
-                    <span class="toggle-track"><span class="toggle-thumb"></span></span>
-                </span>
-                <span class="toggle-text">
-                    <span class="toggle-title">改善追蹤開關</span>
-                    <span class="toggle-desc">
-                        {% if selected_survey.improvement_tracking_enabled %}
-                            已啟用，可建立並追蹤改善項目；對外通知需另外確認。
-                        {% else %}
-                            已停用，僅保留既有改善項目檢視，暫停新增項目。
-                        {% endif %}
-                    </span>
-                </span>
-            </label>
+            <label class="visually-hidden" for="im-title">改善主題</label>
+            <input type="text" name="title" id="im-title" maxlength="255" placeholder="改善主題，例如：尖峰時段加開收銀" required>
+            <label class="visually-hidden" for="im-summary">改善摘要</label>
+            <textarea name="summary" id="im-summary" rows="3" placeholder="要改善什麼、為什麼、預計怎麼做" required></textarea>
+            <div class="im-new-foot">
+                <label class="visually-hidden" for="im-category">對應分類（選填）</label>
+                <input type="text" name="related_category" id="im-category" maxlength="100" placeholder="對應分類（選填），例如：服務品質">
+                <button type="submit" class="button button-primary button-small">建立</button>
+            </div>
         </form>
-    </section>
+    </details>
+{% endif %}
 
-    <section class="manager-content-grid analytics-grid">
-        <article class="manager-panel">
-            <div class="panel-head">
-                <div>
-                    <h2>既有改善項目</h2>
-                </div>
-            </div>
-            <div class="record-list">
-                {% for item in selected_improvements %}
-                    <div class="record-row record-row-stack" id="improvement-{{ item.pk }}">
-                        <div>
-                            <a class="record-title-link" href="{% url 'feedback:improvement-detail' item.pk %}">
-                                <strong>{{ item.title }}</strong>
-                            </a>
-                            <p>{{ item.summary|truncatechars:180 }}</p>
-                            {% if item.related_category %}
-                                <p>對應分類：{{ item.related_category }}</p>
-                            {% endif %}
-                        </div>
-                        <div class="record-meta">
-                            <span class="pill {% if item.status == 'in_progress' or item.status == 'completed' %}pill-active{% endif %}">{{ item.get_status_display }}</span>
-                            <span class="pill">{{ item.get_priority_display }}</span>
-                            <p class="muted-text">{{ item.created_at|date:"Y/m/d" }}</p>
-                            <div class="record-actions">
-                                <a class="button button-ghost button-small" href="{% url 'feedback:improvement-detail' item.pk %}">查看</a>
-                                {% if item.status != 'archived' %}
-                                    <a class="button button-ghost button-small" href="{% url 'feedback:improvement-update' item.pk %}">編輯</a>
-                                {% endif %}
-                            </div>
-                        </div>
-                    </div>
-                {% empty %}
-                    <div class="empty-card">
-                        <div>
-                            <h3>這份問卷目前沒有改善項目</h3>
-                            <p>可在右側建立第一個改善項目，再從詳細頁另外準備通知。</p>
-                        </div>
-                    </div>
-                {% endfor %}
-            </div>
-        </article>
-
-        <article class="manager-panel">
-            <div class="panel-head">
-                <div>
-                    <h2>新增改善項目</h2>
-                </div>
-            </div>
-            {% if selected_survey.improvement_tracking_enabled %}
-                <form method="post" action="{{ create_url }}" class="form-stack">
-                    {% csrf_token %}
-                    <div class="field-block">
-                        <label for="id_title_{{ selected_survey.id }}">改善主題</label>
-                        <input type="text" name="title" id="id_title_{{ selected_survey.id }}" maxlength="255" required>
-                    </div>
-                    <div class="field-block">
-                        <label for="id_summary_{{ selected_survey.id }}">改善摘要</label>
-                        <textarea name="summary" id="id_summary_{{ selected_survey.id }}" rows="5" required></textarea>
-                    </div>
-                    <div class="field-block">
-                        <label for="id_related_category_{{ selected_survey.id }}">對應分類（選填）</label>
-                        <input type="text" name="related_category" id="id_related_category_{{ selected_survey.id }}" maxlength="100">
-                        <p class="muted-text">可填入文字洞察或選項分類，方便後續追蹤與通知草稿保留主題脈絡。</p>
-                    </div>
-                    <button type="submit" class="button button-primary">建立改善項目</button>
-                </form>
-            {% else %}
-                <div class="empty-card">
-                    <div>
-                        <h3>改善追蹤已停用</h3>
-                        <p>啟用上方開關後，才可以建立新的改善項目。</p>
-                    </div>
-                </div>
+{% if selected_improvements %}
+    <div class="im-board">
+        {% for group in improvement_groups %}
+            {% if group.items %}
+                <details class="im-group"{% if group.status != 'archived' %} open{% endif %}>
+                    <summary class="im-group-head">
+                        <span class="im-state im-state-{{ group.status }}" aria-hidden="true"></span>
+                        <strong>{{ group.label }}</strong>
+                        <span class="im-group-count">{{ group.items|length }}</span>
+                    </summary>
+                    <ul class="im-rows">
+                        {% for item in group.items %}
+                            <li id="improvement-{{ item.pk }}">
+                                <a class="im-row" href="{% url 'feedback:improvement-detail' item.pk %}">
+                                    <span class="im-prio im-prio-{{ item.priority }}" title="{{ item.get_priority_display }}"><i></i><i></i><i></i><span class="visually-hidden">{{ item.get_priority_display }}</span></span>
+                                    <span class="im-row-main">
+                                        <strong>{{ item.title }}</strong>
+                                        <span class="im-row-summary">{{ item.summary|truncatechars:120 }}</span>
+                                    </span>
+                                    {% if item.related_category %}<span class="sm-tag">{{ item.related_category }}</span>{% else %}<span></span>{% endif %}
+                                    <span class="im-row-due{% if item.due_date and item.due_date < today and item.status != 'completed' and item.status != 'archived' %} im-overdue{% endif %}">{% if item.due_date %}{{ item.due_date|date:"n/j" }} 到期{% endif %}</span>
+                                    <span class="im-row-date">{{ item.updated_at|date:"n/j" }}</span>
+                                </a>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                </details>
             {% endif %}
-        </article>
-    </section>
+        {% endfor %}
+    </div>
 {% else %}
-    <section class="manager-toolbar stats-list-toolbar">
-        <div class="toolbar-filters">
-            <a class="filter-pill {% if not current_category %}filter-pill-active{% endif %}"
-               href="?sort={{ current_sort }}">全部</a>
-            {% for cat in categories %}
-                <a class="filter-pill {% if current_category == cat.id|stringformat:'s' %}filter-pill-active{% endif %}"
-                   href="?sort={{ current_sort }}&category={{ cat.id }}">{{ cat.name }}</a>
-            {% endfor %}
-        </div>
-        <div class="toolbar-sort">
-            <select class="sort-select" onchange="location.href=this.value">
-                <option value="?sort=newest{% if current_category %}&category={{ current_category }}{% endif %}"
-                    {% if current_sort == 'newest' %}selected{% endif %}>最新建立</option>
-                <option value="?sort=oldest{% if current_category %}&category={{ current_category }}{% endif %}"
-                    {% if current_sort == 'oldest' %}selected{% endif %}>最舊建立</option>
-                <option value="?sort=title{% if current_category %}&category={{ current_category }}{% endif %}"
-                    {% if current_sort == 'title' %}selected{% endif %}>名稱 A-Z</option>
-            </select>
-        </div>
-    </section>
-
-    <section class="manager-panel stats-survey-list-panel">
-        <div class="record-list">
-            {% for survey in improvement_survey_rows %}
-                <div class="record-row record-row-stack stats-survey-row">
-                    <a class="record-row-link" href="{% url 'feedback:improvement-list' %}?survey={{ survey.slug }}">
-                        <div class="survey-row-body">
-                            <div class="survey-row-text">
-                                <strong>{{ survey.title }}</strong>
-                                {% if survey.category %}
-                                    <span class="pill pill-category">{{ survey.category.name }}</span>
-                                {% endif %}
-                                <p>{{ survey.description|default:"尚未填寫問卷說明。" }}</p>
-                                <div class="survey-stat-chips">
-                                    <span class="survey-stat-chip">
-                                        <span class="survey-stat-chip-label">改善項目</span>
-                                        <span class="survey-stat-chip-value">{{ survey.improvement_count }}</span>
-                                    </span>
-                                    <span class="survey-stat-chip">
-                                        <span class="survey-stat-chip-label">回覆</span>
-                                        <span class="survey-stat-chip-value">{{ survey.response_count }}</span>
-                                    </span>
-                                    <span class="survey-stat-chip">
-                                        <span class="survey-stat-chip-label">最近回覆</span>
-                                        <span class="survey-stat-chip-value">{% if survey.latest_submission_at %}{{ survey.latest_submission_at|date:"m/d H:i" }}{% else %}—{% endif %}</span>
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-                    </a>
-                    <div class="record-meta">
-                        <span class="pill {% if survey.improvement_tracking_enabled %}pill-active{% endif %}">
-                            {% if survey.improvement_tracking_enabled %}追蹤中{% else %}未啟用{% endif %}
-                        </span>
-                        <a class="button button-primary button-small" href="{% url 'feedback:improvement-list' %}?survey={{ survey.slug }}">查看追蹤</a>
-                    </div>
-                </div>
-            {% empty %}
-                <div class="empty-card">
-                    <div>
-                        <h3>尚無可追蹤的問卷</h3>
-                        <p>請先建立問卷，收集回覆後即可新增改善項目並同步通知顧客。</p>
-                    </div>
-                </div>
-            {% endfor %}
-        </div>
-    </section>
-
-    <section class="manager-panel stats-empty-guide">
-        <div class="empty-card">
-            <div>
-                <h3>改善追蹤會做什麼？</h3>
-                <p>進入單一問卷後，可查看、編輯與追蹤改善項目；通知會在管理者另外確認後才寄送。</p>
-            </div>
+    <section class="an-list">
+        <div class="sm-empty">
+            <h3>這份問卷還沒有改善項目</h3>
+            <p>{% if selected_survey.improvement_tracking_enabled %}可以從上方新增，或在文字洞察的關鍵字旁按「建立改善」。{% else %}啟用改善追蹤後，就能建立第一個項目。{% endif %}</p>
         </div>
     </section>
 {% endif %}
+{% else %}
+<header class="an-head">
+    <div class="an-head-title">
+        <h2>選擇要追蹤的問卷</h2>
+        <p>把回饋整理成改善項目，追蹤規劃、進行到完成；通知顧客需要另外確認才會寄出。</p>
+    </div>
+</header>
+
+<form class="an-toolbar" method="get">
+    {% if categories %}
+        <label class="visually-hidden" for="im-category-filter">分類</label>
+        <select id="im-category-filter" name="category" data-autosubmit>
+            <option value="">所有分類</option>
+            {% for cat in categories %}
+                <option value="{{ cat.id }}"{% if current_category == cat.id|stringformat:'s' %} selected{% endif %}>{{ cat.name }}</option>
+            {% endfor %}
+        </select>
+    {% endif %}
+    <label class="visually-hidden" for="im-sort">排序</label>
+    <select id="im-sort" name="sort" data-autosubmit>
+        <option value="newest"{% if current_sort == 'newest' %} selected{% endif %}>排序：最新建立</option>
+        <option value="oldest"{% if current_sort == 'oldest' %} selected{% endif %}>排序：最早建立</option>
+        <option value="title"{% if current_sort == 'title' %} selected{% endif %}>排序：名稱</option>
+    </select>
+    <noscript><button type="submit" class="button button-ghost button-small">套用</button></noscript>
+</form>
+
+<section class="an-list" aria-label="可追蹤的問卷">
+    {% for survey in improvement_survey_rows %}
+        <a class="an-list-row" href="{% url 'feedback:improvement-list' %}?survey={{ survey.slug }}">
+            <div class="an-list-main">
+                <strong>{{ survey.title }}</strong>{% if survey.category %}<span class="sm-tag">{{ survey.category.name }}</span>{% endif %}
+                {% if survey.description %}<p>{{ survey.description }}</p>{% endif %}
+            </div>
+            <span class="an-list-num"><b>{{ survey.open_improvement_count }}</b> 未完成</span>
+            <span class="an-list-num"><b>{{ survey.improvement_count }}</b> 項改善</span>
+            <span class="an-list-state">
+                {% if survey.improvement_tracking_enabled %}<span class="sm-status sm-status-live">追蹤中</span>{% else %}<span class="sm-status">未啟用</span>{% endif %}
+            </span>
+            <span class="an-list-go" aria-hidden="true">查看追蹤 →</span>
+        </a>
+    {% empty %}
+        <div class="sm-empty">
+            <h3>還沒有可追蹤的問卷</h3>
+            <p>問卷發布並收到回覆後，就能把回饋整理成改善項目。</p>
+            <a class="button button-ghost button-small" href="{% url 'feedback:survey-manager' %}">到問卷管理</a>
+        </div>
+    {% endfor %}
+</section>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/autosubmit.js' %}?v=20261031-1"></script>
 {% endblock %}
