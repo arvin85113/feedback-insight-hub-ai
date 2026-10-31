@@ -667,28 +667,8 @@ body.dashboard-body {
 }
 
 /* ── Survey manager: the row opens the question builder; say so ─────────── */
-.manager-shell .survey-manager-row .record-row-link {
-    transition: border-color 140ms ease, box-shadow 140ms ease;
-}
-
-.manager-shell .survey-manager-row .record-row-link:hover {
-    border-color: var(--c-brand-200);
-    box-shadow: var(--shadow-md);
-}
-
-.manager-shell .survey-manager-row .record-row-link:hover strong {
-    color: var(--c-brand-700);
-    text-decoration: underline;
-    text-underline-offset: 3px;
-}
 
 /* Long descriptions (e.g. dataset provenance) stay readable in the list. */
-.manager-shell .survey-row-description {
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-}
 
 /* Local node console status cards */
 .node-status-grid {
@@ -734,7 +714,6 @@ body.dashboard-body {
     font-size: 0.92rem;
     border-radius: var(--radius-sm);
 }
-
 
 .manager-sidebar-foot p {
     margin: 0;
@@ -889,12 +868,6 @@ body.dashboard-body {
     justify-content: flex-end;
     gap: 4px;
     border-bottom: 1px solid var(--c-line);
-}
-
-.manager-shell .trend-value {
-    font-size: 0.78rem;
-    color: var(--c-ink-500);
-    font-variant-numeric: tabular-nums;
 }
 
 .manager-shell .trend-bar {
