@@ -265,6 +265,10 @@ p.nd-banner {
     border-top: 0;
 }
 
+.nd-list-ruled {
+    border-top: 1px solid var(--c-line);
+}
+
 .nd-list-main {
     display: flex;
     flex-direction: column;

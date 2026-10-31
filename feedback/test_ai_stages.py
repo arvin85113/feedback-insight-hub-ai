@@ -652,8 +652,8 @@ class AIStageDraftImportTests(AIReportTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "驗收方向")
         self.assertContains(response, "平均等候時間")
-        self.assertContains(response, "優先程度：高優先")
-        self.assertNotContains(response, "優先程度：high")
+        self.assertContains(response, "<dt>優先程度</dt><dd>高優先</dd>")
+        self.assertNotContains(response, "<dd>high</dd>")
         self.assertContains(response, "目前最新，可帶入")
         self.assertEqual(ImprovementUpdate.objects.count(), 0)
 

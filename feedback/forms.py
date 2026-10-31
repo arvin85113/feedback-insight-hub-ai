@@ -7,6 +7,14 @@ from .models import ImprovementNotice, ImprovementUpdate, Question, Survey, Surv
 from .question_schema import kind_display_for, normalize_question, question_errors
 
 
+class NoLabelSuffixMixin:
+    """Manager forms put labels above fields, so they drop Django's trailing colon."""
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("label_suffix", "")
+        super().__init__(*args, **kwargs)
+
+
 class SurveyFormBuilder(forms.Form):
     def __init__(self, *args, survey: Survey, **kwargs):
         kwargs.setdefault("label_suffix", "")  # question titles end with their own punctuation
@@ -64,7 +72,7 @@ class RespondentMetaForm(forms.Form):
     consent_follow_up = forms.BooleanField(label="願意接收後續改善通知", required=False)
 
 
-class ImprovementUpdateForm(forms.ModelForm):
+class ImprovementUpdateForm(NoLabelSuffixMixin, forms.ModelForm):
     class Meta:
         model = ImprovementUpdate
         fields = ("title", "summary", "related_category")
@@ -75,7 +83,7 @@ class ImprovementUpdateForm(forms.ModelForm):
         }
 
 
-class ImprovementEditForm(forms.ModelForm):
+class ImprovementEditForm(NoLabelSuffixMixin, forms.ModelForm):
     class Meta:
         model = ImprovementUpdate
         fields = (
@@ -110,7 +118,7 @@ class ImprovementStatusTransitionForm(forms.Form):
         self.fields["status"].choices = choices
 
 
-class ImprovementNoticeForm(forms.ModelForm):
+class ImprovementNoticeForm(NoLabelSuffixMixin, forms.ModelForm):
     def __init__(self, *args, improvement, **kwargs):
         super().__init__(*args, **kwargs)
         self.improvement = improvement
@@ -148,7 +156,7 @@ class ImprovementNoticeConfirmationForm(forms.Form):
     content_version = forms.IntegerField(min_value=1, widget=forms.HiddenInput)
 
 
-class SurveyCreateForm(forms.ModelForm):
+class SurveyCreateForm(NoLabelSuffixMixin, forms.ModelForm):
     category = forms.ModelChoiceField(
         queryset=SurveyCategory.objects.all(),
         required=False,
@@ -268,7 +276,7 @@ class QuestionCardForm(forms.Form):
         return cleaned
 
 
-class SurveyEditForm(forms.ModelForm):
+class SurveyEditForm(NoLabelSuffixMixin, forms.ModelForm):
     category = forms.ModelChoiceField(
         queryset=SurveyCategory.objects.all(),
         required=False,

@@ -2,6 +2,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.db.models import Sum
 from django.shortcuts import redirect
+from django.utils.dateparse import parse_datetime
 from django.views.generic import TemplateView
 
 from feedback.views import DashboardBaseMixin
@@ -22,9 +23,11 @@ class InboxManageView(DashboardBaseMixin, TemplateView):
         nodes = []
         for node in NodeDevice.objects.order_by("name"):
             receipts = SubmissionReceipt.objects.filter(node=node)
+            summary = inbox_summary(node)
             nodes.append({
                 "node": node,
-                "summary": inbox_summary(node),
+                "summary": summary,
+                "oldest_pending_at": parse_datetime(summary["oldest_pending_at"] or ""),
                 "synced_count": receipts.filter(status=SubmissionReceipt.Status.SYNCED).count(),
                 "abandoned_count": receipts.filter(status=SubmissionReceipt.Status.ABANDONED).count(),
                 "result_conflicts": PublishedResultRecord.objects.filter(node=node).aggregate(
