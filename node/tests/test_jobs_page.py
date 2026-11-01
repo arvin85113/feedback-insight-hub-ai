@@ -8,7 +8,7 @@ from feedback.models import AnalysisJob, FeedbackSubmission, Survey, SurveyAnaly
 from node.tests.test_console import ConsoleTestCase
 
 
-class JobsPageTests(ConsoleTestCase):
+class JobsPageCase(ConsoleTestCase):
     def setUp(self):
         super().setUp()
         self.client.force_login(self.owner)
@@ -28,6 +28,8 @@ class JobsPageTests(ConsoleTestCase):
     def page(self):
         return self.client.get(reverse("node:jobs"))
 
+
+class JobsPageTests(JobsPageCase):
     def test_idle_get_does_not_schedule_or_invoke_analysis(self):
         with patch("node.views.AnalysisJobsView.post", side_effect=AssertionError("no POST")):
             response = self.page()
@@ -127,3 +129,50 @@ class JobsPageTests(ConsoleTestCase):
         self.assertContains(response, 'aria-valuenow="25"')
         self.assertContains(response, "已完成 1/4 階段（非耗時預估）")
         self.assertContains(response, "Gemini：產生文字洞察")
+
+
+class JobStepTimelineTests(JobsPageCase):
+    """The four stage rows render as a numbered timeline with one state per step."""
+
+    def states(self, response):
+        return [step["state"] for step in response.context["surveys"][0].steps]
+
+    def publish_base(self):
+        manifest = {key: {"input_version": 1, "config_version": 1, "pipeline_version": "fixture-v1",
+                          "source_kind": "answers", "source_ref": "", "source_version": ""}
+                    for key in ("statistics", "text")}
+        SurveyAnalysisState.objects.filter(pk=self.state.pk).update(publication_manifest=manifest,
+                                                                     published_at=timezone.now())
+
+    def test_nothing_published_waits_on_every_step(self):
+        response = self.page()
+        self.assertEqual(self.states(response), ["waiting", "waiting", "waiting", "waiting"])
+        self.assertContains(response, 'class="nj-step is-waiting"')
+
+    def test_running_base_job_is_the_active_step(self):
+        self.job("running")
+        self.assertEqual(self.states(self.page())[0], "active")
+
+    def test_published_base_marks_steps_done_and_flags_missing_cloud_binding(self):
+        self.publish_base()
+        response = self.page()
+        self.assertEqual(self.states(response), ["done", "waiting", "done", "failed"])
+        self.assertContains(response, "（完成）")
+
+    def test_gemini_becomes_the_next_step_once_a_key_is_set(self):
+        self.publish_base()
+        with patch("node.gemini.configured", return_value=True):
+            self.assertEqual(self.states(self.page())[1], "active")
+
+    def test_upload_tones_map_to_step_states(self):
+        from node.job_display import describe_steps
+
+        survey = Survey(title="t")
+        survey.base_current = survey.ai_current = survey.has_published_base = True
+        survey.live_job = survey.live_ai_job = None
+        survey.cloud_bound = True
+        survey.ui_upload_label = "x"
+        for tone, state in (("ready", "done"), ("waiting", "active"), ("failed", "failed"), ("neutral", "waiting")):
+            with self.subTest(tone):
+                survey.ui_upload_tone = tone
+                self.assertEqual(describe_steps(survey, key_configured=True)[3]["state"], state)

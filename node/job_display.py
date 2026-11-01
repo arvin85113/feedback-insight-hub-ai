@@ -79,3 +79,58 @@ def describe_survey(survey, *, binding, state, active_jobs, latest_job, key_conf
         survey.ai_block_reason = "先設定 Gemini 金鑰；統計與文字分析不需要金鑰。"
     elif not survey.base_current:
         survey.ai_block_reason = "先完成目前版本的統計與文字分析，再預覽 AI 解讀。"
+
+
+STEP_STATE_LABELS = {"done": "完成", "active": "進行中", "waiting": "等待", "failed": "需要處理"}
+UPLOAD_STEP_STATES = {"ready": "done", "running": "active", "waiting": "active", "failed": "failed"}
+
+
+def describe_steps(survey, *, key_configured):
+    """The four stage rows of a source card as a timeline: done, active, waiting or failed.
+
+    Needs describe_survey and decorate_publications to have run first.
+    """
+
+    base, ai = survey.live_job, survey.live_ai_job
+    if survey.base_current:
+        base_state, base_label = "done", "目前版本已在本機發布"
+    elif base:
+        base_state, base_label = "active", base.ui_label
+    else:
+        base_state = "waiting"
+        base_label = "上一版可查看，等待更新" if survey.has_published_base else "尚未發布"
+
+    if survey.ai_current:
+        ai_state, ai_label = "done", "目前版本已在本機發布"
+    elif ai:
+        ai_state, ai_label = "active", f"工作 #{ai.pk} · {ai.ui_label}"
+    elif not key_configured:
+        ai_state, ai_label = "waiting", "尚未設定金鑰"
+    elif not survey.base_current:
+        ai_state, ai_label = "waiting", "等待統計與文字完成"
+    else:
+        ai_state, ai_label = "active", "可預覽並確認 API 額度"
+
+    if survey.has_published_base:
+        result_state, result_label = "done", "已有本機發布的結果"
+    else:
+        result_state, result_label = "waiting", "完成第一階段後可查看"
+
+    if not survey.has_published_base:
+        upload_state = "waiting"
+    elif not getattr(survey, "cloud_bound", True):
+        upload_state = "failed"
+    else:
+        upload_state = UPLOAD_STEP_STATES.get(survey.ui_upload_tone, "waiting")
+
+    steps = [
+        {"title": "統計與文字", "optional": False, "state": base_state, "label": base_label},
+        {"title": "Gemini 解讀", "optional": True, "state": ai_state, "label": ai_label},
+        {"title": "查看本機結果", "optional": False, "state": result_state, "label": result_label},
+        {"title": "自動上傳雲端", "optional": False, "state": upload_state, "label": survey.ui_upload_label},
+    ]
+    for number, step in enumerate(steps, start=1):
+        step["number"] = number
+        step["state_label"] = STEP_STATE_LABELS[step["state"]]
+    survey.steps = steps
+    return steps
