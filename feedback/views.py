@@ -16,6 +16,7 @@ from django.http import HttpResponseForbidden, Http404, HttpResponse, HttpRespon
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from django.utils.text import slugify
 from django.views.generic import CreateView, DeleteView, DetailView, TemplateView, UpdateView, View
 
@@ -63,10 +64,13 @@ from .notice_service import (
     send_notice_batch,
 )
 from . import local_service
+from .ai_display import humanize_ai_payload
 from .published_analysis import (
     get_published_ai_pipeline_status,
     get_published_analysis_payload,
     is_published_ai_stage_current,
+    node_draft_improvements,
+    published_node_ai,
 )
 
 
@@ -1260,6 +1264,10 @@ class ImprovementDetailView(DashboardBaseMixin, DetailView):
             for ref in refs
             if ref in registry
         ]
+        metadata = self.object.source_ai_metadata or {}
+        if stage is None and metadata.get("node_stage_id"):
+            context["source_ai_evidence"] = [row for row in metadata.get("evidence") or [] if isinstance(row, dict)]
+            context["source_ai_generated_at"] = parse_datetime(metadata.get("generated_at") or "")
         context["status_targets"] = status_targets(self.object)
         context["status_history"] = self.object.status_history.select_related("changed_by")
         return context
@@ -1588,11 +1596,9 @@ class AIImprovementDraftCreateView(ImprovementCreateView):
             {
                 "survey": self.survey,
                 "source_ai_draft": serialized_draft,
-                "source_ai_priority_label": {
-                    "high": "高優先",
-                    "medium": "中優先",
-                    "low": "低優先",
-                }.get(self.ai_draft.get("priority"), self.ai_draft.get("priority")),
+                "source_ai_priority_label": AI_PRIORITY_LABELS.get(
+                    self.ai_draft.get("priority"), self.ai_draft.get("priority")
+                ),
                 "source_keyword": "",
                 "source_category": self.ai_draft["related_category"],
             }
@@ -1600,7 +1606,37 @@ class AIImprovementDraftCreateView(ImprovementCreateView):
         return context
 
 
+AI_PRIORITY_LABELS = {"high": "高優先", "medium": "中優先", "low": "低優先"}
+
+
+def ai_draft_initial(draft):
+    """Prefill an improvement form from an AI draft; the manager still edits and confirms."""
+
+    acceptance = draft.get("acceptance_criteria") or []
+    limitations = draft.get("data_limitations") or []
+    summary_parts = [
+        f"問題與目標：\n{draft['title']}",
+        f"建議行動：\n{draft['summary']}",
+        f"分析依據：\n{draft['rationale']}",
+    ]
+    if acceptance:
+        summary_parts.append("驗收方向：\n" + "\n".join(f"- {item}" for item in acceptance))
+    if limitations:
+        summary_parts.append("資料限制：\n" + "\n".join(f"- {item}" for item in limitations))
+    return {
+        "title": draft["title"],
+        "summary": "\n\n".join(summary_parts),
+        "related_category": draft["related_category"],
+    }
+
+
 class AIStageImprovementDraftCreateView(ImprovementCreateView):
+    def dispatch(self, request, *args, **kwargs):
+        if settings.IS_NODE:
+            # Items created on the node never reach the cloud; drafts are imported on the website.
+            raise Http404
+        return super().dispatch(request, *args, **kwargs)
+
     unavailable_message = "這份 AI 改善草稿已過期或無法使用，請重新產生綜合分析。"
 
     def _load_stage_draft(self, *, lock=False):
@@ -1660,22 +1696,7 @@ class AIStageImprovementDraftCreateView(ImprovementCreateView):
         return CreateView.post(self, request, *args, **kwargs)
 
     def get_initial(self):
-        acceptance = self.ai_draft.get("acceptance_criteria") or []
-        limitations = self.ai_draft.get("data_limitations") or []
-        summary_parts = [
-            f"問題與目標：\n{self.ai_draft['title']}",
-            f"建議行動：\n{self.ai_draft['summary']}",
-            f"分析依據：\n{self.ai_draft['rationale']}",
-        ]
-        if acceptance:
-            summary_parts.append("驗收方向：\n" + "\n".join(f"- {item}" for item in acceptance))
-        if limitations:
-            summary_parts.append("資料限制：\n" + "\n".join(f"- {item}" for item in limitations))
-        return {
-            "title": self.ai_draft["title"],
-            "summary": "\n\n".join(summary_parts),
-            "related_category": self.ai_draft["related_category"],
-        }
+        return ai_draft_initial(self.ai_draft)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1741,5 +1762,113 @@ class AIStageImprovementDraftCreateView(ImprovementCreateView):
         if existing:
             messages.info(self.request, "這份 AI 草稿已加入改善追蹤。")
             return redirect(self._existing_url(existing))
+        messages.success(self.request, "AI 改善草稿已加入追蹤；尚未建立或寄送通知。")
+        return redirect(self._existing_url(self.object))
+
+
+class NodeAIImprovementDraftCreateView(ImprovementCreateView):
+    """Import a draft from a node-owned survey's uploaded AI result.
+
+    The synthesis stage row lives on the node, so the draft comes from the
+    published payload and its source is kept in source_ai_metadata; repeat
+    imports are prevented under the survey row lock instead of a DB constraint.
+    """
+
+    unavailable_message = "這份 AI 改善草稿已過期或無法使用，請等本機更新分析後再帶入。"
+    _required = ("title", "summary", "rationale", "related_category")
+
+    def dispatch(self, request, *args, **kwargs):
+        if settings.IS_NODE:
+            raise Http404
+        return super().dispatch(request, *args, **kwargs)
+
+    def _load_node_draft(self):
+        if not self.survey.owner_node_id:
+            raise Http404("這份問卷不是本機問卷。")
+        ai, current = published_node_ai(self.survey)
+        if not current or ai.get("stage_id") != self.kwargs["stage_id"]:
+            return False
+        draft_id = str(self.kwargs["draft_id"])
+        draft = next(
+            (
+                row
+                for row in ai.get("improvement_drafts") or []
+                if isinstance(row, dict) and str(row.get("draft_id")) == draft_id
+            ),
+            None,
+        )
+        if draft is None:
+            raise Http404("找不到指定的 AI 改善草稿。")
+        if not all(draft.get(key) for key in self._required) or draft.get("priority") not in ImprovementUpdate.Priority.values:
+            return False
+        self.ai_payload = ai
+        self.ai_draft = humanize_ai_payload({"improvement_drafts": [draft]})["improvement_drafts"][0]
+        self.existing_improvement = node_draft_improvements(self.survey, self.kwargs["stage_id"], [draft_id]).first()
+        return True
+
+    def _existing_url(self, improvement):
+        return f"{reverse('feedback:improvement-list')}?survey={self.survey.slug}#improvement-{improvement.pk}"
+
+    def get(self, request, *args, **kwargs):
+        if not self._load_node_draft():
+            return HttpResponse(self.unavailable_message, status=409)
+        if self.existing_improvement:
+            messages.info(request, "這份 AI 草稿已加入改善追蹤。")
+            return redirect(self._existing_url(self.existing_improvement))
+        return CreateView.get(self, request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        if not self._load_node_draft():
+            return HttpResponse(self.unavailable_message, status=409)
+        if self.existing_improvement:
+            messages.info(request, "這份 AI 草稿已加入改善追蹤。")
+            return redirect(self._existing_url(self.existing_improvement))
+        return CreateView.post(self, request, *args, **kwargs)
+
+    def get_initial(self):
+        return ai_draft_initial(self.ai_draft)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update(
+            {
+                "source_ai_draft": self.ai_draft,
+                "source_ai_node": {
+                    "generated_at": parse_datetime(self.ai_payload.get("generated_at") or ""),
+                    "model_name": self.ai_payload.get("model_name") or "",
+                },
+                "source_ai_priority_label": AI_PRIORITY_LABELS.get(self.ai_draft["priority"], self.ai_draft["priority"]),
+                "source_keyword": "",
+                "source_category": self.ai_draft["related_category"],
+            }
+        )
+        return context
+
+    def form_valid(self, form):
+        with transaction.atomic():
+            Survey.objects.select_for_update().get(pk=self.survey.pk)
+            if not self._load_node_draft():
+                return HttpResponse(self.unavailable_message, status=409)
+            if self.existing_improvement:
+                messages.info(self.request, "這份 AI 草稿已加入改善追蹤。")
+                return redirect(self._existing_url(self.existing_improvement))
+            draft = self.ai_draft
+            form.instance.survey = self.survey
+            form.instance.created_by = self.request.user
+            form.instance.updated_by = self.request.user
+            form.instance.priority = draft["priority"]
+            form.instance.source_ai_draft_id = str(self.kwargs["draft_id"])
+            form.instance.source_evidence_refs = list(draft.get("evidence_refs") or [])
+            form.instance.source_ai_metadata = {
+                "node_stage_id": self.kwargs["stage_id"],
+                "model_name": self.ai_payload.get("model_name") or "",
+                "generated_at": self.ai_payload.get("generated_at"),
+                "priority": draft["priority"],
+                "rationale": draft["rationale"],
+                "acceptance_criteria": list(draft.get("acceptance_criteria") or []),
+                "evidence": list(draft.get("evidence") or []),
+            }
+            self.object = form.save()
+            record_initial_status(self.object, self.request.user)
         messages.success(self.request, "AI 改善草稿已加入追蹤；尚未建立或寄送通知。")
         return redirect(self._existing_url(self.object))

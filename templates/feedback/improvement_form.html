@@ -49,9 +49,12 @@
                     <div><dt>資料截至時間</dt><dd>{{ source_ai_stage.snapshot.source_latest_at|date:"Y/m/d H:i"|default:"無資料" }}</dd></div>
                     <div><dt>分析涵蓋率</dt><dd>{% widthratio source_ai_stage.snapshot.analysis_coverage 1 100 %}%</dd></div>
                     <div><dt>狀態</dt><dd>目前最新，可帶入</dd></div>
+                    {% elif source_ai_node %}
+                    <div><dt>報告產生時間</dt><dd>{{ source_ai_node.generated_at|date:"Y/m/d H:i"|default:"已保存" }}</dd></div>
+                    <div><dt>狀態</dt><dd>目前最新，可帶入</dd></div>
                     {% endif %}
                 </dl>
-                {% if source_ai_stage %}
+                {% if source_ai_stage or source_ai_node %}
                     {% if source_ai_draft.rationale %}<h4>分析理由</h4><p>{{ source_ai_draft.rationale }}</p>{% endif %}
                     {% if source_ai_draft.acceptance_criteria %}
                         <h4>驗收方向</h4>

@@ -4,7 +4,7 @@ from django.urls import reverse
 from django.utils import timezone
 from unittest.mock import patch
 
-from .test_utils import page_with_scripts
+from .test_utils import cloud_only, page_with_scripts
 from .models import (
     AnalysisJob,
     ImprovementUpdate,
@@ -163,6 +163,7 @@ class PublishedAnalysisReadTests(TestCase):
         self.assertEqual(payload["report"]["draft_states"], {})
         self.assertNotIn("must-not-be-returned", repr(payload))
 
+    @cloud_only
     def test_current_published_drafts_have_manual_action_links(self):
         manifest = dict(self.state.publication_manifest)
         manifest["ai"] = {**manifest["ai"], "input_version": self.state.input_version}
@@ -187,6 +188,7 @@ class PublishedAnalysisReadTests(TestCase):
         self.assertTrue(draft_state["imported"])
         self.assertIn(f"#improvement-{improvement.pk}", draft_state["url"])
 
+    @cloud_only
     def test_published_draft_form_uses_version_pointer_without_scanning_answers(self):
         manifest = dict(self.state.publication_manifest)
         manifest["ai"] = {**manifest["ai"], "input_version": self.state.input_version}
