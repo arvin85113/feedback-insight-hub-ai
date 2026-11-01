@@ -32,7 +32,7 @@ from .models import (
     SurveyAnalysisState,
 )
 from .tests import AIReportTestCase, provider_report, source_snapshot
-from .test_utils import page_with_scripts
+from .test_utils import cloud_only, page_with_scripts
 
 
 @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
@@ -592,6 +592,7 @@ class AIStageServiceTests(AIReportTestCase):
 
 
 @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+@cloud_only  # drafts are imported on the website; the node console only points there
 class AIStageDraftImportTests(AIReportTestCase):
     def setUp(self):
         super().setUp()

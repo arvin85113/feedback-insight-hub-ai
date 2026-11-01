@@ -3,6 +3,7 @@ from django.urls import path
 from .views import (
     AIImprovementDraftCreateView,
     AIStageImprovementDraftCreateView,
+    NodeAIImprovementDraftCreateView,
     AIReportStatusView,
     AIStagePipelineStatusView,
     AnalysisOperationsView,
@@ -121,5 +122,10 @@ urlpatterns = [
         "dashboard/improvements/<slug:slug>/ai/<int:stage_id>/<uuid:draft_id>/new/",
         AIStageImprovementDraftCreateView.as_view(),
         name="ai-stage-improvement-draft",
+    ),
+    path(
+        "dashboard/improvements/<slug:slug>/node-ai/<int:stage_id>/<uuid:draft_id>/new/",
+        NodeAIImprovementDraftCreateView.as_view(),
+        name="node-ai-improvement-draft",
     ),
 ]

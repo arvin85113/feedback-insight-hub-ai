@@ -361,6 +361,8 @@
                     );
                     link.href = url;
                     card.append(link);
+                } else if (report.draft_import_hint) {
+                    card.append(element('span', 'muted-text ai-card-action', report.draft_import_hint));
                 } else if (report.report_source === 'staged') {
                     card.append(element(
                         'span',

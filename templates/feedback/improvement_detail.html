@@ -31,7 +31,7 @@
             {% endif %}
         </section>
 
-        {% if improvement.source_ai_analysis_stage %}
+        {% if improvement.source_ai_analysis_stage or improvement.source_ai_metadata.node_stage_id %}
             <section class="tx-card">
                 <header class="tx-card-head">
                     <div>
@@ -41,9 +41,15 @@
                 </header>
                 <div class="im-section">
                     <dl class="im-props im-props-inline">
+                        {% if improvement.source_ai_analysis_stage %}
                         <div><dt>來源階段</dt><dd>{{ improvement.source_ai_analysis_stage.get_stage_type_display }} r{{ improvement.source_ai_analysis_stage.revision }}</dd></div>
                         <div><dt>模型</dt><dd>{{ improvement.source_ai_analysis_stage.model_name }}</dd></div>
                         <div><dt>產生時間</dt><dd>{{ improvement.source_ai_analysis_stage.generated_at|date:"Y/m/d H:i"|default:"未記錄" }}</dd></div>
+                        {% else %}
+                        <div><dt>來源</dt><dd>本機營運分析</dd></div>
+                        <div><dt>模型</dt><dd>{{ improvement.source_ai_metadata.model_name|default:"未記錄" }}</dd></div>
+                        <div><dt>產生時間</dt><dd>{{ source_ai_generated_at|date:"Y/m/d H:i"|default:"未記錄" }}</dd></div>
+                        {% endif %}
                         <div><dt>草稿識別碼</dt><dd class="im-mono">{{ improvement.source_ai_draft_id }}</dd></div>
                     </dl>
                     {% if improvement.source_ai_metadata.rationale %}<p><strong>分析理由：</strong>{{ improvement.source_ai_metadata.rationale }}</p>{% endif %}

@@ -100,6 +100,75 @@ def _published_draft_states(survey, ai, *, current_ai):
     return states
 
 
+NODE_DRAFT_IMPORT_HINT = "請到網站的營運分析頁帶入改善追蹤。"
+
+
+def node_draft_improvements(survey, stage_id, draft_ids):
+    """Improvements imported from a node-owned survey's uploaded drafts.
+
+    The synthesis stage row lives on the node, so the source is recorded in
+    source_ai_metadata (node_stage_id) instead of source_ai_analysis_stage.
+    """
+
+    return ImprovementUpdate.objects.filter(
+        survey=survey,
+        source_ai_analysis_stage__isnull=True,
+        source_ai_draft_id__in=list(draft_ids),
+        source_ai_metadata__node_stage_id=stage_id,
+    )
+
+
+def published_node_ai(survey):
+    """The uploaded AI payload of a node-owned survey and whether it is current."""
+
+    from cloudapi.freshness import node_freshness
+
+    state = SurveyAnalysisState.objects.filter(survey=survey).first()
+    if state is None or not isinstance(state.published_ai_payload, dict) or not state.published_ai_payload:
+        return None, False
+    node = node_freshness(survey, state)
+    return state.published_ai_payload, _node_stage_current(node, state.publication_manifest, "ai")
+
+
+def _node_stage_current(node, manifest, key):
+    stages = (manifest or {}).get("stages") if node["has_result"] else {}
+    stage = stages.get(key) if isinstance(stages, dict) else None
+    return bool(node["is_latest"] and isinstance(stage, dict) and stage.get("current"))
+
+
+def _node_draft_states(survey, ai, *, current_ai):
+    """Draft links for node-owned surveys, keyed by the node-side stage id in the upload."""
+
+    if not current_ai or not isinstance(ai, dict):
+        return {}
+    stage_id = ai.get("stage_id")
+    draft_ids = [
+        str(row.get("draft_id"))
+        for row in list(ai.get("improvement_drafts") or [])[:10]
+        if isinstance(row, dict) and row.get("draft_id")
+    ]
+    if not isinstance(stage_id, int) or not draft_ids:
+        return {}
+    imported = {
+        row.source_ai_draft_id: row.pk
+        for row in node_draft_improvements(survey, stage_id, draft_ids).only("id", "source_ai_draft_id")
+    }
+    states = {}
+    for draft_id in draft_ids:
+        improvement_id = imported.get(draft_id)
+        if improvement_id:
+            states[draft_id] = {
+                "imported": True,
+                "url": f"{reverse('feedback:improvement-list')}?survey={survey.slug}#improvement-{improvement_id}",
+            }
+        else:
+            states[draft_id] = {
+                "imported": False,
+                "url": reverse("feedback:node-ai-improvement-draft", args=[survey.slug, stage_id, draft_id]),
+            }
+    return states
+
+
 def get_published_analysis_payload(survey):
     """Read pointers and bounded display JSON without scanning source rows."""
 
@@ -186,12 +255,9 @@ def _node_payload(survey, state, display, statistics, text_analysis, latest_job)
 
     node = node_freshness(survey, state)
     manifest = state.publication_manifest or {}
-    stages = manifest.get("stages") if node["has_result"] else {}
-    stages = stages if isinstance(stages, dict) else {}
 
     def fresh(key):
-        stage = stages.get(key)
-        return bool(node["is_latest"] and isinstance(stage, dict) and stage.get("current"))
+        return _node_stage_current(node, manifest, key)
 
     return {
         "available": bool(display) and (node["has_result"] or bool(state.published_snapshot_id)),
@@ -253,8 +319,13 @@ def get_published_ai_pipeline_status(survey):
     }
     report = None
     if ai:
-        # Node results carry node-side stage ids; draft import stays on the node for now.
-        draft_states = {} if survey.owner_node_id else _published_draft_states(survey, ai, current_ai=current_ai)
+        if settings.IS_NODE:
+            # Items created on the node never reach the cloud, so drafts are imported on the website.
+            draft_states = {}
+        elif survey.owner_node_id:
+            draft_states = _node_draft_states(survey, ai, current_ai=current_ai)
+        else:
+            draft_states = _published_draft_states(survey, ai, current_ai=current_ai)
         report = {
             "snapshot_id": ai_meta.get("snapshot_id"),
             "survey_slug": survey.slug,
@@ -274,6 +345,7 @@ def get_published_ai_pipeline_status(survey):
             "content": ai,
             "draft_states": draft_states,
             "draft_urls": {},
+            "draft_import_hint": NODE_DRAFT_IMPORT_HINT if settings.IS_NODE else "",
         }
     return {
         "survey": {
