@@ -183,6 +183,15 @@ class ConnectionPageTests(NodePageCase):
         self.assertFalse(CloudLink.load().is_linked)
         self.assertIsNone(load_token("https://c"))
 
+    def test_reconnect_form_is_not_autofilled_by_the_browser(self):
+        from cloudsync.forms import ConnectForm
+
+        form = ConnectForm()
+        self.assertEqual(form.fields["api_url"].widget.attrs.get("autocomplete"), "off")
+        token = form.fields["token"].widget.attrs
+        self.assertEqual(token.get("autocomplete"), "new-password")
+        self.assertEqual((token.get("data-1p-ignore"), token.get("data-lpignore")), ("true", "true"))
+
     def test_admin_is_forbidden(self):
         admin = User.objects.create_user(username="a@x.com", password="x", role=User.Role.MANAGER)
         OrganizationMembership.objects.create(user=admin, organization=Organization.current(), role="admin")
