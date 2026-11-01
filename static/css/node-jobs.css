@@ -44,9 +44,19 @@
 .nj-live-job { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:10px 12px; border-radius:var(--radius-md); background:var(--c-surface-subtle); font-size:0.8rem; color:var(--c-ink-700); }
 .nj-live-job small { flex-basis:100%; color:var(--nj-muted); }
 .nj-dot { width:7px; height:7px; background:var(--c-brand-600); border-radius:50%; }
-.nj-steps { list-style:none; display:grid; gap:12px; padding:16px 0; margin:0; }
-.nj-steps li { display:flex; align-items:flex-start; gap:10px; }
-.nj-step-number { border:1px solid var(--c-line-strong); border-radius:50%; width:22px; height:22px; display:grid; place-items:center; color:var(--c-ink-500); font-size:0.72rem; flex-shrink:0; }
+/* Stage timeline: numbered dots joined by a line, like the customer timeline. */
+.nj-steps { list-style:none; display:grid; padding:16px 0; margin:0; }
+.nj-step { position:relative; display:flex; align-items:flex-start; gap:12px; padding-bottom:16px; }
+.nj-step:last-child { padding-bottom:0; }
+.nj-step:not(:last-child)::after { content:""; position:absolute; left:11px; top:26px; bottom:2px; width:2px; border-radius:1px; background:var(--nj-line); }
+.nj-step.is-done:not(:last-child)::after { background:var(--c-brand-200); }
+.nj-step-number { position:relative; z-index:1; width:24px; height:24px; display:grid; place-items:center; flex-shrink:0; border:2px solid var(--c-line-strong); border-radius:50%; background:var(--c-surface); color:var(--c-ink-500); font-size:0.72rem; font-weight:700; font-variant-numeric:tabular-nums; }
+.nj-step.is-waiting .nj-step-number { border-style:dashed; color:var(--c-ink-400); }
+.nj-step.is-done .nj-step-number { border-color:var(--c-brand-600); background:var(--c-brand-600); color:var(--c-on-brand); }
+.nj-step.is-active .nj-step-number { border-color:var(--c-brand-600); color:var(--c-brand-700); box-shadow:0 0 0 3px var(--c-brand-50); }
+.nj-step.is-failed .nj-step-number { border-color:var(--c-danger-500); color:var(--c-danger-700); box-shadow:0 0 0 3px var(--c-danger-50); }
+.nj-step.is-waiting strong { color:var(--c-ink-500); }
+.nj-step.is-failed small { color:var(--c-danger-700); }
 .nj-steps strong { font-size:0.86rem; font-weight:600; color:var(--c-ink-900); }
 .nj-steps small { display:block; color:var(--nj-muted); font-size:0.8rem; margin-top:2px; }
 .nj-steps em { font-style:normal; font-size:0.7rem; font-weight:500; color:var(--nj-muted); background:var(--c-surface-muted); padding:1px 6px; border-radius:4px; }

@@ -140,7 +140,7 @@ class AnalysisJobsView(NodeConsoleMixin, TemplateView):
         from feedback.models import AnalysisJob, Survey
         from .models import NodeAIGrant
         from django.db.models import Count, Max, OuterRef, Subquery, Q
-        from .job_display import describe_job, describe_survey
+        from .job_display import describe_job, describe_steps, describe_survey
         from feedback.published_analysis import _stage_is_current
         from feedback.analysis_sources import AnalysisSourceConfigurationError, resolve_analysis_source
         from feedback.ai_stage_service import STAGE_MODULES, stage_prompt_version
@@ -185,6 +185,8 @@ class AnalysisJobsView(NodeConsoleMixin, TemplateView):
         from cloudsync.models import CloudLink
         from cloudsync.publication_status import decorate_publications
         decorate_publications(surveys, CloudLink.objects.filter(pk=1).first())
+        for survey in surveys:
+            describe_steps(survey, key_configured=context["key_configured"])
         context["jobs"] = [describe_job(job) for job in AnalysisJob.objects.select_related("survey").order_by("-created_at", "-pk")[:50]]
         context["work_summary"] = AnalysisJob.objects.aggregate(
             running=Count("pk", filter=Q(status="running")), waiting=Count("pk", filter=Q(status="pending")))
