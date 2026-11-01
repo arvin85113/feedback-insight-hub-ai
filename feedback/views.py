@@ -206,35 +206,56 @@ class CustomerRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
         return self.request.user.is_authenticated and not self.request.user.is_manager
 
 
-NODE_CONSOLE_NAV = [("node:overview", "節點總覽", "server"), ("node:datasets", "資料集", "database"),
-                    ("node:jobs", "分析工作", "chart")]
-NODE_CONSOLE_NAV_TAIL = [("cloudsync:connection", "雲端連線", "cloud"), ("node:settings", "設定", "gear")]
-
-
 class DashboardBaseMixin(ManagerRequiredMixin):
-    dashboard_nav = [
-        ("feedback:dashboard", "營運總覽", "grid"),
-        ("feedback:analysis-operations", "營運分析", "spark"),
-        ("feedback:survey-manager", "問卷管理", "clipboard"),
-        ("feedback:stats-overview", "統計分析", "chart"),
-        ("feedback:text-analysis", "文字洞察", "message"),
-        ("feedback:improvement-list", "改善追蹤", "wrench"),
-        ("feedback:notice-center", "通知中心", "send"),
-    ]
-
     active_section = ""
 
-    def get_dashboard_nav(self):
+    def get_dashboard_nav_groups(self):
+        """Sidebar groups that follow the workflow: data → analysis → action (DESIGN.md north star)."""
+
+        data = [("feedback:survey-manager", "問卷管理", "clipboard")]
         if settings.IS_NODE:
-            return NODE_CONSOLE_NAV + self.dashboard_nav + NODE_CONSOLE_NAV_TAIL
-        if settings.CLOUD_INBOX_ENABLED:
-            return self.dashboard_nav + [("cloudapi-manage:inbox", "收件匣", "server")]
-        return self.dashboard_nav
+            data.append(("node:datasets", "資料集", "database"))
+        elif settings.CLOUD_INBOX_ENABLED:
+            data.append(("cloudapi-manage:inbox", "收件匣", "inbox"))
+        groups = [
+            ("", [("feedback:dashboard", "營運總覽", "grid")]),
+            ("資料", data),
+            (
+                "分析",
+                [
+                    ("feedback:stats-overview", "統計分析", "chart"),
+                    ("feedback:text-analysis", "文字洞察", "message"),
+                    ("feedback:analysis-operations", "營運分析", "spark"),
+                ],
+            ),
+            (
+                "行動",
+                [
+                    ("feedback:improvement-list", "改善追蹤", "wrench"),
+                    ("feedback:notice-center", "通知中心", "send"),
+                ],
+            ),
+        ]
+        if settings.IS_NODE:
+            groups.append(
+                (
+                    "本機節點",
+                    [
+                        ("node:overview", "節點總覽", "server"),
+                        ("node:jobs", "分析工作", "queue"),
+                        ("cloudsync:connection", "雲端連線", "cloud"),
+                        ("node:settings", "設定", "gear"),
+                    ],
+                )
+            )
+        return groups
 
     def get_dashboard_base_context(self):
-        nav = self.get_dashboard_nav()
+        groups = self.get_dashboard_nav_groups()
+        nav = [item for _heading, items in groups for item in items]
         return {
             "dashboard_nav": nav,
+            "dashboard_nav_groups": groups,
             "active_section": self.active_section,
             "section_label": next(
                 (label for route, label, _icon in nav if route == self.active_section),

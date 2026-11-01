@@ -166,7 +166,21 @@ body.dashboard-body {
 }
 
 .manager-nav {
+    gap: 14px;
+}
+
+.manager-nav-group {
+    display: grid;
     gap: 2px;
+}
+
+.manager-nav-heading {
+    margin: 0;
+    padding: 0 10px 2px;
+    color: var(--c-ink-400);
+    font-size: 0.74rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
 }
 
 .manager-shell .manager-nav-link {
@@ -380,6 +394,14 @@ body.dashboard-body {
         gap: 4px;
         overflow-x: auto;
         scrollbar-width: none;
+    }
+
+    .manager-nav-group {
+        display: contents;
+    }
+
+    .manager-nav-heading {
+        display: none;
     }
 
     .manager-shell .manager-nav-link {

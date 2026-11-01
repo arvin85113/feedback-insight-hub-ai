@@ -240,7 +240,7 @@ class PublishedAnalysisReadTests(TestCase):
         self.assertEqual(response.context["active_section"], "feedback:analysis-operations")
         self.assertEqual(
             [route for route, _, _ in response.context["dashboard_nav"] if route.startswith("feedback:")][:3],
-            ["feedback:dashboard", "feedback:analysis-operations", "feedback:survey-manager"],
+            ["feedback:dashboard", "feedback:survey-manager", "feedback:stats-overview"],
         )
 
     def test_stale_ai_keeps_its_own_snapshot_metadata(self):

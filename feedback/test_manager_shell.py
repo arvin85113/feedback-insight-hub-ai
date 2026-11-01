@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.conf import settings
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from .models import SurveyCategory
@@ -15,6 +16,30 @@ class ManagerShellTests(TestCase):
         response = self.client.get(reverse("feedback:stats-overview"))
         self.assertContains(response, '<h1>統計分析</h1>', html=True)
         self.assertContains(response, 'aria-current="page"')
+
+    def nav_groups(self):
+        response = self.client.get(reverse("feedback:stats-overview"))
+        return [(heading, [route for route, _label, _icon in items]) for heading, items in response.context["dashboard_nav_groups"]]
+
+    @override_settings(CLOUD_INBOX_ENABLED=False)
+    def test_sidebar_is_grouped_by_workflow(self):
+        data = ["feedback:survey-manager"] + (["node:datasets"] if settings.IS_NODE else [])
+        expected = [
+            ("", ["feedback:dashboard"]),
+            ("資料", data),
+            ("分析", ["feedback:stats-overview", "feedback:text-analysis", "feedback:analysis-operations"]),
+            ("行動", ["feedback:improvement-list", "feedback:notice-center"]),
+        ]
+        if settings.IS_NODE:
+            expected.append(("本機節點", ["node:overview", "node:jobs", "cloudsync:connection", "node:settings"]))
+        self.assertEqual(self.nav_groups(), expected)
+        response = self.client.get(reverse("feedback:stats-overview"))
+        self.assertContains(response, '<p class="manager-nav-heading">分析</p>', html=True)
+
+    @cloud_only
+    @override_settings(CLOUD_INBOX_ENABLED=True)
+    def test_cloud_inbox_sits_with_the_data_pages(self):
+        self.assertEqual(self.nav_groups()[1], ("資料", ["feedback:survey-manager", "cloudapi-manage:inbox"]))
 
     @cloud_only
     def test_manager_pages_render_flash_messages(self):
