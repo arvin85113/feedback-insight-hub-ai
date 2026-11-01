@@ -76,16 +76,27 @@
         return currentValidResponseCount(data) >= Number(data.freshness?.minimum_responses || 0);
     }
 
+    // Same rules as the AI prose (feedback/ai_display.py): two decimals at most, separators from 10,000.
     function compactNumber(value) {
         const numeric = Number(value);
         if (!Number.isFinite(numeric)) return String(value ?? '無資料');
-        return numeric.toFixed(3).replace(/\.?0+$/, '');
+        const rounded = Number(numeric.toFixed(2));
+        if (rounded === 0 && numeric !== 0) return String(numeric);
+        return countNumber(rounded);
+    }
+
+    function countNumber(value) {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) return String(value ?? '');
+        return Math.abs(numeric) >= 10000
+            ? numeric.toLocaleString('en-US', {maximumFractionDigits: 2})
+            : String(numeric);
     }
 
     function pValueText(value) {
         const numeric = Number(value);
         if (!Number.isFinite(numeric)) return 'p 無資料';
-        return numeric < 0.001 ? 'p < 0.001' : `p = ${compactNumber(numeric)}`;
+        return numeric < 0.001 ? 'p < 0.001' : `p = ${numeric.toFixed(3).replace(/\.?0+$/, '')}`;
     }
 
     function evidenceMetric(row) {
@@ -116,7 +127,7 @@
 
     function sampleText(rows) {
         const row = rows.find((item) => Number(item.sample_size) > 0);
-        return row ? `樣本 ${row.sample_size}` : '';
+        return row ? `樣本 ${countNumber(row.sample_size)}` : '';
     }
 
     function mergedStatisticalEntry(rows) {
@@ -155,16 +166,16 @@
         if (!sentiment) return null;
         const labels = {positive: '正面回饋', negative: '負面回饋', neutral: '中性回饋'};
         const category = row.category || String(row.label || '').replace(/\s+(positive|negative|neutral)$/, '');
-        const total = Number(row.sample_size) > 0 ? `／共分析 ${row.sample_size} 份` : '';
-        return {title: category, detail: `${labels[sentiment]} ${row.value} 份${total}`};
+        const total = Number(row.sample_size) > 0 ? `／共分析 ${countNumber(row.sample_size)} 份` : '';
+        return {title: category, detail: `${labels[sentiment]} ${countNumber(row.value)} 份${total}`};
     }
 
     function keywordEntry(row) {
         const match = String(row.label || '').match(/關鍵字「([^」]+)」/);
         const title = match ? `「${match[1]}」` : String(row.label || '關鍵字');
         const count = row.occurrence_count ?? row.value;
-        const responses = Number(row.response_count) > 0 ? `／涵蓋 ${row.response_count} 份文字回覆` : '';
-        return {title, detail: `共提及 ${count} 次${responses}`};
+        const responses = Number(row.response_count) > 0 ? `／涵蓋 ${countNumber(row.response_count)} 份文字回覆` : '';
+        return {title, detail: `共提及 ${countNumber(count)} 次${responses}`};
     }
 
     function evidenceEntry(row) {
@@ -173,7 +184,7 @@
         if (row.kind === 'statistical_test') {
             const metric = evidenceMetric(row);
             const title = variableTitle(row) || row.test_name || row.label || '統計分析';
-            const sample = Number(row.sample_size) > 0 ? `，樣本 ${row.sample_size}` : '';
+            const sample = Number(row.sample_size) > 0 ? `，樣本 ${countNumber(row.sample_size)}` : '';
             if (metric === 'p_value') return {title, detail: `${pValueText(row.value)}${sample}`};
             if (metric === 'statistic') {
                 const labels = {
@@ -195,8 +206,8 @@
         }
         const units = {responses: '份', occurrences: '次', percent: '%'};
         const unit = units[row.unit] || (row.unit ? ` ${row.unit}` : '');
-        const sample = Number(row.sample_size) > 0 ? `，樣本 ${row.sample_size}` : '';
-        return {title: row.label || '', detail: `${row.value}${unit}${sample}`};
+        const sample = Number(row.sample_size) > 0 ? `，樣本 ${countNumber(row.sample_size)}` : '';
+        return {title: row.label || '', detail: `${compactNumber(row.value)}${unit}${sample}`};
     }
 
     function evidenceEntries(rows) {

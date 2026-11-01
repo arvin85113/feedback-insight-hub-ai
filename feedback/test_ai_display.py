@@ -54,3 +54,23 @@ class PromptRuleTests(SimpleTestCase):
         for instruction in (STATISTICS_INSTRUCTION, TEXT_INSTRUCTION, SYNTHESIS_INSTRUCTION):
             self.assertIn("p < 0.001", instruction)
             self.assertIn("不寫「p 值為 0」", instruction)
+
+
+class EvidenceDisplayTests(SimpleTestCase):
+    def test_statistical_evidence_reads_like_the_report_text(self):
+        from feedback.ai_snapshot_service import serialize_evidence_for_display
+
+        row = {"id": "test.test-1.statistic", "kind": "statistical_test", "metric_type": "statistic",
+               "method_key": "spearman", "test_name": "Spearman 等級相關分析",
+               "variables": ["整體評分", "客房評分"], "value": 0.7723, "sample_size": 201295}
+        text = serialize_evidence_for_display(row)["display_text"]
+        self.assertIn("0.77", text)
+        self.assertIn("201,295", text)
+        self.assertNotIn("0.7723", text)
+
+
+class PromptTerminologyTests(SimpleTestCase):
+    def test_every_stage_names_statistics_in_chinese_and_keeps_caveats_substantive(self):
+        for instruction in (STATISTICS_INSTRUCTION, TEXT_INSTRUCTION, SYNTHESIS_INSTRUCTION):
+            self.assertIn("效果量 η²", instruction)
+            self.assertIn("資料限制只寫", instruction)

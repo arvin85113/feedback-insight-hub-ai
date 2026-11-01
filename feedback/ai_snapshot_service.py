@@ -18,6 +18,7 @@ from .local_service import (
     build_stats_payload,
     build_text_analysis_payload,
 )
+from .ai_display import humanize_numbers
 from .evidence_projection import build_projection_manifests, effective_prompt_version
 from .question_schema import analysis_excluded, analysis_levels
 from .models import (
@@ -176,7 +177,7 @@ def serialize_evidence_for_display(row, source_snapshot=None):
         response_count = result.get("response_count")
         if isinstance(response_count, int) and not isinstance(response_count, bool) and response_count > 0:
             display += f"；涵蓋 {response_count} 份文字回覆"
-        result["display_text"] = display
+        result["display_text"] = humanize_numbers(display)
         return result
 
     if result.get("kind") != "statistical_test" or not metric_type:
@@ -206,7 +207,7 @@ def serialize_evidence_for_display(row, source_snapshot=None):
     )
     if metric_type == "p_value":
         p_value = format_p_value(result.get("value"))
-        result["display_text"] = (f"{context}｜{p_value}" if context else p_value) + sample_suffix
+        result["display_text"] = humanize_numbers((f"{context}｜{p_value}" if context else p_value) + sample_suffix)
         return result
 
     if metric_type == "statistic":
@@ -215,10 +216,11 @@ def serialize_evidence_for_display(row, source_snapshot=None):
         metric_label = _clean_text(result.get("effect_label") or test.get("effect_label") or "效果量")
     result["metric_label"] = metric_label
     if context:
-        result["display_text"] = f"{context}｜{metric_label}：{result.get('value')}{sample_suffix}"
+        display = f"{context}｜{metric_label}：{result.get('value')}{sample_suffix}"
     else:
         fallback_label = _clean_text(result.get("label")) or metric_label
-        result["display_text"] = f"{fallback_label}：{result.get('value')}{sample_suffix}"
+        display = f"{fallback_label}：{result.get('value')}{sample_suffix}"
+    result["display_text"] = humanize_numbers(display)
     return result
 
 
@@ -543,6 +545,10 @@ def build_statistics_snapshot(questions, payload, evidence_catalog, caveats):
                     "counts": counts,
                 }
             )
+            # Single-choice charts carry no answered_n; everyone who answered is the bucket total.
+            answered = chart.get("answered_n") or sum(
+                int(row.get("total") or 0) for row in chart.get("counts") or [] if isinstance(row, dict)
+            )
             for item in counts:
                 if item["value"].startswith("其他（"):
                     continue
@@ -554,7 +560,7 @@ def build_statistics_snapshot(questions, payload, evidence_catalog, caveats):
                     label=f"{question_title}：{item['value']}",
                     value=item["total"],
                     unit="responses",
-                    sample_size=chart.get("answered_n") or item["total"],
+                    sample_size=answered or item["total"],
                 )
                 for key, label in (("selection_rate", "選取率"), ("check_share", "勾選次數占比")):
                     if item.get(key) is None:
@@ -566,7 +572,7 @@ def build_statistics_snapshot(questions, payload, evidence_catalog, caveats):
                         label=f"{question_title}：{item['value']} {label}",
                         value=item[key],
                         unit="percent",
-                        sample_size=chart.get("answered_n") or item["total"],
+                        sample_size=answered or item["total"],
                     )
 
     statistical_tests = []

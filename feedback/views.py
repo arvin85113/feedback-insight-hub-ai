@@ -1287,7 +1287,9 @@ class ImprovementDetailView(DashboardBaseMixin, DetailView):
         ]
         metadata = self.object.source_ai_metadata or {}
         if stage is None and metadata.get("node_stage_id"):
-            context["source_ai_evidence"] = [row for row in metadata.get("evidence") or [] if isinstance(row, dict)]
+            context["source_ai_evidence"] = [
+                serialize_evidence_for_display(row) for row in metadata.get("evidence") or [] if isinstance(row, dict)
+            ]
             context["source_ai_generated_at"] = parse_datetime(metadata.get("generated_at") or "")
         context["status_targets"] = status_targets(self.object)
         context["status_history"] = self.object.status_history.select_related("changed_by")
@@ -1854,6 +1856,9 @@ class NodeAIImprovementDraftCreateView(ImprovementCreateView):
         context.update(
             {
                 "source_ai_draft": self.ai_draft,
+                "source_ai_evidence": [
+                    serialize_evidence_for_display(row) for row in self.ai_draft.get("evidence") or [] if isinstance(row, dict)
+                ],
                 "source_ai_node": {
                     "generated_at": parse_datetime(self.ai_payload.get("generated_at") or ""),
                     "model_name": self.ai_payload.get("model_name") or "",

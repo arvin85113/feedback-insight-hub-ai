@@ -95,3 +95,17 @@ class ExternalSourceResponseCountTests(TestCase):
         self.assertContains(response, "12/20")
         native = self.client.get(reverse("feedback:survey-builder", args=["native-survey"]))
         self.assertEqual(native.context["responses_count"], 1)
+
+
+class ExternalSourceSwitcherLabelTests(TestCase):
+    """An external dataset never collects replies, so the switcher calls it 外部資料, not 已停用."""
+
+    setUp = ExternalSourceResponseCountTests.setUp
+
+    def test_improvement_switcher_labels_external_sources(self):
+        from .models import Survey
+
+        Survey.objects.filter(pk=self.external.pk).update(is_active=False)
+        page = self.client.get(reverse("feedback:improvement-list") + f"?survey={self.external.slug}")
+        self.assertContains(page, "（外部資料）")
+        self.assertNotContains(page, f"{self.external.title}（已停用）")

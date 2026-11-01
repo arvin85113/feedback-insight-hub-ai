@@ -17,7 +17,7 @@
             {% for item in survey_list %}
                 <option value="{{ item.slug }}"{% if item.pk == selected_survey.pk %} selected{% endif %}>{{ item.title }}</option>
             {% endfor %}
-            {% if not selected_survey.is_active %}<option value="{{ selected_survey.slug }}" selected>{{ selected_survey.title }}（已停用）</option>{% endif %}
+            {% if not selected_survey.is_active %}<option value="{{ selected_survey.slug }}" selected>{{ selected_survey.title }}（{% if selected_survey.analysis_source.kind == 'external' %}外部資料{% else %}已停用{% endif %}）</option>{% endif %}
         </select>
         <noscript><button type="submit" class="button button-ghost button-small">切換</button></noscript>
     </form>
@@ -74,7 +74,7 @@
                                     <span class="im-prio im-prio-{{ item.priority }}" title="{{ item.get_priority_display }}"><i></i><i></i><i></i><span class="visually-hidden">{{ item.get_priority_display }}</span></span>
                                     <span class="im-row-main">
                                         <strong>{{ item.title }}</strong>
-                                        <span class="im-row-summary">{{ item.summary|truncatechars:120 }}</span>
+                                        <span class="im-row-summary">{{ item.summary_preview|truncatechars:120 }}</span>
                                     </span>
                                     {% if item.related_category %}<span class="sm-tag">{{ item.related_category }}</span>{% else %}<span></span>{% endif %}
                                     <span class="im-row-due{% if item.due_date and item.due_date < today and item.status != 'completed' and item.status != 'archived' %} im-overdue{% endif %}">{% if item.due_date %}{{ item.due_date|date:"n/j" }} 到期{% endif %}</span>
