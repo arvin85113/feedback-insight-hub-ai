@@ -417,6 +417,16 @@ class ImprovementUpdate(models.Model):
     def __str__(self):
         return self.title
 
+    @property
+    def summary_preview(self):
+        """List preview: drafts imported from AI open with the title again, so skip that block."""
+
+        prefix = "問題與目標："
+        text = (self.summary or "").strip()
+        if text.startswith(prefix) and "\n\n" in text:
+            return text.split("\n\n", 1)[1]
+        return text
+
 
 class ImprovementStatusHistory(models.Model):
     improvement = models.ForeignKey(

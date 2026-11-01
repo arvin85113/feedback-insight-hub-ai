@@ -786,6 +786,25 @@ class FingerprintAndSnapshotTests(AIReportTestCase):
         statistic = next(row for row in evidence if row["kind"] == "statistical_test")
         self.assertEqual(statistic["variables"], ["整體評分", "客房評分"])
 
+    def test_single_choice_distribution_sample_is_everyone_who_answered(self):
+        self.add_responses(count=3)
+        stats_payload = {
+            **EMPTY_STATS,
+            "charts": [
+                {
+                    "type": "category",
+                    "question": {"title": "地點評分"},
+                    "counts": [{"value": "5", "total": 6}, {"value": "4", "total": 3}, {"value": "3", "total": 1}],
+                }
+            ],
+        }
+        with patch("feedback.ai_snapshot_service.build_stats_payload", return_value=stats_payload), patch(
+            "feedback.ai_snapshot_service.build_text_analysis_payload", return_value=EMPTY_TEXT
+        ):
+            snapshot = build_or_reuse_snapshot(self.survey).snapshot
+        five = next(row for row in snapshot.source_snapshot["evidence_catalog"] if row["label"] == "地點評分：5")
+        self.assertEqual((five["value"], five["sample_size"]), (6, 10))
+
     def test_source_change_twice_does_not_save_inconsistent_snapshot(self):
         self.add_responses(count=3)
         base = calculate_data_fingerprint(self.survey)

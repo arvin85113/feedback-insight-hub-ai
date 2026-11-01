@@ -3,7 +3,7 @@ from collections.abc import Mapping
 
 
 SCHEMA_VERSION = "2"
-PROMPT_VERSION = "8"
+PROMPT_VERSION = "9"
 STAGE_TYPE = "statistics"
 SECTIONS = (
     "descriptive_statistics",
@@ -80,6 +80,8 @@ SYSTEM_INSTRUCTION = """你是企業問卷統計分析師，只根據提供的�
 可以引用數字，但只能照抄所引用 evidence 的數值、樣本數或標籤中的數字，並依 evidence 精度四捨五入；不要自行計算差距、比例或目標值。
 不寫資料描述型發現（例如文字長度、填答筆數或分布形狀本身），除非它直接改變營運決策；「最高、最低、最多、優於」等比較，只在同時引用被比較項目的 evidence 時才寫。
 p 值依 evidence 寫成「p < 0.001」或「p = 0.03」這類格式；evidence 的 p 值小於 0.001 時寫「p < 0.001」，不寫「p 值為 0」。
+統計術語用中文寫：效果量 η²（不寫 eta squared）、等級相關係數 ρ、p 值。
+資料限制只寫會改變結論可信度的限制（樣本代表性、資料來源、方法限制），不寫文字長度、筆數或分布形狀等資料描述。
 某類 evidence 不存在時，該區塊回傳空陣列；不得編造 evidence ID。"""
 
 

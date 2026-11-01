@@ -33,7 +33,12 @@ def ai_payload():
                 "acceptance_criteria": ["尖峰平均等候低於 5 分鐘"],
                 "evidence_refs": ["E001"],
                 "data_limitations": ["樣本為模擬資料"],
-                "evidence": [{"id": "E001", "label": "等候時間提及", "value": 34, "unit": "occurrences"}],
+                "evidence": [
+                    {"id": "E001", "label": "等候時間提及", "value": 34, "unit": "occurrences"},
+                    {"id": "test.test-1.statistic", "kind": "statistical_test", "metric_type": "statistic", "label": "等級相關係數 ρ",
+                     "method_key": "spearman", "test_name": "Spearman 等級相關分析",
+                     "variables": ["等候分鐘數", "整體滿意度"], "value": -0.7512, "sample_size": 12345},
+                ],
             }
         ],
         "data_caveats": [],
@@ -106,6 +111,18 @@ class NodeDraftImportTests(TestCase):
         detail = self.client.get(reverse("feedback:improvement-detail", args=[improvement.pk]))
         self.assertContains(detail, "AI 分析依據")
         self.assertContains(detail, "等候時間提及")
+
+    def test_imported_item_lists_the_action_not_the_repeated_title(self):
+        self.client.post(self.url, {**self.form_data(), "summary": "問題與目標：\n縮短尖峰等候時間\n\n建議行動：\n尖峰時段增加一名點餐人員。"})
+        page = self.client.get(reverse("feedback:improvement-list") + f"?survey={self.survey.slug}")
+        self.assertContains(page, "建議行動：")
+        self.assertNotContains(page, "問題與目標：")
+
+    def test_evidence_on_the_import_form_uses_report_formatting(self):
+        page = self.client.get(self.url)
+        self.assertContains(page, "-0.75")
+        self.assertContains(page, "12,345")
+        self.assertNotContains(page, "-0.7512")
 
     def test_outdated_or_unknown_drafts_are_refused(self):
         self.upload(2, ai_current=False)
