@@ -14,11 +14,16 @@
             </div>
         </div>
         <nav class="manager-nav" aria-label="管理端導覽">
-            {% for route, label, icon in dashboard_nav %}
-                <a class="manager-nav-link {% if active_section == route %}active{% endif %}" href="{% url route %}"{% if active_section == route %} aria-current="page"{% endif %}>
-                    <span class="manager-nav-icon">{% include "feedback/_nav_icon.html" with name=icon %}</span>
-                    <span>{{ label }}</span>
-                </a>
+            {% for heading, items in dashboard_nav_groups %}
+                <div class="manager-nav-group">
+                    {% if heading %}<p class="manager-nav-heading">{{ heading }}</p>{% endif %}
+                    {% for route, label, icon in items %}
+                        <a class="manager-nav-link {% if active_section == route %}active{% endif %}" href="{% url route %}"{% if active_section == route %} aria-current="page"{% endif %}>
+                            <span class="manager-nav-icon">{% include "feedback/_nav_icon.html" with name=icon %}</span>
+                            <span>{{ label }}</span>
+                        </a>
+                    {% endfor %}
+                </div>
             {% endfor %}
         </nav>
         <div class="manager-sidebar-foot">
